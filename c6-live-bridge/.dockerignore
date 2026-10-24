@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+test_*
+README.md
+DOCS.md
+secrets.yaml
+options.json
+.env*

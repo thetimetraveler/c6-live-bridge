@@ -1,0 +1,8 @@
+{
+  "name": "c6-live-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "python3 -m unittest discover -s c6-live-bridge -p 'test_*.py' && node c6-live-bridge/test_ui.js"
+  }
+}

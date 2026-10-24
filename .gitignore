@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+node_modules/
+.env
+.env.*
+secrets.yaml
+options.json
+*.log
+*.jsonl
+*.bin
+*.pem
+*.key

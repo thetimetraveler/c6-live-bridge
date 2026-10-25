@@ -171,6 +171,76 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 pre{background:var(--inset);border-radius:10px;padding:12px 14px;font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;overflow:auto;max-height:320px;margin:12px 0 0}
 code{overflow-wrap:anywhere}
 
+/* Programming tab */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
+.chips:empty{display:none}
+.chip{background:var(--fill);color:var(--label);font-weight:500;padding:7px 14px;border-radius:999px}
+.chip small{color:var(--label2);font-weight:500;margin-left:6px;font-variant-numeric:tabular-nums}
+.chip[aria-pressed=true]{background:var(--blue);color:#fff}
+.chip[aria-pressed=true] small{color:rgba(255,255,255,.75)}
+#program-viz{transition:opacity .25s var(--ease)}
+#program-viz[aria-busy=true]{opacity:.45}
+.prog-section{margin-top:22px}
+.prog-section>h3{margin-left:0}
+.empty-state{text-align:center;color:var(--label2);padding:36px 16px;background:var(--inset);border-radius:12px;margin:12px 0 0}
+.c0{--c:var(--green)}.c1{--c:var(--blue)}.c2{--c:var(--orange)}.c3{--c:var(--purple)}
+.swatch{display:inline-block;width:14px;height:4px;border-radius:2px;background:var(--c)}
+.chart .area{stroke:none;fill-opacity:.12}
+.chart polyline.line{fill:none;stroke-width:3;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1s var(--ease-out) forwards}
+.chart circle.dot{stroke:var(--inset);stroke-width:2}
+@keyframes draw{to{stroke-dashoffset:0}}
+.shows{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+.shows h4{margin:0 0 6px 4px;font-size:.9rem;display:flex;align-items:center;gap:8px}
+details.raw{margin-top:18px}
+details.raw>summary{cursor:pointer;color:var(--blue);font-size:.86rem;font-weight:500}
+
+/* Setup tab: mapping editor */
+table.editor{min-width:660px}
+.editor th{padding:6px 4px}
+.editor td{padding:5px 4px;vertical-align:middle}
+.editor tbody tr:hover{background:none}
+.editor input{width:100%;padding:7px 10px;font-size:14px;border-radius:8px}
+.editor input.changed{box-shadow:inset 3px 0 var(--blue)}
+.editor input.invalid{box-shadow:0 0 0 1px var(--red);background:var(--red-t)}
+.editor .w-id{width:92px}.editor .w-grp{width:104px}.editor .w-x{width:40px}
+button.remove{width:26px;height:26px;padding:0;border-radius:50%;background:var(--red);color:#fff;font-size:17px;line-height:26px;font-weight:700}
+button.plain{background:none;color:var(--blue);padding:8px 2px}
+button.plain:hover{filter:none;opacity:.7}
+.dirty{color:var(--orange);font-size:.82rem;font-weight:600}
+.json-editor textarea{margin-top:10px}
+
+/* Setup tab: firmware */
+.dropzone{position:relative;display:grid;justify-items:center;gap:4px;text-align:center;padding:26px 16px;margin:4px 0 0;border:2px dashed var(--sep);border-radius:14px;background:var(--inset);color:var(--label);cursor:pointer;transition:border-color .25s var(--ease),background .25s var(--ease),transform .35s var(--spring)}
+.dropzone input{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.dropzone:hover{border-color:var(--blue)}
+.dropzone.over{border-color:var(--blue);background:var(--blue-t);transform:scale(1.01)}
+.dropzone.ready{border-style:solid;border-color:var(--green)}
+.dropzone.reject{border-style:solid;border-color:var(--red)}
+.dz-icon{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--blue-t);color:var(--blue);font-size:20px;font-weight:700;margin-bottom:4px;transition:background .3s,color .3s}
+.dropzone.ready .dz-icon{background:var(--green-t);color:var(--green)}
+.dropzone.reject .dz-icon{background:var(--red-t);color:var(--red)}
+.dropzone strong{font-size:1rem;color:var(--label);overflow-wrap:anywhere}
+.dropzone .meter{width:220px;max-width:100%;margin:8px auto 0}
+.dropzone .meter i.over{background:var(--red)}
+.stepper{list-style:none;padding:0;margin:16px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;counter-reset:s}
+.stepper li{counter-increment:s;display:flex;align-items:center;gap:8px;font-size:.86rem;color:var(--label2);transition:color .3s}
+.stepper li::before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.75rem;font-weight:700;background:var(--fill);color:var(--label2);transition:background .35s var(--ease),color .35s var(--ease)}
+.stepper li[data-state=active]{color:var(--label);font-weight:500}
+.stepper li[data-state=active]::before{background:var(--blue);color:#fff;animation:beat 1.4s var(--ease) infinite}
+.stepper li[data-state=done]::before{content:"✓";background:var(--green);color:#fff}
+.stepper li[data-state=fail]::before{content:"✕";background:var(--red);color:#fff}
+@keyframes beat{50%{box-shadow:0 0 0 6px var(--blue-t)}}
+
+/* Alert sheet */
+dialog.sheet{border:0;border-radius:16px;padding:22px 20px 16px;width:min(340px,calc(100vw - 32px));background:var(--elevated);color:var(--label);box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+dialog.sheet[open]{animation:sheet-in .35s var(--spring)}
+dialog.sheet::backdrop{background:rgba(0,0,0,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+@keyframes sheet-in{from{opacity:0;transform:scale(1.1)}to{opacity:1;transform:none}}
+dialog.sheet h3{text-transform:none;letter-spacing:0;font-size:1.05rem;color:var(--label);margin:0 0 6px}
+dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
+.sheet-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.stepper{grid-template-columns:1fr}}
+
 @media(max-width:700px){.hero{align-items:flex-start}.hero-glyph{width:44px;height:44px;font-size:1.3rem}main{padding:4px 14px 40px}.bar-inner{padding:10px 14px 8px}.hero{padding:16px}.hero h1{font-size:1.3rem}.card{padding:16px}.segmented button{font-size:.8rem}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.topology .flow-pulse{stroke-dasharray:none}}
 </style></head><body>
@@ -229,11 +299,12 @@ code{overflow-wrap:anywhere}
 
 <div id="panel-programming" class="panel" role="tabpanel" hidden>
   <section class="card">
-    <div class="card-head"><h2>Programming</h2></div>
-    <p class="lede">A read-only look at what the gateway has programmed for one zone: its daily level schedule (shows) and presets. Nothing here changes the device.</p>
-    <div class="toolbar"><label>Zone <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" style="margin:6px 0">Load snapshot</button></div>
-    <div id="program-viz" class="metrics"></div>
-    <details><summary class="muted small" style="cursor:pointer;margin-top:12px">Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
+    <div class="card-head"><h2>Programming</h2><span class="pill info">Read-only</span></div>
+    <p class="lede">See what the gateway has programmed for a zone: its daily level schedule (shows) and its presets. Viewing a zone never changes the device.</p>
+    <div id="program-zones" class="chips" role="group" aria-label="Known zones"></div>
+    <div class="toolbar"><label>Zone number <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" style="margin:6px 0">Load snapshot</button></div>
+    <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
+    <details class="raw"><summary>Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
   </section>
 </div>
 
@@ -241,18 +312,24 @@ code{overflow-wrap:anywhere}
   <section class="card">
     <div class="card-head"><h2>Zone mapping</h2><span id="config-pill" class="pill wait">Loading</span></div>
     <p id="config-state" class="muted">Loading configuration…</p>
-    <ol class="steps"><li>Edit the zones below (name, N4 group, serial, warm-dim curve).</li><li>Select <b>Apply mapping</b>. The change is sent as one transaction.</li><li>Both boards may briefly restart. The change shows as pending until both boards report the same hash.</li></ol>
-    <textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea>
-    <div class="actions"><button id="save-config">Apply mapping</button><button id="reload-config" class="secondary">Discard edits &amp; reload</button></div>
+    <p class="lede">Each row links a lighting zone to its N4 output group. Edit the fields, then select <b>Apply mapping</b>. All rows are sent as one change. Both boards may restart briefly, and the change shows as “Applying…” until both boards report the same hash.</p>
+    <div class="scroll"><table class="editor"><thead><tr><th class="w-id">Zone ID</th><th>Name</th><th class="w-grp">N4 group</th><th>Serial</th><th>Warm-dim curve</th><th class="w-x"><span class="small" style="position:absolute;left:-9999px">Remove</span></th></tr></thead><tbody id="zone-rows"></tbody></table></div>
+    <button id="add-zone" class="plain">＋ Add zone</button>
+    <p id="config-errors" class="notice bad"></p>
+    <details class="raw json-editor"><summary>Edit as JSON (advanced)</summary><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><p id="json-note" class="small muted">The zones list as JSON. Changes here update the table above.</p></details>
+    <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
   </section>
   <section class="card">
     <div class="card-head"><h2>Endpoint firmware</h2></div>
-    <p class="lede">Upload a new firmware image for the endpoint board. It's sent through the gateway, then the page watches for the endpoint to restart. Maximum size: 768 KB (786,432 bytes).</p>
-    <div class="actions"><label class="file"><span class="btn">Choose image…</span><span id="firmware-name" class="muted">No file selected</span><input id="firmware" type="file"></label><button id="upload">Upload firmware</button></div>
+    <p class="lede">Install a new firmware image on the endpoint board. The image goes through the gateway, then this page watches the endpoint restart and come back online.</p>
+    <label id="dropzone" class="dropzone"><input id="firmware" type="file" aria-label="Firmware image"><span id="dz-icon" class="dz-icon" aria-hidden="true">↑</span><strong id="firmware-name">Choose a firmware image</strong><span id="firmware-meta" class="muted small">or drag a .bin file here · up to 768 KB (786,432 bytes)</span><span class="meter"><i id="firmware-size" style="width:0"></i></span></label>
+    <ol class="stepper" aria-label="Firmware update progress"><li id="fw-step-upload">Upload to gateway</li><li id="fw-step-restart">Endpoint restarts</li><li id="fw-step-stable">Stays online 30 s</li></ol>
+    <div class="actions"><button id="upload" disabled>Upload firmware</button></div>
     <p id="upload-note" class="notice info" role="status"></p>
   </section>
 </div>
 </main>
+<dialog id="sheet" class="sheet"><h3 id="sheet-title"></h3><p id="sheet-body"></p><div class="sheet-actions"><button id="sheet-cancel" class="secondary">Cancel</button><button id="sheet-ok">OK</button></div></dialog>
 <script>
 const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null;let refreshing=false,shownEvents=new Set();
 async function req(path,opts){const r=await fetch(api(path),opts);const ct=r.headers.get('content-type')||'';const d=ct.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(d?.error||`HTTP ${r.status}`);return d}
@@ -295,20 +372,40 @@ function health(s){latestStatus=s;const role=roleName(s.thread_role),roleTone=['
     group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
     group('UART link',[['Bytes',num(s.uart_bytes)],['Frames OK',num(s.uart_frames_ok)],['CRC errors',num(s.uart_crc_errors),errTone(s.uart_crc_errors)]]));
   $('health-note').textContent='Updated '+new Date().toLocaleTimeString();renderFlow(s)}
-function deviceView(data){const rows=data.zones||[];$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const dev=cell(tr,d.name||'—');const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));cell(tr,d.requested===null?'—':val(d.requested));
+function deviceView(data){const rows=data.zones||[];renderProgramZones(rows);$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const dev=cell(tr,d.name||'—');const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));cell(tr,d.requested===null?'—':val(d.requested));
     const c=d.confirmed,td=cell(tr,c?`${c.level_x100===undefined?'':(c.level_x100/100)+'%'}${c.source===undefined?'':' · '+c.source}${c.seq===undefined?'':' · seq '+c.seq}`:'—');if(c&&Number.isFinite(Number(c.level_x100))){const m=el('span','meter'),bar=el('i');bar.style.width=Math.max(0,Math.min(100,c.level_x100/100))+'%';m.append(bar);td.append(m)}
     const at=c?.at_ms??d.last_confirmed_ms;const age=Number(latestStatus?.gateway_uptime_ms)-Number(at);const f=cell(tr,'');f.append(at===undefined||at===null?pill('Never confirmed','warn'):!Number.isFinite(age)?pill('Age unavailable','wait'):age>120000?pill(`Stale · ${duration(age)} ago`,'warn'):pill(`Fresh · ${duration(age)} ago`,'good'));$('devices').append(tr)}
   if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones reported yet.');td.setAttribute('colspan','5');tr.append(td);$('devices').append(tr)}
   $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';$('device-note').textContent=rows.length?'Ages are measured with the gateway clock.':'The gateway has not reported any zone records.'}
+const zoneOf=d=>d.zone??d.zone_id;
+const hhmm=m=>{const t=Math.max(0,Math.min(1440,Math.round(Number(m)||0)));return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
+let programChips=[],programSig='';
+function renderProgramZones(rows){const known=rows.filter(d=>Number.isInteger(Number(zoneOf(d)))&&zoneOf(d)!==null&&zoneOf(d)!==undefined);const sig=JSON.stringify(known.map(d=>[zoneOf(d),d.name]));if(sig===programSig)return;programSig=sig;
+  programChips=known.map(d=>{const z=Number(zoneOf(d)),b=el('button','chip');b.type='button';b.append(el('span','',d.name||'Zone '+z),el('small','',String(z)));b.onclick=()=>{$('program-zone').value=String(z);loadProgram()};return {z,b}});$('program-zones').replaceChildren(...programChips.map(c=>c.b));markProgramZone()}
+function markProgramZone(){const z=Number($('program-zone').value);for(const c of programChips)c.b.setAttribute('aria-pressed',String(c.z===z))}
+function section(title,...nodes){const s=el('div','prog-section');s.append(el('h3','',title),...nodes);return s}
 function svgEl(svg,tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,String(attrs[k]));svg.append(e);return e}
-function renderProgram(data){const viz=$('program-viz');viz.replaceChildren();const shows=Array.isArray(data.shows)?data.shows:[];const all=shows.flatMap(s=>Array.isArray(s.knots)?s.knots:[]);const maxLevel=Math.max(1,...all.map(k=>Number(k.level)||0));
-  const x=k=>38+Math.max(0,Math.min(1440,Number(k.minute)||0))*592/1440,y=k=>220-(Number(k.level)||0)*185/maxLevel;
-  if(all.length){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 640 250');svg.setAttribute('role','img');svg.setAttribute('aria-label','Programmed show level curves over 24 hours');svg.setAttribute('class','chart');for(const gy of [30,75,120,165,210])svgEl(svg,'line',{x1:38,x2:630,y1:gy,y2:gy,class:'grid-line'});
-    for(const [i,show] of shows.entries()){const knots=Array.isArray(show.knots)?show.knots:[];if(!knots.length)continue;svgEl(svg,'polyline',{points:knots.map(k=>`${x(k)},${y(k)}`).join(' '),class:'s'+i%4});for(const k of knots){const dot=svgEl(svg,'circle',{cx:x(k),cy:y(k),r:4,class:'s'+i%4});const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=`Show ${show.id}: ${k.minute} min, level ${k.level}, CCT ${k.cct}`;dot.append(title)}}
-    for(const [label,lx] of [['00:00',38],['06:00',186],['12:00',334],['18:00',482],['24:00',630]])svgEl(svg,'text',{x:lx,y:243,class:'axis','text-anchor':lx===38?'start':lx===630?'end':'middle'}).textContent=label;viz.append(svg)}
-  for(const p of data.presets||[]){const box=el('div','metric');box.append(el('span','',`Preset ${p.preset} · ${p.type}`),el('strong','',`${p.value}${p.field2===null?'':' · '+p.field2}${p.field5===null?'':' · '+p.field5}`));viz.append(box)}
-  if(data.selected!==undefined){const box=el('div','metric');box.append(el('span','','Zone selection'),el('strong','',`${data.selected?'Selected':'Not selected'} · show ${val(data.show)}`),el('span','',`Members ${(data.members||[]).join(', ')||'—'}`));viz.append(box)}
-  if(!viz.children.length)viz.append(el('p','muted','This zone has no shows or presets programmed.'))}
+function renderProgram(data){const viz=$('program-viz');const shows=(Array.isArray(data.shows)?data.shows:[]).filter(s=>Array.isArray(s.knots)&&s.knots.length);const presets=Array.isArray(data.presets)?data.presets:[];const out=[];
+  const facts=el('div','metrics');const fact=(k,v,sub)=>{const b=el('div','metric');b.append(el('span','',k),el('strong','',v));if(sub)b.append(el('span','',sub));facts.append(b)};
+  fact('Shows',String(shows.length),shows.length?'daily level schedules':'none programmed');fact('Presets',String(presets.length),presets.length?'stored scenes':'none programmed');
+  if(data.selected!==undefined)fact('Selection',data.selected?'Selected':'Not selected',data.show===undefined||data.show===null?'':`Show ${val(data.show)}`);
+  if(data.members!==undefined)fact('Members',Array.isArray(data.members)&&data.members.length?data.members.join(', '):'None');out.push(facts);
+  if(shows.length){const all=shows.flatMap(s=>s.knots);const peak=Math.max(1,...all.map(k=>Number(k.level)||0)),mag=10**Math.floor(Math.log10(peak)),maxLevel=[1,2,2.5,5,10].map(m=>m*mag).find(v=>v>=peak);const X=k=>48+Math.max(0,Math.min(1440,Number(k.minute)||0))*582/1440,Y=k=>220-(Number(k.level)||0)*185/maxLevel;
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 640 250');svg.setAttribute('role','img');svg.setAttribute('aria-label','Programmed show level curves over 24 hours');svg.setAttribute('class','chart');
+    for(const f of [0,.25,.5,.75,1]){const gy=220-f*185;svgEl(svg,'line',{x1:48,x2:630,y1:gy,y2:gy,class:'grid-line'});svgEl(svg,'text',{x:40,y:gy+4,class:'axis','text-anchor':'end'}).textContent=String(Math.round(f*maxLevel))}
+    for(const h of [0,6,12,18,24])svgEl(svg,'text',{x:48+h*582/24,y:243,class:'axis','text-anchor':h===0?'start':h===24?'end':'middle'}).textContent=String(h).padStart(2,'0')+':00';
+    const legend=el('div','legend'),cards=el('div','shows');
+    for(const [i,show] of shows.entries()){const c='s'+i%4,knots=show.knots.slice().sort((a,b)=>(Number(a.minute)||0)-(Number(b.minute)||0));const pts=knots.map(k=>`${X(k)},${Y(k)}`);
+      svgEl(svg,'polygon',{points:[...pts,`${X(knots[knots.length-1])},220`,`${X(knots[0])},220`].join(' '),class:'area '+c});svgEl(svg,'polyline',{points:pts.join(' '),class:'line '+c,pathLength:1});
+      for(const k of knots){const dot=svgEl(svg,'circle',{cx:X(k),cy:Y(k),r:4.5,class:'dot '+c});const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=`Show ${show.id}: ${hhmm(k.minute)}, level ${k.level}, CCT ${k.cct}`;dot.append(title)}
+      const key=el('span');key.append(el('span','swatch c'+i%4),document.createTextNode('Show '+val(show.id)));legend.append(key);
+      const card=el('div'),h=el('h4');h.append(el('span','swatch c'+i%4),document.createTextNode(`Show ${val(show.id)} · ${knots.length} point${knots.length===1?'':'s'}`));const list=el('div','list');
+      for(const k of knots){const r=el('div','row');r.append(el('span','',hhmm(k.minute)),el('strong','',`Level ${val(k.level)}${k.cct===undefined||k.cct===null?'':' · CCT '+k.cct}`));list.append(r)}card.append(h,list);cards.append(card)}
+    out.push(section('Daily schedule',svg,legend,cards))}
+  if(presets.length){const grid=el('div','metrics');for(const p of presets){const box=el('div','metric');const extra=[p.type,p.field2===null||p.field2===undefined?null:'field 2: '+p.field2,p.field5===null||p.field5===undefined?null:'field 5: '+p.field5].filter(x=>x!==null&&x!==undefined).join(' · ');box.append(el('span','',`Preset ${val(p.preset)}`),el('strong','',val(p.value)));if(extra)box.append(el('span','',extra));grid.append(box)}out.push(section('Presets',grid))}
+  if(!shows.length&&!presets.length)out.push(el('p','empty-state','This zone has no shows or presets programmed.'));viz.replaceChildren(...out)}
+async function loadProgram(){const z=Number($('program-zone').value),btn=$('load-program'),viz=$('program-viz');markProgramZone();btn.disabled=true;btn.textContent='Loading…';viz.setAttribute('aria-busy','true');
+  try{const data=await req(`program?zone=${z}&page=0`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;viz.replaceChildren(el('p','empty-state',`Couldn't load zone ${z}: ${e.message}`))}finally{btn.disabled=false;btn.textContent='Load snapshot';viz.setAttribute('aria-busy','false')}}
 function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0}for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
   const lost=Number(data.lost)||0;const from=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(lost?` · ${lost} events missed`:'');$('events').replaceChildren();
   const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All observed stages'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:stageInfo(s)[0]})));select.value=stages.includes(previous)?previous:'';
@@ -316,18 +413,59 @@ function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway eve
   if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No events match these filters.':'Waiting for the first event…');td.setAttribute('colspan','6');tr.append(td);$('events').append(tr)}
   $('events-count').textContent=eventRows.length?`${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=lost?' ':'';
   $('events-note').textContent=lost?`Gap: ${lost} older events were no longer available on the gateway. The highlighted row is where the gap begins.`:eventRows.length?'Live feed. The add-on also archives events on the Home Assistant host for seven days.':'No events received.';if(latestStatus)renderFlow(latestStatus)}
-let configAutoPoll=false,configPollAfter=0,configMatch=null;
+let configAutoPoll=false,configPollAfter=0,configMatch=null,configBase=null,draftFrom=null,draftZones=[],jsonError='';
 function configPill(text,tone){$('config-pill').className='pill '+tone;$('config-pill').textContent=text}
-async function loadConfig(){const c=await req('config');if(document.activeElement!==$('config-json'))$('config-json').value=JSON.stringify(c,null,2);const state=c.apply_status||'active';$('config-state').textContent=`Generation ${val(c.generation)} · hash ${val(c.hash)}${c.editable===false?' · locked by the gateway':''}${state==='error'||state==='retry_required'?' · the last change was rejected, so the previous mapping is still in use':''}`;configPill({active:'Active',pending:'Applying…',error:'Rejected',retry_required:'Retry required'}[state]||val(state),state==='active'?'good':state==='pending'?'warn':state==='error'||state==='retry_required'?'bad':'info');$('save-config').disabled=c.editable===false;configAutoPoll=state==='pending'||state==='error'||state==='retry_required'||configMatch===false;configPollAfter=Date.now()+4000}
-async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor)]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;uploadNote('The endpoint restarted and reconnected. Watching it for 30 seconds… (installation itself cannot be verified from here.)','warn')}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;uploadNote('The endpoint stayed online for 30 seconds after restarting. Installation is still unverified; the board may have rolled back.','good')}else if(now-firmwareStartedAt>=90000){firmwarePending=false;uploadNote('No restart was seen within 90 seconds. The install or rollback could not be confirmed.','bad')}}}else{setHero('bad',"Can't reach the gateway",'Retrying every second. '+results[0].reason.message,false);$('health-note').textContent='Check the gateway address and token in the add-on configuration.'}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
+const ZONE_FIELDS=[['zone_id','e.g. 1','numeric'],['name','Name',''],['n4_group','e.g. 3','numeric'],['serial','Optional',''],['warm_dim_curve','Optional','']];
+const clone=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
+function fieldText(v){return v===undefined||v===null?'':typeof v==='string'?v:JSON.stringify(v)}
+function parseField(key,text,orig){const t=text.trim();if(t==='')return undefined;if(key==='zone_id'||key==='n4_group')return /^-?\d+$/.test(t)?Number(t):t;if(key==='warm_dim_curve'&&typeof orig!=='string'){try{return JSON.parse(t)}catch{return t}}return key==='name'?text:t}
+function zoneRow(z,orig){return {z:clone(z)||{},orig:orig||null,inputs:{}}}
+function setDraft(c){draftFrom={generation:c.generation,hash:c.hash,zones:clone(Array.isArray(c.zones)?c.zones:[])};draftZones=draftFrom.zones.map(z=>zoneRow(z,z));jsonError='';renderZones()}
+function draftList(){return draftZones.map(r=>r.z)}
+function isDirty(){return !!draftFrom&&JSON.stringify(draftList())!==JSON.stringify(draftFrom.zones)}
+function zoneErrors(){const errs=[],seen=new Set();draftZones.forEach((r,i)=>{const id=r.z.zone_id;if(!Number.isInteger(id)||id<0)errs.push([r,`Row ${i+1}: zone ID must be a whole number.`]);else if(seen.has(id))errs.push([r,`Zone ID ${id} is used more than once.`]);else seen.add(id)});return errs}
+function renderZones(){const locked=configBase?.editable===false;const rows=draftZones.map((r,i)=>{const tr=el('tr');if(!r.orig)tr.setAttribute('data-new','');for(const [key,hint,mode] of ZONE_FIELDS){const td=el('td'),input=el('input');input.value=fieldText(r.z[key]);input.placeholder=hint;input.disabled=locked;input.setAttribute('aria-label',`Row ${i+1} ${key.replace(/_/g,' ')}`);if(mode)input.setAttribute('inputmode',mode);input.addEventListener('input',()=>{const v=parseField(key,input.value,r.orig?.[key]);if(v===undefined)delete r.z[key];else r.z[key]=v;editorChanged(true)});r.inputs[key]=input;td.append(input);tr.append(td)}
+    const td=el('td'),rm=el('button','remove','−');rm.type='button';rm.title='Remove zone';rm.setAttribute('aria-label',`Remove row ${i+1}`);rm.disabled=locked;rm.onclick=()=>{draftZones.splice(draftZones.indexOf(r),1);renderZones()};td.append(rm);tr.append(td);return tr});
+  if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones mapped yet. Select “Add zone” to create one.');td.setAttribute('colspan','6');tr.append(td);rows.push(tr)}
+  $('zone-rows').replaceChildren(...rows);$('add-zone').disabled=locked;editorChanged(true)}
+function editorChanged(syncJson){const errs=zoneErrors(),bad=new Set(errs.map(e=>e[0]));for(const r of draftZones)for(const [key] of ZONE_FIELDS){const input=r.inputs[key];if(!input)continue;const changed=!r.orig?r.z[key]!==undefined:JSON.stringify(r.z[key])!==JSON.stringify(r.orig[key]);input.className=(key==='zone_id'&&bad.has(r)?'invalid':changed?'changed':'')}
+  const messages=[...new Set(errs.map(e=>e[1]))];if(jsonError)messages.unshift('The JSON editor contains invalid JSON: '+jsonError);$('config-errors').textContent=messages.join(' ');
+  if(syncJson&&document.activeElement!==$('config-json'))$('config-json').value=JSON.stringify(draftList(),null,2);
+  const dirty=isDirty();$('save-config').disabled=!configBase||configBase.editable===false||!dirty||messages.length>0;$('reload-config').textContent=dirty?'Discard changes':'Reload';$('dirty-note').textContent=dirty?'Unsaved changes':''}
+async function loadConfig(force){const c=await req('config');const dirty=isDirty(),changed=!configBase||c.hash!==configBase.hash||c.generation!==configBase.generation;configBase=c;const state=c.apply_status||'active';
+  if(force===true||!dirty)setDraft(c);
+  $('config-state').textContent=`Generation ${val(c.generation)} · hash ${val(c.hash)}${c.editable===false?' · locked by the gateway':''}${state==='error'||state==='retry_required'?' · the last change was rejected, so the previous mapping is still in use':''}${dirty&&changed&&force!==true?' · the gateway mapping changed while you were editing; discard your changes to see it':''}`;
+  configPill(c.editable===false?'Locked':{active:'Active',pending:'Applying…',error:'Rejected',retry_required:'Retry required'}[state]||val(state),c.editable===false?'wait':state==='active'?'good':state==='pending'?'warn':state==='error'||state==='retry_required'?'bad':'info');
+  editorChanged(false);configAutoPoll=state==='pending'||state==='error'||state==='retry_required'||configMatch===false;configPollAfter=Date.now()+4000}
+let sheetResolve=null;
+function confirmSheet(title,body,ok){const d=$('sheet');if(typeof d.showModal!=='function')return Promise.resolve(confirm(title+'\n\n'+body));$('sheet-title').textContent=title;$('sheet-body').textContent=body;$('sheet-ok').textContent=ok;d.showModal();$('sheet-ok').focus();return new Promise(res=>{sheetResolve=res})}
+function closeSheet(v){$('sheet').close();if(sheetResolve)sheetResolve(v);sheetResolve=null}
+$('sheet-ok').onclick=()=>closeSheet(true);$('sheet-cancel').onclick=()=>closeSheet(false);$('sheet').addEventListener('cancel',()=>{if(sheetResolve)sheetResolve(false);sheetResolve=null});
+async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor)]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;fw('restarted','The endpoint restarted and reconnected. Watching it for 30 seconds… (installation itself cannot be verified from here.)','warn')}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;fw('stable','The endpoint stayed online for 30 seconds after restarting. Installation is still unverified; the board may have rolled back.','good')}else if(now-firmwareStartedAt>=90000){firmwarePending=false;fw('timeout','No restart was seen within 90 seconds. The install or rollback could not be confirmed.','bad')}}}else{setHero('bad',"Can't reach the gateway",'Retrying every second. '+results[0].reason.message,false);$('health-note').textContent='Check the gateway address and token in the add-on configuration.'}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
 const tabs=['overview','activity','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
-$('load-program').onclick=async()=>{try{const z=Number($('program-zone').value),data=await req(`program?zone=${z}&page=0`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;$('program-viz').replaceChildren(el('p','muted','Programming data unavailable: '+e.message))}};
-$('reload-config').onclick=()=>loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message);
-$('save-config').onclick=async()=>{try{const edited=JSON.parse($('config-json').value);const payload={generation:edited.generation,hash:edited.hash,zones:edited.zones};const result=await req('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});$('config-state').textContent=`Update ${val(result.apply_status||'pending')} · waiting until the gateway and endpoint report matching hashes`;configPill('Applying…','warn');configAutoPoll=true;configPollAfter=Date.now()+1500}catch(e){$('config-state').textContent='Update rejected: '+e.message;configPill('Not applied','bad')}};
-let firmwarePending=false,firmwareOfflineSeen=false,firmwareBaselineUptime=NaN,firmwareStartedAt=0,firmwareReconnectAt=0;
-$('firmware').addEventListener('change',()=>{const f=$('firmware').files[0];$('firmware-name').textContent=f?`${f.name} · ${Math.ceil(f.size/1024).toLocaleString()} KB`:'No file selected'});
-$('upload').onclick=async()=>{const f=$('firmware').files[0];if(!f)return uploadNote('Choose a firmware image first.','warn');if(f.size>786432)return uploadNote('This image is larger than the 786,432 byte limit.','bad');uploadNote('Uploading…','info');$('upload').disabled=true;try{const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;uploadNote(`Upload ${val(r.status||'accepted')}. Waiting for the endpoint to restart…`,'info')}catch(e){uploadNote('Upload failed: '+e.message,'bad')}finally{$('upload').disabled=false}};
+$('load-program').onclick=()=>loadProgram();$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
+$('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
+$('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};
+$('config-json').addEventListener('input',()=>{try{const v=JSON.parse($('config-json').value);const zones=Array.isArray(v)?v:Array.isArray(v?.zones)?v.zones:null;if(!zones)throw Error('expected a list of zones');const byId=new Map((draftFrom?.zones||[]).map(z=>[z?.zone_id,z]));draftZones=zones.map(z=>zoneRow(z,byId.get(z?.zone_id)));jsonError='';renderZones()}catch(e){jsonError=e.message;editorChanged(false)}});
+$('save-config').onclick=async()=>{if(!draftFrom||jsonError||zoneErrors().length)return;const n=draftZones.length;if(!await confirmSheet('Apply zone mapping?',`${n} zone${n===1?'':'s'} will be sent to the gateway. Both boards may restart briefly while the change is applied.`,'Apply'))return;$('save-config').disabled=true;
+  try{const zones=draftList(),payload={generation:draftFrom.generation,hash:draftFrom.hash,zones};const result=await req('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});draftFrom.zones=clone(zones);$('config-state').textContent=`Update ${val(result.apply_status||'pending')} · waiting until the gateway and endpoint report matching hashes`;configPill('Applying…','warn');configAutoPoll=true;configPollAfter=Date.now()+1500}catch(e){$('config-state').textContent='Update rejected: '+e.message;configPill('Not applied','bad')}finally{editorChanged(false)}};
+let firmwarePending=false,firmwareOfflineSeen=false,firmwareBaselineUptime=NaN,firmwareStartedAt=0,firmwareReconnectAt=0,firmwareFile=null;
+const FW_LIMIT=786432;
+function fwStep(stage){const s={uploading:['active','',''],waiting:['done','active',''],restarted:['done','done','active'],stable:['done','done','done'],timeout:['done','fail',''],failed:['fail','','']}[stage]||['','',''];['upload','restart','stable'].forEach((k,i)=>$('fw-step-'+k).setAttribute('data-state',s[i]))}
+function fw(stage,text,tone){fwStep(stage);uploadNote(text,tone);if(stage==='stable'||stage==='timeout')$('upload').disabled=!firmwareFile||firmwareFile.size>FW_LIMIT}
+function dropzoneClass(){$('dropzone').className='dropzone'+(firmwareFile?firmwareFile.size>FW_LIMIT?' reject':' ready':'')}
+async function pickFirmware(f){firmwareFile=f||null;const bar=$('firmware-size');dropzoneClass();if(!firmwarePending){fwStep('');uploadNote('','info')}
+  if(!f){$('dz-icon').textContent='↑';$('firmware-name').textContent='Choose a firmware image';$('firmware-meta').textContent='or drag a .bin file here · up to 768 KB (786,432 bytes)';bar.style.width='0';$('upload').disabled=true;return}
+  const tooBig=f.size>FW_LIMIT,pct=f.size/FW_LIMIT*100;bar.style.width=Math.min(100,pct)+'%';bar.className=tooBig?'over':'';$('dz-icon').textContent=tooBig?'!':'✓';$('firmware-name').textContent=f.name;$('upload').disabled=tooBig||firmwarePending;
+  let meta=tooBig?`${f.size.toLocaleString()} bytes · too large, the limit is 786,432 bytes`:`${f.size.toLocaleString()} bytes · ${Math.max(1,Math.round(pct))}% of the size limit`;$('firmware-meta').textContent=meta;
+  if(!tooBig){try{const b=new Uint8Array(await f.slice(0,1).arrayBuffer());if(firmwareFile===f&&b[0]!==0xE9)$('firmware-meta').textContent=meta+' · this may not be an ESP32 app image (expected first byte 0xE9)'}catch{}}}
+$('firmware').addEventListener('change',()=>pickFirmware($('firmware').files[0]));
+for(const t of ['dragenter','dragover'])$('dropzone').addEventListener(t,e=>{e.preventDefault();$('dropzone').className='dropzone over'});
+$('dropzone').addEventListener('dragleave',dropzoneClass);
+$('dropzone').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer?.files?.[0];if(!f)return dropzoneClass();try{$('firmware').files=e.dataTransfer.files}catch{}pickFirmware(f)});
+$('upload').onclick=async()=>{const f=firmwareFile;if(!f)return uploadNote('Choose a firmware image first.','warn');if(f.size>FW_LIMIT)return uploadNote('This image is larger than the 786,432 byte limit.','bad');if(!await confirmSheet('Install this firmware?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent to the endpoint, which then restarts to run it.`,'Upload'))return;
+  fw('uploading','Uploading…','info');$('upload').disabled=true;let sent=false;try{const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sent=true;firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;fw('waiting',`Upload ${val(r.status||'accepted')}. Waiting for the endpoint to restart…`,'info')}catch(e){fw('failed','Upload failed: '+e.message,'bad')}finally{if(!sent)$('upload').disabled=false}};
 for(const id of ['filter-zone','filter-stage'])$(id).addEventListener('input',()=>eventView({events:[],boot_id:eventBootId,next_sequence:eventCursor,lost:0}));
 refresh();$('reload-config').click();setInterval(refresh,1000);
 </script></body></html>

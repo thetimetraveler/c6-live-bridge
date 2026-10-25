@@ -1,37 +1,333 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>C6 Live Bridge</title>
 <style>
-:root{color-scheme:dark;font:15px system-ui,sans-serif;background:#101820;color:#e7edf2}body{max-width:1200px;margin:auto;padding:24px}h1{margin:0}h2{font-size:1.15rem;margin-top:0}.muted{color:#a9bdca}.card{background:#1b2934;border:1px solid #344754;border-radius:12px;padding:18px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px}.metric{background:#14212b;border-radius:8px;padding:12px}.metric span{display:block;color:#a9bdca;font-size:.86rem}.metric strong{display:block;font-size:1.15rem;margin-top:4px;overflow-wrap:anywhere}.ok{color:#79dfb7}.bad{color:#ffb782}label{display:inline-grid;gap:5px;margin:6px 10px 6px 0}button,input,select,textarea{font:inherit;color:inherit;background:#101820;border:1px solid #607887;border-radius:6px;padding:8px}button{background:#78dfba;color:#10231c;font-weight:650;cursor:pointer}button:disabled{opacity:.5;cursor:default}textarea{display:block;width:100%;box-sizing:border-box;min-height:180px;font:13px ui-monospace,monospace}table{width:100%;border-collapse:collapse}th,td{padding:9px 7px;border-bottom:1px solid #3b4c57;text-align:left;vertical-align:top}td{overflow-wrap:anywhere}.scroll{overflow:auto}#events tr.gap{background:#4a2b22}.layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}.topology{width:100%;height:auto;background:#14212b;border-radius:8px}.topology .edge{stroke:#496171;stroke-width:4;fill:none;marker-end:url(#arrow)}.topology .return{stroke:#66849a;stroke-dasharray:5 5;marker-end:url(#arrow-return)}.topology .node{fill:#273b48;stroke:#66849a;stroke-width:3}.topology .node.good{fill:#285443;stroke:#78dfba}.topology .node.warn{fill:#56472a;stroke:#ffc978}.topology .node.bad{fill:#5a302c;stroke:#ff927f}.topology .label{fill:#e7edf2;font-size:15px;text-anchor:middle}.topology .detail{fill:#a9bdca;font-size:11px;text-anchor:middle}.topology .flow-pulse{stroke:#78dfba;stroke-width:5;stroke-dasharray:3 13;animation:flow 900ms linear infinite}.topology .flow-pulse.warn{stroke:#ffc978}.topology .flow-pulse.bad{stroke:#ff927f}@keyframes flow{to{stroke-dashoffset:-32}}@media(prefers-reduced-motion:reduce){.topology .flow-pulse{animation:none;stroke-dasharray:none}}@media(max-width:760px){.layout{grid-template-columns:1fr}body{padding:14px}}code{overflow-wrap:anywhere}
+/* Apple system colours (light / dark), materials and motion curves */
+:root{color-scheme:light dark;
+  --bg:#f2f2f7;--card:#fff;--inset:#f2f2f7;--elevated:#fff;
+  --label:#1c1c1e;--label2:rgba(60,60,67,.62);--label3:rgba(60,60,67,.32);
+  --sep:rgba(60,60,67,.18);--fill:rgba(120,120,128,.12);--fill2:rgba(120,120,128,.2);
+  --bar:rgba(242,242,247,.78);--thumb:#fff;
+  --green:#34c759;--orange:#ff9500;--red:#ff3b30;--blue:#007aff;--indigo:#5856d6;--teal:#30b0c7;--purple:#af52de;--gray:#8e8e93;
+  --green-t:rgba(52,199,89,.14);--orange-t:rgba(255,149,0,.15);--red-t:rgba(255,59,48,.13);--blue-t:rgba(0,122,255,.12);--gray-t:rgba(142,142,147,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04);
+  --ease:cubic-bezier(.25,.1,.25,1);--ease-out:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.36,.64,1);
+  --radius:14px;
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;background:var(--bg);color:var(--label)}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#000;--card:#1c1c1e;--inset:#2c2c2e;--elevated:#2c2c2e;
+  --label:#fff;--label2:rgba(235,235,245,.62);--label3:rgba(235,235,245,.3);
+  --sep:rgba(84,84,88,.6);--fill:rgba(120,120,128,.24);--fill2:rgba(120,120,128,.36);
+  --bar:rgba(18,18,20,.72);--thumb:#636366;
+  --green:#30d158;--orange:#ff9f0a;--red:#ff453a;--blue:#0a84ff;--indigo:#5e5ce6;--teal:#40c8e0;--purple:#bf5af2;--gray:#98989d;
+  --green-t:rgba(48,209,88,.18);--orange-t:rgba(255,159,10,.18);--red-t:rgba(255,69,58,.2);--blue-t:rgba(10,132,255,.2);--gray-t:rgba(152,152,157,.18);
+  --shadow:none}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);min-height:100vh}
+main{max-width:1080px;margin:auto;padding:8px 20px 48px}
+h1,h2,h3{margin:0;letter-spacing:-.01em}
+h2{font-size:1.25rem;font-weight:700}
+h3{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);margin:18px 4px 6px}
+p{margin:6px 0}
+.muted{color:var(--label2)}
+.small{font-size:.82rem}
+.good{--tone:var(--green);--tone-t:var(--green-t)}
+.warn{--tone:var(--orange);--tone-t:var(--orange-t)}
+.bad{--tone:var(--red);--tone-t:var(--red-t)}
+.wait,.idle{--tone:var(--gray);--tone-t:var(--gray-t)}
+.info{--tone:var(--blue);--tone-t:var(--blue-t)}
+
+/* Navigation bar with translucent material */
+.bar{position:sticky;top:0;z-index:10;background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--sep)}
+.bar-inner{max-width:1080px;margin:auto;padding:12px 20px 10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem}
+.app-icon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(160deg,var(--teal),var(--blue));color:#fff}
+.live{margin-right:auto;display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:600;color:var(--tone);background:var(--tone-t);padding:4px 10px 4px 9px;border-radius:999px;transition:color .4s var(--ease),background .4s var(--ease)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--tone);position:relative}
+.live.good .live-dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--tone);animation:breathe 2s var(--ease-out) infinite}
+@keyframes breathe{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
+
+/* Segmented control */
+.segmented{position:relative;display:grid;grid-template-columns:repeat(4,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:520px;margin:0 auto}
+.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/4);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
+.segmented[data-tab=activity] .thumb{transform:translateX(100%)}
+.segmented[data-tab=programming] .thumb{transform:translateX(200%)}
+.segmented[data-tab=setup] .thumb{transform:translateX(300%)}
+.segmented button{position:relative;z-index:1;background:none;border:0;color:var(--label);font:inherit;font-size:.86rem;font-weight:500;padding:6px 4px;border-radius:7px;cursor:pointer;transition:opacity .2s}
+.segmented button[aria-selected=true]{font-weight:600}
+.segmented button:active{opacity:.6}
+.tab-badge{display:inline-block;min-width:8px;height:8px;border-radius:50%;background:var(--orange);margin-left:5px;vertical-align:middle}
+.tab-badge:empty{display:none}
+
+/* Panels, cards and grouped lists */
+.panel{animation:panel-in .45s var(--ease-out)}
+.panel[hidden]{display:none}
+@keyframes panel-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.card{background:var(--card);border-radius:var(--radius);padding:18px 20px;margin:16px 0;box-shadow:var(--shadow)}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.lede{color:var(--label2);margin:4px 0 14px;max-width:70ch}
+.hero{display:flex;gap:16px;align-items:center;background:var(--card);border-radius:var(--radius);padding:20px;margin:20px 0 12px;box-shadow:var(--shadow);transition:background .4s var(--ease)}
+.hero-glyph{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:1.6rem;font-weight:700;color:#fff;background:var(--tone);transition:background .5s var(--ease),transform .5s var(--spring)}
+.hero.good .hero-glyph{animation:pop .6s var(--spring)}
+@keyframes pop{0%{transform:scale(.6)}100%{transform:scale(1)}}
+.hero h1{font-size:1.6rem;font-weight:700;line-height:1.2}
+.hero p{color:var(--label2);margin:4px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.tile{background:var(--card);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;transition:transform .3s var(--spring)}
+.tile-dot{width:10px;height:10px;border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px var(--tone-t);transition:background .4s var(--ease),box-shadow .4s var(--ease)}
+.tile-label{font-size:.8rem;color:var(--label2);font-weight:500}
+.tile strong{grid-column:1/-1;font-size:1.25rem;font-weight:700;margin-top:6px;color:var(--tone)}
+.tile small{grid-column:1/-1;color:var(--label2);font-size:.8rem;margin-top:2px;overflow-wrap:anywhere}
+.list{background:var(--inset);border-radius:10px;overflow:hidden}
+.row{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--sep)}
+.row:last-child{border-bottom:0}
+.row span{color:var(--label)}
+.row strong{font-weight:500;color:var(--label2);text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.row strong.warn,.row strong.bad{color:var(--tone);font-weight:600}
+.groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 16px}
+details.card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:1.25rem}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::after{content:"›";font-size:1.4rem;color:var(--label3);transform:rotate(90deg);transition:transform .35s var(--spring)}
+details[open].card>summary::after{transform:rotate(-90deg)}
+details[open].card>summary~*{animation:panel-in .35s var(--ease-out)}
+
+/* Pills */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--tone);background:var(--tone-t);white-space:nowrap;transition:color .3s,background .3s}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.code{display:block;font:11px ui-monospace,"SF Mono",Menlo,monospace;color:var(--label3);margin-top:3px}
+
+/* Controls */
+label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.82rem;color:var(--label2);font-weight:500}
+input,select,textarea{font:inherit;font-size:15px;color:var(--label);background:var(--fill);border:0;border-radius:10px;padding:9px 12px;outline:none;transition:box-shadow .2s var(--ease)}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px var(--blue-t),0 0 0 1px var(--blue)}
+textarea{display:block;width:100%;min-height:220px;font:13px/1.5 ui-monospace,"SF Mono",Menlo,monospace;resize:vertical}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:9px 18px;cursor:pointer;background:var(--blue);color:#fff;transition:transform .25s var(--spring),opacity .2s,filter .2s}
+button:hover{filter:brightness(1.06)}
+button:active{transform:scale(.96)}
+button:disabled{opacity:.4;cursor:default;transform:none}
+button.secondary{background:var(--blue-t);color:var(--blue)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.file{position:relative;display:inline-flex;align-items:center;gap:10px;margin:0;color:var(--label);font-size:15px}
+.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file .btn{background:var(--blue-t);color:var(--blue);font-weight:600;border-radius:10px;padding:9px 18px}
+.steps{margin:4px 0 14px;padding-left:20px;color:var(--label2)}
+.steps li{margin:3px 0}
+.notice{border-radius:10px;padding:10px 14px;background:var(--tone-t);color:var(--label);margin-top:12px}
+.notice:empty{display:none}
+
+/* Tables */
+.scroll{overflow:auto;margin:0 -4px}
+table{width:100%;min-width:560px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);text-align:left;padding:8px 10px;border-bottom:.5px solid var(--sep);white-space:nowrap}
+td{padding:11px 10px;border-bottom:.5px solid var(--sep);vertical-align:top;overflow-wrap:anywhere}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .2s}
+tbody tr:hover{background:var(--fill)}
+tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
+@keyframes row-in{from{opacity:0;background:var(--blue-t)}to{opacity:1}}
+#events tr.gap{background:var(--orange-t)}
+#events tr.gap td:first-child{box-shadow:inset 3px 0 var(--orange)}
+.empty{text-align:center;color:var(--label3);padding:22px}
+.sub{display:block;color:var(--label2);font-size:.8rem}
+.meter{display:block;height:4px;border-radius:2px;background:var(--fill2);margin-top:6px;max-width:120px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .6s var(--ease-out)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:0 4px;margin-bottom:6px}
+
+/* Topology */
+.topology{width:100%;min-width:680px;height:auto;display:block;background:var(--inset);border-radius:12px}
+.topology .edge{stroke:var(--label3);stroke-width:3;stroke-linecap:round;fill:none;marker-end:url(#arrow);transition:stroke .3s}
+.topology .return{stroke:var(--label3);stroke-width:2;stroke-dasharray:4 6;stroke-linecap:round;marker-end:url(#arrow-return)}
+.topology .node{fill:var(--card);stroke:var(--label3);stroke-width:2.5;transition:fill .45s var(--ease),stroke .45s var(--ease)}
+.topology .node.good{fill:var(--green-t);stroke:var(--green)}
+.topology .node.warn{fill:var(--orange-t);stroke:var(--orange)}
+.topology .node.bad{fill:var(--red-t);stroke:var(--red)}
+.topology .step{fill:var(--label2);font-size:15px;font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.topology .label{fill:var(--label);font-size:15px;font-weight:600;text-anchor:middle}
+.topology .detail{fill:var(--label2);font-size:12px;text-anchor:middle;transition:fill .3s}
+.topology .detail.good{fill:var(--green)}.topology .detail.warn{fill:var(--orange)}.topology .detail.bad{fill:var(--red)}
+.topology .lane{fill:var(--label3);font-size:11px;font-weight:600;letter-spacing:.06em}
+.topology .arrowhead{fill:var(--label3)}
+.topology .flow-pulse{stroke:var(--green);stroke-width:4;stroke-dasharray:2 12;animation:flow .9s linear infinite;filter:drop-shadow(0 0 3px var(--green))}
+.topology .flow-pulse.warn{stroke:var(--orange);filter:drop-shadow(0 0 3px var(--orange))}
+.topology .flow-pulse.bad{stroke:var(--red);filter:drop-shadow(0 0 3px var(--red))}
+@keyframes flow{to{stroke-dashoffset:-28}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:.8rem;color:var(--label2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:50%;border:2px solid var(--tone);background:var(--tone-t)}
+.legend b{width:22px;border-top:3px solid var(--label3)}
+.legend b.dash{border-top:2px dashed var(--label3)}
+#flow-note{font-weight:500;color:var(--label)}
+
+/* Programming chart */
+.chart{width:100%;height:auto;background:var(--inset);border-radius:12px;grid-column:1/-1}
+.chart .grid-line{stroke:var(--sep)}
+.chart .axis{fill:var(--label2);font-size:11px}
+.s0{stroke:var(--green);fill:var(--green)}.s1{stroke:var(--blue);fill:var(--blue)}.s2{stroke:var(--orange);fill:var(--orange)}.s3{stroke:var(--purple);fill:var(--purple)}
+.chart polyline{fill:none;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:14px}
+.metric{background:var(--inset);border-radius:10px;padding:12px 14px}
+.metric span{display:block;color:var(--label2);font-size:.8rem}
+.metric strong{display:block;font-size:1.05rem;margin-top:3px;overflow-wrap:anywhere}
+pre{background:var(--inset);border-radius:10px;padding:12px 14px;font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;overflow:auto;max-height:320px;margin:12px 0 0}
+code{overflow-wrap:anywhere}
+
+@media(max-width:700px){.hero{align-items:flex-start}.hero-glyph{width:44px;height:44px;font-size:1.3rem}main{padding:4px 14px 40px}.bar-inner{padding:10px 14px 8px}.hero{padding:16px}.hero h1{font-size:1.3rem}.card{padding:16px}.segmented button{font-size:.8rem}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.topology .flow-pulse{stroke-dasharray:none}}
 </style></head><body>
-<h1>C6 Live Bridge</h1><p class="muted">Live gateway and endpoint view. Gateway credentials remain inside the add-on.</p>
-<section class="card"><h2>Gateway health</h2><div id="headline" role="status" class="bad">Connecting…</div><div class="grid" id="health"></div><p id="health-note" class="muted"></p></section>
-<section class="card"><h2>Live topology and flow</h2><svg id="topology" class="topology" viewBox="0 0 1080 170" role="img" aria-label="Live Thread to endpoint to UART to gateway to N4 topology and report return path"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#66849a"/></marker><marker id="arrow-return" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#66849a"/></marker></defs><g id="edges"><line id="edge-thread-endpoint" class="edge" x1="120" y1="66" x2="250" y2="66"/><line id="edge-endpoint-uart" class="edge" x1="300" y1="66" x2="430" y2="66"/><line id="edge-uart-gateway" class="edge" x1="480" y1="66" x2="610" y2="66"/><line id="edge-gateway-n4" class="edge" x1="660" y1="66" x2="790" y2="66"/><line id="edge-n4-report" class="edge" x1="840" y1="66" x2="970" y2="66"/><line id="return-report-n4" class="return" x1="970" y1="75" x2="840" y2="75"/><line id="return-n4-gateway" class="return" x1="790" y1="75" x2="660" y2="75"/><line id="return-gateway-uart" class="return" x1="610" y1="75" x2="480" y2="75"/><line id="return-uart-endpoint" class="return" x1="430" y1="75" x2="300" y2="75"/><line id="return-endpoint-thread" class="return" x1="250" y1="75" x2="120" y2="75"/></g><g><circle id="node-thread" class="node" cx="92" cy="70" r="24"/><circle id="node-endpoint" class="node" cx="272" cy="70" r="24"/><circle id="node-uart" class="node" cx="452" cy="70" r="24"/><circle id="node-gateway" class="node" cx="632" cy="70" r="24"/><circle id="node-n4" class="node" cx="812" cy="70" r="24"/><circle id="node-report" class="node" cx="992" cy="70" r="24"/><text class="label" x="92" y="120">Thread</text><text id="detail-thread" class="detail" x="92" y="139">waiting</text><text class="label" x="272" y="120">Endpoint</text><text id="detail-endpoint" class="detail" x="272" y="139">waiting</text><text class="label" x="452" y="120">UART</text><text id="detail-uart" class="detail" x="452" y="139">waiting</text><text class="label" x="632" y="120">Gateway</text><text id="detail-gateway" class="detail" x="632" y="139">waiting</text><text class="label" x="812" y="120">N4 output</text><text id="detail-n4" class="detail" x="812" y="139">unobserved</text><text class="label" x="992" y="120">Report return</text><text id="detail-report" class="detail" x="992" y="139">unobserved</text></g></svg><p id="flow-note" class="muted">No event outcome is inferred; the flow animates only from observed event records.</p></section>
-<div class="layout"><section class="card"><h2>Endpoints</h2><div class="scroll"><table><thead><tr><th>Zone</th><th>Device</th><th>Requested</th><th>Confirmed</th><th>Freshness</th></tr></thead><tbody id="devices"></tbody></table></div><p id="device-note" class="muted">Waiting for live device data.</p></section>
-<section class="card"><h2>Programming inspector</h2><p class="muted">Read-only gateway programming snapshot, when available. The gateway currently returns the complete zone snapshot on page 0.</p><label>Zone <input id="program-zone" type="number" min="0" value="0"></label><button id="load-program">Load snapshot</button><div id="program-viz" class="grid"></div><pre id="program" class="muted">No programming data loaded.</pre></section></div>
-<section class="card"><h2>Event timeline</h2><label>Zone filter <input id="filter-zone" placeholder="all"></label><label>Stage <select id="filter-stage"><option value="">All observed stages</option></select></label><span id="cursor-note" class="muted"></span><div class="scroll"><table><thead><tr><th>Time since boot</th><th>Zone</th><th>Stage</th><th>Requested</th><th>Confirmed</th><th>Event</th></tr></thead><tbody id="events"></tbody></table></div><p id="events-note" class="muted">No events yet.</p></section>
-<section class="card"><h2>Transactional mapping configuration</h2><p id="config-state" class="muted">Loading configuration…</p><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><button id="save-config">Submit mapping update</button><button id="reload-config">Reload</button><p class="muted">Edits are submitted as one generation/hash transaction. Mapping changes may briefly reboot both boards. A pending apply remains pending until reconnect and matching hashes confirm it.</p></section>
-<section class="card"><h2>Endpoint firmware</h2><label>Firmware image <input id="firmware" type="file"></label><button id="upload">Upload firmware</button><p class="muted">Maximum image size: 786,432 bytes. Upload is sent to the gateway endpoint update route.</p><p id="upload-note" role="status"></p></section>
+<header class="bar"><div class="bar-inner">
+  <div class="brand"><span class="app-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="16" r="1.6" fill="currentColor"/></svg></span>C6 Live Bridge</div>
+  <div id="live" class="live wait" role="status"><span class="live-dot"></span><span id="live-text">Connecting</span></div>
+  <nav id="tabs" class="segmented" data-tab="overview" role="tablist" aria-label="Sections"><span class="thumb"></span>
+    <button id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview">Overview</button>
+    <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity">Activity<span id="activity-badge" class="tab-badge"></span></button>
+    <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming">Programming</button>
+    <button id="tab-setup" role="tab" aria-selected="false" aria-controls="panel-setup">Setup</button>
+  </nav>
+</div></header>
+<main>
+
+<div id="panel-overview" class="panel" role="tabpanel">
+  <section id="hero" class="hero wait" aria-live="polite"><div id="hero-glyph" class="hero-glyph" aria-hidden="true">…</div><div><h1 id="headline">Connecting to the gateway…</h1><p id="headline-detail">Live status refreshes every second. Gateway credentials stay inside the add-on.</p><p id="health-note" class="small"></p></div></section>
+  <div id="summary" class="tiles"></div>
+
+  <section class="card">
+    <div class="card-head"><h2>How commands flow</h2></div>
+    <p class="lede">A lighting command travels left to right along the solid arrows, from the Thread network to the N4 lighting output. Confirmations and reports travel back along the dashed arrows. Arrows only animate when the gateway reports a real event.</p>
+    <div class="scroll"><svg id="topology" class="topology" viewBox="0 0 1080 190" role="img" aria-label="Live Thread to endpoint to UART to gateway to N4 topology and report return path"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrowhead" d="M0,0 L8,4 L0,8 z"/></marker><marker id="arrow-return" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrowhead" d="M0,0 L8,4 L0,8 z"/></marker></defs>
+      <text class="lane" x="125" y="30">COMMAND →</text><text class="lane" x="125" y="112">← REPORT</text>
+      <g id="edges"><line id="edge-thread-endpoint" class="edge" x1="124" y1="64" x2="236" y2="64"/><line id="edge-endpoint-uart" class="edge" x1="304" y1="64" x2="416" y2="64"/><line id="edge-uart-gateway" class="edge" x1="484" y1="64" x2="596" y2="64"/><line id="edge-gateway-n4" class="edge" x1="664" y1="64" x2="776" y2="64"/><line id="edge-n4-report" class="edge" x1="844" y1="64" x2="956" y2="64"/><line id="return-report-n4" class="return" x1="956" y1="80" x2="844" y2="80"/><line id="return-n4-gateway" class="return" x1="776" y1="80" x2="664" y2="80"/><line id="return-gateway-uart" class="return" x1="596" y1="80" x2="484" y2="80"/><line id="return-uart-endpoint" class="return" x1="416" y1="80" x2="304" y2="80"/><line id="return-endpoint-thread" class="return" x1="236" y1="80" x2="124" y2="80"/></g>
+      <g><circle id="node-thread" class="node" cx="92" cy="72" r="26"><title>Thread mesh network the endpoint listens on</title></circle><circle id="node-endpoint" class="node" cx="272" cy="72" r="26"><title>Endpoint board (ESP32-C6 on Thread)</title></circle><circle id="node-uart" class="node" cx="452" cy="72" r="26"><title>Serial (UART) link between the two boards</title></circle><circle id="node-gateway" class="node" cx="632" cy="72" r="26"><title>Gateway board (ESP32-C6 on Wi-Fi)</title></circle><circle id="node-n4" class="node" cx="812" cy="72" r="26"><title>N4 lighting output the gateway writes to</title></circle><circle id="node-report" class="node" cx="992" cy="72" r="26"><title>Status reported back to Thread</title></circle>
+        <text class="step" x="92" y="72">1</text><text class="step" x="272" y="72">2</text><text class="step" x="452" y="72">3</text><text class="step" x="632" y="72">4</text><text class="step" x="812" y="72">5</text><text class="step" x="992" y="72">6</text>
+        <text class="label" x="92" y="138">Thread</text><text id="detail-thread" class="detail" x="92" y="158">waiting</text><text class="label" x="272" y="138">Endpoint</text><text id="detail-endpoint" class="detail" x="272" y="158">waiting</text><text class="label" x="452" y="138">UART link</text><text id="detail-uart" class="detail" x="452" y="158">waiting</text><text class="label" x="632" y="138">Gateway</text><text id="detail-gateway" class="detail" x="632" y="158">waiting</text><text class="label" x="812" y="138">N4 output</text><text id="detail-n4" class="detail" x="812" y="158">unobserved</text><text class="label" x="992" y="138">Report</text><text id="detail-report" class="detail" x="992" y="158">unobserved</text></g></svg></div>
+    <p id="flow-note" class="small">No event outcome is inferred; the flow animates only from observed event records.</p>
+    <div class="legend" aria-hidden="true"><span><i class="good"></i>Healthy</span><span><i class="warn"></i>Needs attention</span><span><i class="bad"></i>Problem</span><span><i class="idle"></i>Not observed yet</span><span><b></b>Command path</span><span><b class="dash"></b>Report path</span></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Lights</h2><span id="device-count" class="muted small"></span></div>
+    <p class="lede">Each zone shows the level that was asked for and the level the lights actually confirmed. “Stale” means no confirmation in the last 2 minutes.</p>
+    <div class="scroll"><table><thead><tr><th>Zone</th><th>Device</th><th>Requested</th><th>Confirmed</th><th>Last confirmation</th></tr></thead><tbody id="devices"></tbody></table></div>
+    <p id="device-note" class="muted small">Waiting for live device data.</p>
+  </section>
+
+  <details class="card"><summary>Diagnostics</summary>
+    <p class="lede">Raw counters from both boards. Values highlighted in orange indicate errors worth investigating.</p>
+    <div id="health" class="groups"></div>
+  </details>
+</div>
+
+<div id="panel-activity" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
+    <p class="lede">Every step the bridge reports, newest first. Times are measured from the gateway's last restart.</p>
+    <div class="toolbar"><label>Zone <input id="filter-zone" placeholder="All zones" inputmode="numeric" size="9"></label><label>Step <select id="filter-stage"><option value="">All observed stages</option></select></label></div>
+    <div class="scroll"><table><thead><tr><th>Since boot</th><th>Zone</th><th>What happened</th><th>Requested</th><th>Confirmed</th><th>Event</th></tr></thead><tbody id="events"></tbody></table></div>
+    <p id="events-note" class="muted small">No events yet.</p>
+    <p id="cursor-note" class="muted small"></p>
+  </section>
+</div>
+
+<div id="panel-programming" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Programming</h2></div>
+    <p class="lede">A read-only look at what the gateway has programmed for one zone: its daily level schedule (shows) and presets. Nothing here changes the device.</p>
+    <div class="toolbar"><label>Zone <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" style="margin:6px 0">Load snapshot</button></div>
+    <div id="program-viz" class="metrics"></div>
+    <details><summary class="muted small" style="cursor:pointer;margin-top:12px">Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
+  </section>
+</div>
+
+<div id="panel-setup" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Zone mapping</h2><span id="config-pill" class="pill wait">Loading</span></div>
+    <p id="config-state" class="muted">Loading configuration…</p>
+    <ol class="steps"><li>Edit the zones below (name, N4 group, serial, warm-dim curve).</li><li>Select <b>Apply mapping</b>. The change is sent as one transaction.</li><li>Both boards may briefly restart. The change shows as pending until both boards report the same hash.</li></ol>
+    <textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea>
+    <div class="actions"><button id="save-config">Apply mapping</button><button id="reload-config" class="secondary">Discard edits &amp; reload</button></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Endpoint firmware</h2></div>
+    <p class="lede">Upload a new firmware image for the endpoint board. It's sent through the gateway, then the page watches for the endpoint to restart. Maximum size: 768 KB (786,432 bytes).</p>
+    <div class="actions"><label class="file"><span class="btn">Choose image…</span><span id="firmware-name" class="muted">No file selected</span><input id="firmware" type="file"></label><button id="upload">Upload firmware</button></div>
+    <p id="upload-note" class="notice info" role="status"></p>
+  </section>
+</div>
+</main>
 <script>
-const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null;let refreshing=false;
+const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null;let refreshing=false,shownEvents=new Set();
 async function req(path,opts){const r=await fetch(api(path),opts);const ct=r.headers.get('content-type')||'';const d=ct.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(d?.error||`HTTP ${r.status}`);return d}
 function val(v){return v===undefined||v===null?'—':typeof v==='object'?JSON.stringify(v):String(v)}
-function cell(row,text){const td=document.createElement('td');td.textContent=text;row.append(td)}
-function uptime(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000)),d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);s%=60;return (d?d+'d ':'')+[h,m,s].map(x=>String(x).padStart(2,'0')).join(':')+' since boot'}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+function cell(row,text){const td=document.createElement('td');td.textContent=text;row.append(td);return td}
+function num(v){return Number.isFinite(Number(v))&&v!==null&&typeof v!=='boolean'?Number(v).toLocaleString():val(v)}
+function clock(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000)),d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);s%=60;return (d?d+'d ':'')+[h,m,s].map(x=>String(x).padStart(2,'0')).join(':')}
+function duration(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000));const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`}
 function roleName(role){return ({0:'disabled',1:'detached',2:'child',3:'router',4:'leader'})[Number(role)]||'unknown'}
-function node(id,kind,label){const el=$('node-'+id);el.setAttribute('class','node '+kind);$('detail-'+id).textContent=label}
-function pulse(ids,tone=''){for(const id of ids){const el=$(id);el.setAttribute('class',el.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
-function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway','edge-gateway-n4','edge-n4-report','return-report-n4','return-n4-gateway','return-gateway-uart','return-uart-endpoint','return-endpoint-thread']){$(id).setAttribute('class',$(id).getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,''))}const role=roleName(s.thread_role);node('thread',s.endpoint_online?'good':(role==='disabled'?'bad':'warn'),role);node('endpoint',s.endpoint_online?'good':'warn',s.endpoint_online?'online':'offline');node('uart',s.endpoint_online&&Number(s.uart_frames_ok)>0?'good':'warn',`${val(s.uart_frames_ok)} frames · ${val(s.uart_crc_errors)} CRC`);node('gateway',s.wifi_up?'good':'bad',s.wifi_up?'Wi-Fi up':'Wi-Fi down');node('n4','', 'no recent outcome');node('report','', 'no recent report');const latest=eventRows[eventRows.length-1],stage=latest?.stage;const age=Number(s.gateway_uptime_ms)-Number(latest?.ts_ms);const fresh=!!stage&&Number.isFinite(age)&&age>=0&&age<=10000;let note=stage?`Last observed event: ${stage}${latest.zone>=0?` · zone ${latest.zone}`:''}.`: 'No event outcome has been observed yet.';if(stage==='applied'){node('n4','good','PUT applied');pulse(['edge-gateway-n4'])}else if(stage==='failed'){node('n4','bad','PUT failed');pulse(['edge-gateway-n4'],'bad')}else if(['observed','correction','confirmed'].includes(stage)){node('n4',stage==='correction'?'warn':'good',stage);pulse(['return-n4-gateway','return-gateway-uart','return-uart-endpoint'],stage==='correction'?'warn':'')}else if(stage==='requested'){pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'])}else if(stage==='command-dropped'){node('endpoint','warn','command dropped');pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'bad')}if(['report-sent','report-failed'].includes(stage)){node('report',stage==='report-sent'?'good':'bad',stage);pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='report-failed'?'bad':'')}else if(['program-installed','program-rejected'].includes(stage)){node('report',stage==='program-installed'?'good':'bad',stage);pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='program-rejected'?'bad':'')}if(stage&&!fresh)note+=` Event age ${uptime(age)}; no active pulse.`;$('flow-note').textContent=note}
-function health(s){latestStatus=s;const role=roleName(s.thread_role);$('headline').textContent=`Gateway Wi-Fi ${s.wifi_up?'up':'down'} · Thread ${role} · endpoint ${s.endpoint_online?'online':'offline'}`;$('headline').className=(s.wifi_up&&s.endpoint_online)?'ok':'bad';const fields=[['Wi-Fi',s.wifi_up],['Endpoint',s.endpoint_online],['Configuration match',s.config_match],['Thread role',role],['RLOC16',s.rloc16],['Gateway uptime',s.gateway_uptime_ms===undefined?'—':uptime(s.gateway_uptime_ms)],['Endpoint uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Endpoint RX',s.endpoint_rx_messages],['RX duplicates',s.endpoint_rx_duplicates],['Commands emitted',s.endpoint_commands_emitted],['PUT successes',s.puts_ok],['PUT failures',s.puts_failed],['Dropped mismatch',s.dropped_mismatch],['UART bytes',s.uart_bytes],['UART frames',s.uart_frames_ok],['UART CRC errors',s.uart_crc_errors],['Config hash',s.config_hash]];$('health').replaceChildren(...fields.map(([k,v])=>{const d=document.createElement('div');d.className='metric';const a=document.createElement('span');a.textContent=k;const b=document.createElement('strong');b.textContent=typeof v==='boolean'?(v?'Yes':'No'):val(v);d.append(a,b);return d}));$('health-note').textContent='Gateway status sampled '+new Date().toLocaleTimeString();renderFlow(s)}
-function deviceView(data){const rows=data.zones||[];$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));cell(tr,[d.name,d.serial,d.n4_group].filter(Boolean).join(' · ')||'—');cell(tr,d.requested===null?'—':val(d.requested));const c=d.confirmed;cell(tr,c?`${c.level_x100===undefined?'':(c.level_x100/100)+'%'}${c.source===undefined?'':' · '+c.source}${c.seq===undefined?'':' · seq '+c.seq}`:'—');const at=c?.at_ms??d.last_confirmed_ms;const age=Number(latestStatus?.gateway_uptime_ms)-Number(at);cell(tr,at===undefined||at===null?'No confirmation · stale':!Number.isFinite(age)?'Age unavailable':age>120000?`Stale · last confirmation ${uptime(age)} ago`:`Fresh · confirmed ${uptime(age)} ago`);$('devices').append(tr)}$('device-note').textContent=rows.length?`${rows.length} configured zone endpoint records · stale threshold 120 seconds; timestamps use gateway uptime.`:'Gateway has not reported zone records.'}
-function renderProgram(data){const viz=$('program-viz');viz.replaceChildren();const shows=Array.isArray(data.shows)?data.shows:[];const all=shows.flatMap(s=>Array.isArray(s.knots)?s.knots:[]);const maxLevel=Math.max(1,...all.map(k=>Number(k.level)||0));if(all.length){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 640 250');svg.setAttribute('role','img');svg.setAttribute('aria-label','Programmed show level curves over 24 hours');svg.style.cssText='width:100%;height:auto;background:#14212b;border-radius:8px';for(const y of [30,75,120,165,210]){const line=document.createElementNS(svg.namespaceURI,'line');line.setAttribute('x1','38');line.setAttribute('x2','630');line.setAttribute('y1',String(y));line.setAttribute('y2',String(y));line.setAttribute('stroke','#344754');svg.append(line)}for(const [i,show] of shows.entries()){const knots=Array.isArray(show.knots)?show.knots:[];if(!knots.length)continue;const pts=knots.map(k=>`${38+Math.max(0,Math.min(1440,Number(k.minute)||0))*592/1440},${220-(Number(k.level)||0)*185/maxLevel}`).join(' ');const poly=document.createElementNS(svg.namespaceURI,'polyline');poly.setAttribute('points',pts);poly.setAttribute('fill','none');poly.setAttribute('stroke',['#78dfba','#8cb8ff','#ffc978','#de9fff'][i%4]);poly.setAttribute('stroke-width','3');svg.append(poly);for(const k of knots){const dot=document.createElementNS(svg.namespaceURI,'circle');dot.setAttribute('cx',String(38+Math.max(0,Math.min(1440,Number(k.minute)||0))*592/1440));dot.setAttribute('cy',String(220-(Number(k.level)||0)*185/maxLevel));dot.setAttribute('r','4');dot.setAttribute('fill',['#78dfba','#8cb8ff','#ffc978','#de9fff'][i%4]);const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=`Show ${show.id}: ${k.minute} min, level ${k.level}, CCT ${k.cct}`;dot.append(title);svg.append(dot)}}for(const [label,x] of [['00:00',38],['06:00',186],['12:00',334],['18:00',482],['24:00',630]]){const text=document.createElementNS(svg.namespaceURI,'text');text.setAttribute('x',String(x));text.setAttribute('y','243');text.setAttribute('fill','#a9bdca');text.setAttribute('font-size','11');text.textContent=label;svg.append(text)}viz.append(svg)}for(const p of data.presets||[]){const box=document.createElement('div');box.className='metric';const label=document.createElement('span');label.textContent=`Preset ${p.preset} · ${p.type}`;const amount=document.createElement('strong');amount.textContent=`${p.value}${p.field2===null?'':' · '+p.field2}${p.field5===null?'':' · '+p.field5}`;box.append(label,amount);viz.append(box)}if(data.selected!==undefined){const box=document.createElement('div');box.className='metric';box.textContent=`Selected ${data.selected?'yes':'no'} · show ${val(data.show)} · members ${(data.members||[]).join(', ')}`;viz.append(box)}}
-function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0}for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}const lost=Number(data.lost)||0;const from=Number(data.oldest);$('cursor-note').textContent=`boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(lost?` · ${lost} events missed`:'');$('events').replaceChildren();const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All observed stages'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:s})));select.value=stages.includes(previous)?previous:'';for(const e of eventRows.slice().reverse()){if(zone&&String(e.zone)!==zone||stage&&String(e.stage)!==stage)continue;const tr=document.createElement('tr');if(lost&&Number.isFinite(from)&&Number(e.id)===from)tr.className='gap';cell(tr,uptime(e.ts_ms));cell(tr,val(e.zone));cell(tr,val(e.stage));cell(tr,val(e.requested));cell(tr,val(e.confirmed));cell(tr,`#${val(e.id)}`);$('events').append(tr)}$('events-note').textContent=lost?`Cursor gap reported by gateway: ${lost} events no longer available.`:eventRows.length?'Live event feed; archive retained for seven days on the HA host. Event times are since gateway boot.':'No events received.';if(latestStatus)renderFlow(latestStatus)}
+function hex16(v){return Number.isInteger(Number(v))&&v!==null?'0x'+Number(v).toString(16).toUpperCase().padStart(4,'0'):val(v)}
+const STAGES={requested:['Command received','good'],applied:['Applied to N4','good'],failed:['N4 write failed','bad'],observed:['N4 level observed','good'],correction:['N4 level corrected','warn'],confirmed:['Level confirmed','good'],'command-dropped':['Command dropped','bad'],'report-sent':['Report sent to Thread','good'],'report-failed':['Report failed','bad'],'program-installed':['Programming installed','good'],'program-rejected':['Programming rejected','bad']};
+function stageInfo(stage){return STAGES[stage]||[typeof stage==='string'?stage:'Unknown event','info']}
+function pill(text,tone){return el('span','pill '+tone,text)}
+function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$('detail-'+id).setAttribute('class','detail '+kind);$('detail-'+id).textContent=label}
+function pulse(ids,tone=''){for(const id of ids){const e=$(id);e.setAttribute('class',e.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
+function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway','edge-gateway-n4','edge-n4-report','return-report-n4','return-n4-gateway','return-gateway-uart','return-uart-endpoint','return-endpoint-thread']){$(id).setAttribute('class',$(id).getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,''))}
+  const role=roleName(s.thread_role);node('thread',s.endpoint_online?'good':(role==='disabled'?'bad':'warn'),role);node('endpoint',s.endpoint_online?'good':'warn',s.endpoint_online?'online':'offline');node('uart',s.endpoint_online&&Number(s.uart_frames_ok)>0?'good':'warn',`${num(s.uart_frames_ok)} frames · ${num(s.uart_crc_errors)} CRC`);node('gateway',s.wifi_up?'good':'bad',s.wifi_up?'Wi-Fi up':'Wi-Fi down');node('n4','','no recent outcome');node('report','','no recent report');
+  const latest=eventRows[eventRows.length-1],stage=latest?.stage;const age=Number(s.gateway_uptime_ms)-Number(latest?.ts_ms);const fresh=!!stage&&Number.isFinite(age)&&age>=0&&age<=10000;
+  let note=stage?`Last event: ${stageInfo(stage)[0]}${latest.zone>=0?` · zone ${latest.zone}`:''}${Number.isFinite(age)&&age>=0?` · ${duration(age)} ago`:''}.`:'No event outcome has been observed yet.';
+  if(stage==='applied'){node('n4','good','PUT applied');pulse(['edge-gateway-n4'])}else if(stage==='failed'){node('n4','bad','PUT failed');pulse(['edge-gateway-n4'],'bad')}else if(['observed','correction','confirmed'].includes(stage)){node('n4',stage==='correction'?'warn':'good',stage);pulse(['return-n4-gateway','return-gateway-uart','return-uart-endpoint'],stage==='correction'?'warn':'')}else if(stage==='requested'){pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'])}else if(stage==='command-dropped'){node('endpoint','warn','command dropped');pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'bad')}
+  if(['report-sent','report-failed'].includes(stage)){node('report',stage==='report-sent'?'good':'bad',stage);pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='report-failed'?'bad':'')}else if(['program-installed','program-rejected'].includes(stage)){node('report',stage==='program-installed'?'good':'bad',stage);pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='program-rejected'?'bad':'')}
+  if(stage&&!fresh)note+=' Arrows are still because the last event is older than 10 seconds.';$('flow-note').textContent=note}
+function setHero(tone,title,detail,online=true){$('hero').className='hero '+tone;$('hero-glyph').textContent={good:'✓',warn:'!',bad:'✕',wait:'…'}[tone];$('headline').textContent=title;$('headline-detail').textContent=detail;$('live').className='live '+(online?'good':'bad');$('live-text').textContent=online?'Live':'Reconnecting'}
+function tile(label,value,tone,hint){const d=el('div','tile '+tone);d.append(el('span','tile-dot'),el('span','tile-label',label),el('strong','',value),el('small','',hint||' '));return d}
+function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row');r.append(el('span','',k),el('strong',tone||'',v));list.append(r)}g.append(el('h3','',title),list);return g}
+const errTone=v=>Number(v)>0?'warn':'';
+function health(s){latestStatus=s;const role=roleName(s.thread_role),roleTone=['child','router','leader'].includes(role)?'good':role==='disabled'?'bad':'warn';
+  const issues=[];if(!s.wifi_up)issues.push(['bad','Gateway Wi-Fi is down']);if(!s.endpoint_online)issues.push(['warn','The endpoint board is offline']);if(s.config_match===false)issues.push(['warn','Zone mapping is not yet in sync on both boards']);if(s.endpoint_online&&roleTone!=='good')issues.push([roleTone,`The Thread radio is ${role}`]);
+  const tone=issues.some(i=>i[0]==='bad')?'bad':issues.length?'warn':'good';
+  setHero(tone,tone==='good'?'Everything is working':issues.length===1?issues[0][1]:`${issues.length} things need attention`,tone==='good'?`Gateway on Wi-Fi · endpoint connected over Thread as ${role} · mapping in sync.`:issues.map(i=>i[1]).join(' · ')+'.');
+  $('summary').replaceChildren(
+    tile('Gateway Wi-Fi',s.wifi_up?'Connected':'Down',s.wifi_up?'good':'bad',s.gateway_uptime_ms===undefined?'':'Up for '+duration(s.gateway_uptime_ms)),
+    tile('Thread network',role[0].toUpperCase()+role.slice(1),s.endpoint_online?roleTone:'warn','RLOC16 '+hex16(s.rloc16)),
+    tile('Endpoint board',s.endpoint_online?'Online':'Offline',s.endpoint_online?'good':'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000)),
+    tile('Zone mapping',s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown',s.config_match===true?'good':s.config_match===false?'warn':'wait','Hash '+val(s.config_hash)));
+  const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
+  $('health').replaceChildren(
+    group('Gateway',[['Wi-Fi connected',yn(s.wifi_up),s.wifi_up===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'—':clock(s.gateway_uptime_ms)],['N4 writes succeeded',num(s.puts_ok)],['N4 writes failed',num(s.puts_failed),errTone(s.puts_failed)],['Configuration match',yn(s.config_match),s.config_match===false?'warn':''],['Configuration hash',val(s.config_hash)]]),
+    group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
+    group('UART link',[['Bytes',num(s.uart_bytes)],['Frames OK',num(s.uart_frames_ok)],['CRC errors',num(s.uart_crc_errors),errTone(s.uart_crc_errors)]]));
+  $('health-note').textContent='Updated '+new Date().toLocaleTimeString();renderFlow(s)}
+function deviceView(data){const rows=data.zones||[];$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const dev=cell(tr,d.name||'—');const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));cell(tr,d.requested===null?'—':val(d.requested));
+    const c=d.confirmed,td=cell(tr,c?`${c.level_x100===undefined?'':(c.level_x100/100)+'%'}${c.source===undefined?'':' · '+c.source}${c.seq===undefined?'':' · seq '+c.seq}`:'—');if(c&&Number.isFinite(Number(c.level_x100))){const m=el('span','meter'),bar=el('i');bar.style.width=Math.max(0,Math.min(100,c.level_x100/100))+'%';m.append(bar);td.append(m)}
+    const at=c?.at_ms??d.last_confirmed_ms;const age=Number(latestStatus?.gateway_uptime_ms)-Number(at);const f=cell(tr,'');f.append(at===undefined||at===null?pill('Never confirmed','warn'):!Number.isFinite(age)?pill('Age unavailable','wait'):age>120000?pill(`Stale · ${duration(age)} ago`,'warn'):pill(`Fresh · ${duration(age)} ago`,'good'));$('devices').append(tr)}
+  if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones reported yet.');td.setAttribute('colspan','5');tr.append(td);$('devices').append(tr)}
+  $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';$('device-note').textContent=rows.length?'Ages are measured with the gateway clock.':'The gateway has not reported any zone records.'}
+function svgEl(svg,tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,String(attrs[k]));svg.append(e);return e}
+function renderProgram(data){const viz=$('program-viz');viz.replaceChildren();const shows=Array.isArray(data.shows)?data.shows:[];const all=shows.flatMap(s=>Array.isArray(s.knots)?s.knots:[]);const maxLevel=Math.max(1,...all.map(k=>Number(k.level)||0));
+  const x=k=>38+Math.max(0,Math.min(1440,Number(k.minute)||0))*592/1440,y=k=>220-(Number(k.level)||0)*185/maxLevel;
+  if(all.length){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 640 250');svg.setAttribute('role','img');svg.setAttribute('aria-label','Programmed show level curves over 24 hours');svg.setAttribute('class','chart');for(const gy of [30,75,120,165,210])svgEl(svg,'line',{x1:38,x2:630,y1:gy,y2:gy,class:'grid-line'});
+    for(const [i,show] of shows.entries()){const knots=Array.isArray(show.knots)?show.knots:[];if(!knots.length)continue;svgEl(svg,'polyline',{points:knots.map(k=>`${x(k)},${y(k)}`).join(' '),class:'s'+i%4});for(const k of knots){const dot=svgEl(svg,'circle',{cx:x(k),cy:y(k),r:4,class:'s'+i%4});const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=`Show ${show.id}: ${k.minute} min, level ${k.level}, CCT ${k.cct}`;dot.append(title)}}
+    for(const [label,lx] of [['00:00',38],['06:00',186],['12:00',334],['18:00',482],['24:00',630]])svgEl(svg,'text',{x:lx,y:243,class:'axis','text-anchor':lx===38?'start':lx===630?'end':'middle'}).textContent=label;viz.append(svg)}
+  for(const p of data.presets||[]){const box=el('div','metric');box.append(el('span','',`Preset ${p.preset} · ${p.type}`),el('strong','',`${p.value}${p.field2===null?'':' · '+p.field2}${p.field5===null?'':' · '+p.field5}`));viz.append(box)}
+  if(data.selected!==undefined){const box=el('div','metric');box.append(el('span','','Zone selection'),el('strong','',`${data.selected?'Selected':'Not selected'} · show ${val(data.show)}`),el('span','',`Members ${(data.members||[]).join(', ')||'—'}`));viz.append(box)}
+  if(!viz.children.length)viz.append(el('p','muted','This zone has no shows or presets programmed.'))}
+function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0}for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
+  const lost=Number(data.lost)||0;const from=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(lost?` · ${lost} events missed`:'');$('events').replaceChildren();
+  const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All observed stages'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:stageInfo(s)[0]})));select.value=stages.includes(previous)?previous:'';
+  let shown=0;const seen=new Set();for(const e of eventRows.slice().reverse()){if(zone&&String(e.zone)!==zone||stage&&String(e.stage)!==stage)continue;shown++;const key=String(eventBootId)+':'+String(e.id);seen.add(key);const tr=document.createElement('tr');if(lost&&Number.isFinite(from)&&Number(e.id)===from)tr.className='gap';if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');cell(tr,clock(e.ts_ms));cell(tr,val(e.zone));const [label,tone]=stageInfo(e.stage),st=cell(tr,'');st.append(pill(label,tone),el('span','code',val(e.stage)));cell(tr,val(e.requested));cell(tr,val(e.confirmed));cell(tr,`#${val(e.id)}`);$('events').append(tr)}shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
+  if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No events match these filters.':'Waiting for the first event…');td.setAttribute('colspan','6');tr.append(td);$('events').append(tr)}
+  $('events-count').textContent=eventRows.length?`${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=lost?' ':'';
+  $('events-note').textContent=lost?`Gap: ${lost} older events were no longer available on the gateway. The highlighted row is where the gap begins.`:eventRows.length?'Live feed. The add-on also archives events on the Home Assistant host for seven days.':'No events received.';if(latestStatus)renderFlow(latestStatus)}
 let configAutoPoll=false,configPollAfter=0,configMatch=null;
-async function loadConfig(){const c=await req('config');if(document.activeElement!==$('config-json'))$('config-json').value=JSON.stringify(c,null,2);const state=c.apply_status||'active';$('config-state').textContent=`Generation ${val(c.generation)} · hash ${val(c.hash)} · apply ${val(state)}${c.editable===false?' · locked':''}${state==='error'||state==='retry_required'?' · rejected candidate; active mapping remains in use':''}`;$('save-config').disabled=c.editable===false;configAutoPoll=state==='pending'||state==='error'||state==='retry_required'||configMatch===false;configPollAfter=Date.now()+4000}
-async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor)]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;$('upload-note').textContent='Endpoint reboot/reconnect observed; 30-second firmware boot observation is in progress. Flash install is not verified.'}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;$('upload-note').textContent='Endpoint stayed available for 30 seconds after reboot. Firmware installation is still unverified; rollback may have occurred.'}else if(now-firmwareStartedAt>=90000){firmwarePending=false;$('upload-note').textContent='No reboot/reconnect observed within 90 seconds. Firmware install or rollback remains unconfirmed.'}}}else{$('headline').textContent='Gateway status unavailable · retrying';$('headline').className='bad';$('health-note').textContent=results[0].reason.message}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
-$('load-program').onclick=async()=>{try{const z=Number($('program-zone').value),data=await req(`program?zone=${z}&page=0`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;$('program-viz').replaceChildren()}};
+function configPill(text,tone){$('config-pill').className='pill '+tone;$('config-pill').textContent=text}
+async function loadConfig(){const c=await req('config');if(document.activeElement!==$('config-json'))$('config-json').value=JSON.stringify(c,null,2);const state=c.apply_status||'active';$('config-state').textContent=`Generation ${val(c.generation)} · hash ${val(c.hash)}${c.editable===false?' · locked by the gateway':''}${state==='error'||state==='retry_required'?' · the last change was rejected, so the previous mapping is still in use':''}`;configPill({active:'Active',pending:'Applying…',error:'Rejected',retry_required:'Retry required'}[state]||val(state),state==='active'?'good':state==='pending'?'warn':state==='error'||state==='retry_required'?'bad':'info');$('save-config').disabled=c.editable===false;configAutoPoll=state==='pending'||state==='error'||state==='retry_required'||configMatch===false;configPollAfter=Date.now()+4000}
+async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor)]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;uploadNote('The endpoint restarted and reconnected. Watching it for 30 seconds… (installation itself cannot be verified from here.)','warn')}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;uploadNote('The endpoint stayed online for 30 seconds after restarting. Installation is still unverified; the board may have rolled back.','good')}else if(now-firmwareStartedAt>=90000){firmwarePending=false;uploadNote('No restart was seen within 90 seconds. The install or rollback could not be confirmed.','bad')}}}else{setHero('bad',"Can't reach the gateway",'Retrying every second. '+results[0].reason.message,false);$('health-note').textContent='Check the gateway address and token in the add-on configuration.'}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
+function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
+const tabs=['overview','activity','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
+$('load-program').onclick=async()=>{try{const z=Number($('program-zone').value),data=await req(`program?zone=${z}&page=0`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;$('program-viz').replaceChildren(el('p','muted','Programming data unavailable: '+e.message))}};
 $('reload-config').onclick=()=>loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message);
-$('save-config').onclick=async()=>{try{const edited=JSON.parse($('config-json').value);const payload={generation:edited.generation,hash:edited.hash,zones:edited.zones};const result=await req('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});$('config-state').textContent=`Update ${val(result.apply_status||'pending')} · pending until gateway and endpoint hashes match`;configAutoPoll=true;configPollAfter=Date.now()+1500}catch(e){$('config-state').textContent='Update rejected: '+e.message}};
-let firmwarePending=false,firmwareOfflineSeen=false,firmwareBaselineUptime=NaN,firmwareStartedAt=0,firmwareReconnectAt=0;$('upload').onclick=async()=>{const f=$('firmware').files[0];if(!f)return $('upload-note').textContent='Choose a firmware image first.';if(f.size>786432)return $('upload-note').textContent='Image exceeds the 786,432 byte limit.';$('upload-note').textContent='Uploading…';try{const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;$('upload-note').textContent=`${val(r.status||'accepted')} · waiting for an endpoint reboot signal`;}catch(e){$('upload-note').textContent='Upload failed: '+e.message}};
+$('save-config').onclick=async()=>{try{const edited=JSON.parse($('config-json').value);const payload={generation:edited.generation,hash:edited.hash,zones:edited.zones};const result=await req('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});$('config-state').textContent=`Update ${val(result.apply_status||'pending')} · waiting until the gateway and endpoint report matching hashes`;configPill('Applying…','warn');configAutoPoll=true;configPollAfter=Date.now()+1500}catch(e){$('config-state').textContent='Update rejected: '+e.message;configPill('Not applied','bad')}};
+let firmwarePending=false,firmwareOfflineSeen=false,firmwareBaselineUptime=NaN,firmwareStartedAt=0,firmwareReconnectAt=0;
+$('firmware').addEventListener('change',()=>{const f=$('firmware').files[0];$('firmware-name').textContent=f?`${f.name} · ${Math.ceil(f.size/1024).toLocaleString()} KB`:'No file selected'});
+$('upload').onclick=async()=>{const f=$('firmware').files[0];if(!f)return uploadNote('Choose a firmware image first.','warn');if(f.size>786432)return uploadNote('This image is larger than the 786,432 byte limit.','bad');uploadNote('Uploading…','info');$('upload').disabled=true;try{const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;uploadNote(`Upload ${val(r.status||'accepted')}. Waiting for the endpoint to restart…`,'info')}catch(e){uploadNote('Upload failed: '+e.message,'bad')}finally{$('upload').disabled=false}};
 for(const id of ['filter-zone','filter-stage'])$(id).addEventListener('input',()=>eventView({events:[],boot_id:eventBootId,next_sequence:eventCursor,lost:0}));
 refresh();$('reload-config').click();setInterval(refresh,1000);
 </script></body></html>

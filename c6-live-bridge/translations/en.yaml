@@ -1,0 +1,10 @@
+configuration:
+  gateway_host:
+    name: Gateway URL
+    description: HTTP(S) origin of the C6 gateway management API, without a path (for example http://lutron-bridge.local:8080).
+  gateway_token:
+    name: Gateway token
+    description: Management bearer token for the gateway. It stays inside the add-on.
+  lutron_integrations:
+    name: Lutron integrations
+    description: Home Assistant integrations whose lights are used to label zones, show areas and live state. Zones are matched by serial number, then by name.

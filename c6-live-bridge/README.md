@@ -8,6 +8,12 @@ Add `https://github.com/thetimetraveler/c6-live-bridge` through the Home Assista
 
 The dashboard targets one-second live refreshes and shows a topology strip from Thread through the endpoint, UART, gateway and N4, with the report-return path. Flow pulses are tied to observed event stages; the diagram never infers a successful PUT or report from connectivity alone. It shows event cursor gaps, requested and confirmed endpoint values separately, gateway-uptime-based freshness (stale after 120 seconds), a read-only programming snapshot on page 0, mapping configuration, and endpoint firmware upload. Firmware uploads are capped at 786,432 bytes. No demo device data is bundled.
 
+## Home Assistant data
+
+The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
+
+Zones are matched to Lutron lights by serial number first (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
+
 ## Proxy surface
 
 - `GET /api/status`, `/api/devices`
@@ -15,6 +21,7 @@ The dashboard targets one-second live refreshes and shows a topology strip from 
 - `GET /api/program?zone=N&page=N`
 - `GET /api/config`, `PUT /api/config` (transactional mapping configuration)
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
+- `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 
 Only these methods and paths are accepted. Gateway responses are capped at 1 MiB; ordinary connections have finite timeouts, while firmware and programming transfers use a five-minute timeout. Firmware is forwarded byte-for-byte with a SHA-256 digest computed by the proxy and sent in `X-SHA256`. Query values are parsed as bounded integers. A gateway timeout or disconnect is shown as unavailable and retried by the dashboard. Event polling resumes from the latest delivered event ID, rewinds on a gateway boot ID change, and surfaces reported cursor gaps.
 

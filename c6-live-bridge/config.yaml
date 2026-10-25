@@ -10,6 +10,7 @@ init: false
 startup: application
 boot: auto
 ingress: true
+homeassistant_api: true
 ingress_port: 8099
 panel_icon: mdi:access-point-network
 map:
@@ -17,6 +18,11 @@ map:
 options:
   gateway_host: http://lutron-bridge.local:8080
   gateway_token: ""
+  lutron_integrations:
+    - lutron_caseta
+    - lutron
 schema:
   gateway_host: url
   gateway_token: password
+  lutron_integrations:
+    - match(^[a-z0-9_]{1,64}$)

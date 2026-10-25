@@ -25,6 +25,26 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "update": ("POST", "/api/endpoint/update")}
 
 
+INTEGRATION = re.compile(r"[a-z0-9_]{1,64}\Z")
+DEFAULT_INTEGRATIONS = ["lutron_caseta", "lutron"]
+# Rendered by Home Assistant with the integration list as a variable; never contains request data.
+HA_TEMPLATE = """{%- set ns = namespace(lights=[]) -%}
+{%- for integration in integrations -%}
+{%- for eid in integration_entities(integration) if eid.startswith('light.') -%}
+{%- set dev = device_id(eid) -%}
+{%- set ns.lights = ns.lights + [{"entity_id": eid, "integration": integration,
+  "name": state_attr(eid, 'friendly_name'), "state": states(eid),
+  "brightness": state_attr(eid, 'brightness'), "color_temp_kelvin": state_attr(eid, 'color_temp_kelvin'),
+  "area": area_name(eid), "device_id": dev,
+  "device": (device_attr(dev, 'name_by_user') or device_attr(dev, 'name')) if dev else none,
+  "serial": device_attr(dev, 'serial_number') if dev else none,
+  "model": device_attr(dev, 'model') if dev else none}] -%}
+{%- endfor -%}
+{%- endfor -%}
+{{ {"lights": ns.lights, "sun": {"next_rising": state_attr('sun.sun', 'next_rising'),
+    "next_setting": state_attr('sun.sun', 'next_setting')}} | tojson }}"""
+
+
 def bounded_int(value, label, maximum=0xffffffff):
     if not isinstance(value, str) or not SAFE_INT.fullmatch(value) or int(value) > maximum:
         raise ValueError(f"invalid {label}")
@@ -62,6 +82,77 @@ class Gateway:
             return response.status, response.getheader("Content-Type", "application/json"), raw
         finally:
             conn.close()
+
+
+def clean_text(value, limit=200):
+    return value[:limit] if isinstance(value, str) and value else None
+
+
+class HomeAssistant:
+    """Read-only Lutron light, area and sun lookups through the Supervisor's Core API proxy."""
+    def __init__(self, token, integrations, host="supervisor", ttl=15, timeout=6):
+        self.token, self.host, self.ttl, self.timeout = token or "", host, ttl, timeout
+        self.integrations = [i for i in integrations if isinstance(i, str) and INTEGRATION.fullmatch(i)][:8]
+        self.lock = threading.Lock()
+        self.cached, self.cached_at, self.core_config = None, 0.0, None
+
+    def request(self, method, path, body=None):
+        conn = http.client.HTTPConnection(self.host, timeout=self.timeout)
+        headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        try:
+            conn.request(method, "/core/api" + path, body=data, headers=headers)
+            response = conn.getresponse()
+            raw = response.read(MAX_RESPONSE + 1)
+        finally:
+            conn.close()
+        if len(raw) > MAX_RESPONSE:
+            raise ValueError("Home Assistant response exceeds size limit")
+        if response.status != 200:
+            raise ValueError(f"Home Assistant returned HTTP {response.status}")
+        return raw
+
+    @staticmethod
+    def light(item):
+        if not isinstance(item, dict) or not isinstance(item.get("entity_id"), str):
+            return None
+        brightness, kelvin, serial = item.get("brightness"), item.get("color_temp_kelvin"), item.get("serial")
+        return {"entity_id": item["entity_id"][:255], "integration": clean_text(item.get("integration"), 64),
+                "name": clean_text(item.get("name")), "state": clean_text(item.get("state"), 32),
+                "brightness": brightness if type(brightness) is int and 0 <= brightness <= 255 else None,
+                "color_temp_kelvin": kelvin if type(kelvin) in (int, float) and 1000 <= kelvin <= 20000 else None,
+                "area": clean_text(item.get("area")), "device_id": clean_text(item.get("device_id"), 64),
+                "device": clean_text(item.get("device")), "model": clean_text(item.get("model")),
+                "serial": clean_text(str(serial), 64) if type(serial) in (str, int) and serial != "" else None}
+
+    def snapshot(self):
+        if not self.token:
+            return {"available": False, "error": "Home Assistant API access is not enabled for this add-on"}
+        with self.lock:
+            if self.cached is not None and time.monotonic() - self.cached_at < self.ttl:
+                return self.cached
+            try:
+                if self.core_config is None:
+                    config = json.loads(self.request("GET", "/config"))
+                    self.core_config = config if isinstance(config, dict) else {}
+                data = json.loads(self.request("POST", "/template", {"template": HA_TEMPLATE,
+                                                                      "variables": {"integrations": self.integrations}}))
+                if not isinstance(data, dict) or not isinstance(data.get("lights"), list):
+                    raise ValueError("unexpected template result")
+                sun = data.get("sun") if isinstance(data.get("sun"), dict) else {}
+                result = {"available": True, "integrations": self.integrations,
+                          "time_zone": clean_text(self.core_config.get("time_zone"), 64),
+                          "location_name": clean_text(self.core_config.get("location_name")),
+                          "sun": {k: clean_text(sun.get(k), 64) for k in ("next_rising", "next_setting")},
+                          "lights": [l for l in map(self.light, data["lights"][:500]) if l]}
+            except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+                LOG.warning("Home Assistant lookup failed: %s", exc)
+                result = {"available": False, "error": f"Home Assistant lookup failed: {exc}"}
+            self.cached, self.cached_at = result, time.monotonic()
+            return result
 
 
 class EventArchive:
@@ -236,8 +327,9 @@ class Panel:
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, panel):
+    def __init__(self, address, panel, ha=None):
         self.panel = panel
+        self.ha = ha or HomeAssistant("", [])
         self.html = Path(__file__).with_name("index.html").read_bytes()
         super().__init__(address, Handler)
 
@@ -275,6 +367,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             return self.send(200, self.server.html, "text/html; charset=utf-8")
         parts = urlsplit(self.path)
+        if parts.path == "/api/ha":
+            if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
+            return self.reply(200, self.server.ha.snapshot())
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
@@ -343,7 +438,10 @@ def main():
     options = json.loads(Path("/data/options.json").read_text())
     gateway = Gateway(options["gateway_host"], options["gateway_token"])
     panel = Panel(gateway, EventArchive("/share/c6-management/events"))
-    server = Server(("0.0.0.0", 8099), panel)
+    integrations = options.get("lutron_integrations")
+    ha = HomeAssistant(os.environ.get("SUPERVISOR_TOKEN", ""),
+                       integrations if isinstance(integrations, list) else DEFAULT_INTEGRATIONS)
+    server = Server(("0.0.0.0", 8099), panel, ha)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
     try: server.serve_forever()
     finally:

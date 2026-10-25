@@ -23,12 +23,26 @@ class StubGateway:
         return 200,"application/json",json.dumps({"after":0,"next":2,"oldest":1,"lost":0,"events":[{"id":1,"stage":"confirmed"}]}).encode()
 
 
+class StubHomeAssistant(app.HomeAssistant):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs);self.calls=[];self.fail=False
+    def request(self,method,path,body=None):
+        self.calls.append((method,path,body))
+        if self.fail: raise OSError("supervisor unreachable")
+        if path=="/config": return json.dumps({"time_zone":"Europe/London","location_name":"Home"}).encode()
+        return json.dumps({"sun":{"next_rising":"2026-10-26T06:52:00+00:00","next_setting":None},"lights":[
+            {"entity_id":"light.kitchen","integration":"lutron_caseta","name":"Kitchen","state":"on","brightness":180,
+             "color_temp_kelvin":3000,"area":"Kitchen","device_id":"abc","device":"Kitchen","serial":12345678},
+            {"entity_id":"light.bad","brightness":999,"color_temp_kelvin":"warm","serial":""},"junk"]}).encode()
+
+
 class AddonTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.gateway=StubGateway()
         self.archive=app.EventArchive(Path(self.tmp.name)/"events")
         self.panel=app.Panel(self.gateway,self.archive)
+        self.ha=StubHomeAssistant("supervisor-token",["lutron_caseta","bad name!"])
     def tearDown(self): self.tmp.cleanup()
 
     def test_gateway_origin_and_token_validation(self):
@@ -101,7 +115,7 @@ class AddonTests(unittest.TestCase):
 
     def handler(self, peer="172.30.32.2", path="/"):
         h=object.__new__(app.Handler)
-        h.client_address=(peer,1234);h.path=path;h.server=SimpleNamespace(panel=self.panel,html=b"ingress")
+        h.client_address=(peer,1234);h.path=path;h.server=SimpleNamespace(panel=self.panel,html=b"ingress",ha=self.ha)
         h.headers=Message();h.rfile=io.BytesIO();h.results=[]
         h.reply=lambda code,value:h.results.append((code,value))
         h.send=lambda code,body,content_type="application/json":h.results.append((code,body,content_type))
@@ -199,6 +213,37 @@ class AddonTests(unittest.TestCase):
         with patch("app.http.client.HTTPConnection",Connection):
             client=app.Gateway("http://localhost","token")
             with self.assertRaises(ValueError): client.request("/api/status")
+
+    def test_home_assistant_snapshot_normalises_and_caches(self):
+        snap=self.ha.snapshot()
+        self.assertTrue(snap["available"])
+        self.assertEqual(snap["time_zone"],"Europe/London")
+        self.assertEqual(snap["sun"],{"next_rising":"2026-10-26T06:52:00+00:00","next_setting":None})
+        self.assertEqual([l["entity_id"] for l in snap["lights"]],["light.kitchen","light.bad"])
+        self.assertEqual(snap["lights"][0]["serial"],"12345678")
+        self.assertEqual((snap["lights"][1]["brightness"],snap["lights"][1]["color_temp_kelvin"],snap["lights"][1]["serial"]),(None,None,None))
+        method,path,body=self.ha.calls[-1]
+        self.assertEqual((method,path),("POST","/template"))
+        self.assertEqual(body["variables"],{"integrations":["lutron_caseta"]})
+        self.assertEqual(body["template"],app.HA_TEMPLATE)
+        calls=len(self.ha.calls);self.ha.snapshot();self.assertEqual(len(self.ha.calls),calls)
+
+    def test_home_assistant_unavailable_without_token_or_on_error(self):
+        self.assertFalse(app.HomeAssistant("",["lutron"]).snapshot()["available"])
+        self.ha.fail=True
+        snap=self.ha.snapshot()
+        self.assertFalse(snap["available"])
+        self.assertNotIn("supervisor-token",json.dumps(snap))
+
+    def test_handler_home_assistant_route_is_fixed(self):
+        h=self.handler(path="/api/ha");h.do_GET()
+        self.assertEqual(h.results[0][0],200)
+        self.assertTrue(h.results[0][1]["available"])
+        for path in ("/api/ha?template=x","/api/ha/states"):
+            blocked=self.handler(path=path);blocked.do_GET()
+            self.assertEqual(blocked.results[0][0],404)
+        denied=self.handler(peer="10.0.0.8",path="/api/ha");denied.do_GET()
+        self.assertEqual(denied.results[0][0],403)
 
 
 if __name__=="__main__": unittest.main()

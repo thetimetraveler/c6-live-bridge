@@ -38,8 +38,8 @@ class StubHomeAssistant(app.HomeAssistant):
         if path=="/config": return json.dumps({"time_zone":"Europe/London","location_name":"Home"}).encode()
         return json.dumps({"sun":{"next_rising":"2026-10-26T06:52:00+00:00","next_setting":None},"lights":[
             {"entity_id":"light.kitchen","integration":"lutron_caseta","name":"Kitchen","state":"on","brightness":180,
-             "color_temp_kelvin":3000,"area":"Kitchen","device_id":"abc","device":"Kitchen","serial":12345678},
-            {"entity_id":"light.bad","brightness":999,"color_temp_kelvin":"warm","serial":""},"junk"]}).encode()
+             "color_temp_kelvin":3000,"area":"Kitchen","device_id":"abc","device":"Kitchen","serial":12345678,"zone_id":"1379"},
+            {"entity_id":"light.bad","brightness":999,"color_temp_kelvin":"warm","serial":"","zone_id":"13 79"},"junk"]}).encode()
 
 
 class AddonTests(unittest.TestCase):
@@ -70,6 +70,26 @@ class AddonTests(unittest.TestCase):
         panel=panel or self.panel
         panel.next_poll=0;panel.config_due=float("inf")
         return panel.archive_poll_once()
+
+    def test_events_get_wall_clock_time_from_gateway_uptime(self):
+        gateway=StubGateway()
+        def snapshot(path, method="GET", body=None, content_type=None):
+            events={"boot_id":7,"after":0,"next":3,"oldest":1,"lost":0,
+                    "events":[{"id":1,"ts_ms":40000,"stage":"requested"},{"id":2,"stage":"applied"},{"id":3,"ts_ms":True}]}
+            return 200,"application/json",json.dumps({"status":{"gateway_uptime_ms":50000},"devices":{"zones":[]},"events":events}).encode()
+        gateway.request=snapshot
+        panel=app.Panel(gateway,self.archive)
+        with patch.object(app.time,"time",return_value=1_000_000.0):
+            self.collect(panel)
+        self.assertEqual(panel.boot_epoch_ms,1_000_000_000-50000)
+        _,_,raw=panel.proxy("events",[("after","0")])
+        body=json.loads(raw)
+        self.assertEqual(body["boot_epoch_ms"],1_000_000_000-50000)
+        self.assertEqual(body["events"][0]["wall_ms"],1_000_000_000-10000)
+        self.assertNotIn("wall_ms",body["events"][1])
+        self.assertNotIn("wall_ms",body["events"][2])
+        archived=[json.loads(l) for f in (Path(self.tmp.name)/"events").glob("*.jsonl") for l in f.read_text().splitlines()]
+        self.assertEqual(archived[0]["wall_ms"],1_000_000_000-10000)
 
     def test_only_fixed_paths_forward_and_event_cursor(self):
         self.collect()
@@ -345,6 +365,7 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(snap["sun"],{"next_rising":"2026-10-26T06:52:00+00:00","next_setting":None})
         self.assertEqual([l["entity_id"] for l in snap["lights"]],["light.kitchen","light.bad"])
         self.assertEqual(snap["lights"][0]["serial"],"12345678")
+        self.assertEqual((snap["lights"][0]["zone_id"],snap["lights"][1]["zone_id"]),("1379",None))
         self.assertEqual((snap["lights"][1]["brightness"],snap["lights"][1]["color_temp_kelvin"],snap["lights"][1]["serial"]),(None,None,None))
         method,path,body=self.ha.calls[-1]
         self.assertEqual((method,path),("POST","/template"))

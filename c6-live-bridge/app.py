@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections import deque, OrderedDict
 import hashlib
 import http.client
 import json
@@ -22,7 +23,8 @@ SAFE_INT = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "events": ("GET", "/api/events"), "program": ("GET", "/api/program"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
-          "update": ("POST", "/api/endpoint/update")}
+          "update": ("POST", "/api/endpoint/update"),
+          "maintenance": ("POST", "/api/maintenance")}
 
 
 INTEGRATION = re.compile(r"[a-z0-9_]{1,64}\Z")
@@ -62,6 +64,7 @@ class Gateway:
             raise ValueError("gateway_token is required")
         self.scheme, self.hostname, self.port = parts.scheme, parts.hostname, parts.port
         self.token, self.timeout = token, timeout
+        self.retry_after = 0
 
     def request(self, path, method="GET", body=None, content_type=None):
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
@@ -76,6 +79,8 @@ class Gateway:
         try:
             conn.request(method, path, body=body, headers=headers)
             response = conn.getresponse()
+            retry = response.getheader("Retry-After", "0")
+            self.retry_after = min(300, int(retry)) if retry.isdecimal() else 0
             raw = response.read(MAX_RESPONSE + 1)
             if len(raw) > MAX_RESPONSE:
                 raise ValueError("gateway response exceeds size limit")
@@ -220,109 +225,183 @@ class EventArchive:
 
 
 class Panel:
+    """One upstream owner; browser reads never create gateway traffic."""
     def __init__(self, gateway, archive):
         self.gateway, self.archive = gateway, archive
         self.lock = threading.Lock()
-        self.cursor = 0
-        self.boot_id = None
-        self.archive_cursor = 0
-        self.archive_boot_id = None
-        self.last_error = None
-        self.last_contact = None
+        self.upstream = threading.Lock()
+        self.cache = {}
+        self.events = deque(maxlen=2048)
+        self.programs = OrderedDict()
+        self.cursor = self.archive_cursor = 0
+        self.boot_id = self.archive_boot_id = None
+        self.last_error = self.last_contact = None
         self.online = False
         self.stop = threading.Event()
+        self.snapshot_supported = True
+        self.snapshot_retry_at = 0
+        self.failures = 0
+        self.next_poll = 0
+        self.config_due = 0
+        self.legacy_index = 0
+
+    @staticmethod
+    def result(value, code=200):
+        return code, "application/json", json.dumps(value, separators=(",", ":")).encode()
+
+    def _events(self, data):
+        boot = data.get("boot_id")
+        if boot != self.boot_id:
+            self.boot_id = self.archive_boot_id = boot
+            self.cursor = self.archive_cursor = 0
+            self.events.clear()
+            self.programs.clear()
+            self.config_due = 0
+        for event in data["events"]:
+            if isinstance(event, dict) and type(event.get("id")) is int and event["id"] > self.cursor:
+                self.events.append(event)
+                self.cursor = self.archive_cursor = event["id"]
 
     def archive_poll_once(self):
-        """Fetch the event log for host retention independently of browser polling."""
-        after = self.archive_cursor
-        known_boot = self.archive_boot_id
-        path = "/api/events?" + urlencode({"after": 0 if known_boot is None else after})
+        """Single collector step, also used during mixed-version rollout."""
+        if time.monotonic() < self.next_poll or not self.upstream.acquire(blocking=False):
+            return None
         try:
-            code, _ctype, raw = self.gateway.request(path, "GET")
+            now = time.monotonic()
+            self.next_poll = now + 1
+            if self.cache and now >= self.config_due:
+                route, path = "config", "/api/config"
+            elif self.snapshot_supported or now >= self.snapshot_retry_at:
+                route = "snapshot"
+                path = "/api/snapshot?" + urlencode({"after": self.cursor, "boot_id": self.boot_id or 0})
+            else:
+                route = ("status", "devices", "events")[self.legacy_index % 3]
+                self.legacy_index += 1
+                path = "/api/" + route
+                if route == "events":
+                    path += "?" + urlencode({"after": self.cursor, "boot_id": self.boot_id or 0})
+            code, _, raw = self.gateway.request(path)
+            if route == "snapshot" and code in (404, 405):
+                self.snapshot_supported = False
+                self.snapshot_retry_at = now + 60
+                return None
+            if route == "config" and code != 200:
+                self.config_due = now + max(30, getattr(self.gateway, "retry_after", 0))
+                self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
+                return None
             if code != 200:
-                raise ValueError(f"gateway events returned HTTP {code}")
+                raise ValueError(f"gateway {route} returned HTTP {code}")
             data = json.loads(raw)
-            if not isinstance(data, dict) or not isinstance(data.get("events"), list):
-                raise ValueError("gateway event response is invalid")
-            new_boot = data.get("boot_id")
-            if new_boot is not None and known_boot is not None and new_boot != known_boot and after != 0:
-                code, _ctype, raw = self.gateway.request("/api/events?after=0", "GET")
-                if code != 200:
-                    raise ValueError(f"gateway events rewind returned HTTP {code}")
-                data = json.loads(raw)
-                if not isinstance(data, dict) or not isinstance(data.get("events"), list):
-                    raise ValueError("gateway event rewind response is invalid")
-                new_boot = data.get("boot_id")
-            if new_boot is not None and new_boot != known_boot:
-                self.archive_boot_id = new_boot
-                self.archive_cursor = 0
-            self.archive.record(data)
-            for event in data["events"]:
-                if isinstance(event, dict) and type(event.get("id")) is int:
-                    self.archive_cursor = max(self.archive_cursor, event["id"])
+            if not isinstance(data, dict):
+                raise ValueError("invalid gateway response")
+            events = data.get("events") if route == "snapshot" else data if route == "events" else None
+            if events is not None and (not isinstance(events, dict) or not isinstance(events.get("events"), list)):
+                raise ValueError("invalid gateway events")
+            if route == "snapshot" and (events is None or not isinstance(data.get("status"), dict) or not isinstance(data.get("devices"), dict)):
+                raise ValueError("invalid gateway snapshot")
             with self.lock:
+                if events is not None:
+                    self._events(events)
+                if route == "snapshot":
+                    self.snapshot_supported = True
+                    for key in ("status", "devices"):
+                        self.cache[key] = (data[key], now)
+                elif route != "events":
+                    self.cache[route] = (data, now)
+                if route == "config":
+                    previous = self.program_generation if hasattr(self, "program_generation") else None
+                    generation = (data.get("generation"), data.get("hash"))
+                    if generation != previous:
+                        self.programs.clear()
+                    self.program_generation = generation
+                    self.config_due = now + 30
                 self.last_contact = time.time()
                 self.last_error = None
-            return data
+                self.online = True
+                self.failures = 0
+                self.next_poll = now + 1
+            if events is not None:
+                self.archive.record(events)
+            return events or data
         except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+            if route == "config":
+                self.config_due = time.monotonic() + 30
+                self.next_poll = time.monotonic() + 1
+                LOG.warning("Optional configuration snapshot deferred: %s", exc)
+                return None
             with self.lock:
+                self.failures += 1
+                delay = max(min(30, 2 ** min(self.failures, 5)), getattr(self.gateway, "retry_after", 0))
+                self.next_poll = time.monotonic() + delay
                 self.last_error = f"{type(exc).__name__}: {exc}"
-            LOG.warning("Event archive poll will retry: %s", exc)
+                self.online = False
+            LOG.warning("Monitoring delayed; retrying in %s seconds: %s", delay, exc)
             return None
+        finally:
+            self.upstream.release()
 
     def run_event_archive(self):
         while not self.stop.is_set():
             self.archive_poll_once()
-            self.stop.wait(1)
+            self.stop.wait(max(0.1, self.next_poll - time.monotonic()))
 
     def proxy(self, route, query="", body=None, content_type=None):
         method, base = ROUTES[route]
+        params = dict(query)
         if route == "events":
-            params = dict(query)
-            after = bounded_int(params.get("after", "0"), "event cursor", 0xffffffff)
-            with self.lock: known_boot = self.boot_id
-            path = base + "?" + urlencode({"after": 0 if known_boot is None else after})
-        elif route == "program":
-            zone = bounded_int(dict(query).get("zone", "0"), "zone", 65535)
-            page = bounded_int(dict(query).get("page", "0"), "page", 100000)
-            path = base + "?" + urlencode({"zone": zone, "page": page})
-        else:
-            path = base
+            after = bounded_int(params.get("after", "0"), "event cursor")
+            boot = params.get("boot_id")
+            with self.lock:
+                # A cursor from an old boot must be rewound at the cache, never upstream.
+                reset = boot is not None and str(self.boot_id) != boot
+                if reset or after > self.cursor:
+                    after = 0
+                oldest = self.events[0]["id"] if self.events else self.cursor + 1
+                selected = [e for e in self.events if e["id"] > after]
+                previous, lost = after, 0
+                for event in selected:
+                    lost += max(0, event["id"] - previous - 1)
+                    previous = event["id"]
+                return self.result({"boot_id": self.boot_id, "reset": reset, "after": after, "next": self.cursor + 1,
+                                    "oldest": oldest, "lost": lost, "events": selected})
+        if route in ("status", "devices", "config"):
+            with self.lock:
+                entry = self.cache.get(route)
+                if entry is None:
+                    return self.result({"error": "Monitoring is waiting for its first snapshot"}, 503)
+                data, at = entry
+                data = dict(data)
+                data["monitoring"] = {"age_s": max(0, time.monotonic() - at),
+                                      "delayed": bool(self.last_error), "error": self.last_error}
+                return self.result(data)
+        if route == "program":
+            zone = bounded_int(params.get("zone", "0"), "zone", 65535)
+            page = bounded_int(params.get("page", "0"), "page", 100000)
+            refresh = params.get("refresh", "0")
+            if refresh not in ("0", "1"):
+                raise ValueError("invalid refresh flag")
+            base += "?" + urlencode({"zone": zone, "page": page})
+            with self.lock:
+                if refresh != "1" and base in self.programs:
+                    return self.programs[base]
+        # Never accumulate a queue of browser work behind a slow operation.
+        if route != "maintenance" and time.monotonic() < self.next_poll and self.last_error:
+            return self.result({"error": "Monitoring backoff active; try again later"}, 503)
+        if not self.upstream.acquire(blocking=False):
+            return self.result({"error": "Gateway collector busy; try again later"}, 503)
         try:
-            code, ctype, raw = self.gateway.request(path, method, body, content_type)
+            result = self.gateway.request(base, method, body, content_type)
             with self.lock:
-                self.online = True
-                self.last_contact = time.time()
-                self.last_error = None
-            if route == "events" and code == 200:
-                try:
-                    data = json.loads(raw)
-                    new_boot = data.get("boot_id") if isinstance(data, dict) else None
-                    if new_boot is not None and known_boot is not None and new_boot != known_boot and after != 0:
-                        code, ctype, raw = self.gateway.request(base + "?after=0", method)
-                        data = json.loads(raw)
-                        new_boot = data.get("boot_id") if isinstance(data, dict) else None
-                    if new_boot is not None and new_boot != known_boot:
-                        with self.lock:
-                            self.boot_id = new_boot
-                            self.cursor = 0
-                    self.archive.record(data)
-                    if isinstance(data, dict):
-                        events = data.get("events", [])
-                    else:
-                        events = data
-                    if isinstance(events, list):
-                        for event in events:
-                            if isinstance(event, dict) and type(event.get("id")) is int:
-                                self.cursor = max(self.cursor, event["id"])
-                except (ValueError, TypeError):
-                    pass
-            return code, ctype, raw
-        except (OSError, http.client.HTTPException, ValueError) as exc:
-            with self.lock:
-                self.online = False
-                self.last_error = f"{type(exc).__name__}: {exc}"
-            raise
+                if route == "program" and result[0] == 200:
+                    self.programs[base] = result
+                    while len(self.programs) > 16:
+                        self.programs.popitem(last=False)
+                if route in ("config_put", "update") and result[0] == 202:
+                    self.programs.clear()
+                    self.config_due = 0
+            return result
+        finally:
+            self.upstream.release()
 
 
 class Server(ThreadingHTTPServer):
@@ -373,9 +452,9 @@ class Handler(BaseHTTPRequestHandler):
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
-        allowed = {"events": {"after"}, "program": {"zone", "page"}}
+        allowed = {"events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
         if len(parts.query) > 256: return self.reply(400, {"error": "query is too long"})
-        try: query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=2)
+        try: query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=3)
         except ValueError as exc: return self.reply(400, {"error": str(exc)})
         if route is None or parts.fragment or (route in allowed and any(k not in allowed[route] for k, _ in query)) or (route not in allowed and query):
             return self.reply(404, {"error": "unknown endpoint"})
@@ -416,6 +495,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.authorized(): return
+        if self.path == "/api/maintenance":
+            try:
+                value = json.loads(self.read_body(128))
+                if not isinstance(value, dict) or set(value) != {"enabled"} or type(value["enabled"]) is not bool:
+                    raise ValueError("expected enabled boolean")
+                code, ctype, raw = self.server.panel.proxy("maintenance", body=json.dumps(value).encode(), content_type="application/json")
+                return self.send(code, raw, ctype)
+            except (ValueError, EOFError, OverflowError) as exc:
+                return self.reply(400, {"error": str(exc)})
+            except (OSError, http.client.HTTPException) as exc:
+                return self.reply(502, {"error": str(exc)})
         if self.path != "/api/endpoint/update": return self.reply(404, {"error": "unknown endpoint"})
         ctype = self.headers.get("Content-Type", "application/octet-stream")
         if ctype.split(";", 1)[0].strip().lower() != "application/octet-stream":

@@ -36,6 +36,14 @@ const context={document,status,location:{href:'http://ha.local/api/hassio_ingres
 const html=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
+health({...status,monitoring:{age_s:9,delayed:true},diagnostics:{maintenance:false,wifi_disconnects:0}});
+if(!document.getElementById('node-gateway').className.includes('warn')) throw Error('stale monitoring must not establish a Wi-Fi outage');
+if(!document.getElementById('maintenance-toggle').textContent.includes('Enter')) throw Error('maintenance must be explicit');
+health({...status,diagnostics:{maintenance:true,maintenance_remaining_ms:300000}});
+if(!document.getElementById('maintenance-toggle').textContent.includes('End')) throw Error('active maintenance must be visible');
+if(STAGES.retrying[1]==='bad'||STAGES.superseded[1]==='bad') throw Error('retry and supersession must not claim lost delivery');
+if(STAGES['delivery-failed'][1]!=='bad') throw Error('exhausted delivery must be distinct');
+
 const sample={boot_id:'boot-a',next:20,next_sequence:21,oldest:4,lost:3,
   events:[{id:4,ts_ms:9000,stage:'requested',zone:2,requested:50,confirmed:-1}]};
 eventView(sample);

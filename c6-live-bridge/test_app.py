@@ -15,6 +15,12 @@ class StubGateway:
     def request(self, path, method="GET", body=None, content_type=None):
         self.calls.append((method,path,body,content_type))
         if self.fail: raise OSError("offline")
+        if path.startswith("/api/snapshot"):
+            status={"wifi_up":True,"endpoint_online":self.endpoint_online,"endpoint_uptime_s":60 if self.endpoint_online else 0}
+            events={"boot_id":1,"after":0,"next":2,"oldest":1,"lost":0,"events":[{"id":1,"stage":"confirmed"}]}
+            return 200,"application/json",json.dumps({"status":status,"devices":{"zones":[]},"events":events}).encode()
+        if path == "/api/config":
+            return 200,"application/json",b'{"generation":1,"hash":123,"zones":[]}'
         if path == "/api/status":
             return 200,"application/json",json.dumps({"wifi_up":True,"endpoint_online":self.endpoint_online,"endpoint_uptime_s":60 if self.endpoint_online else 0}).encode()
         if path == "/api/endpoint/update":
@@ -60,44 +66,45 @@ class AddonTests(unittest.TestCase):
         self.assertIn("new URL('.',location.href)",html)
         self.assertNotIn("gateway_token",html)
 
+    def collect(self, panel=None):
+        panel=panel or self.panel
+        panel.next_poll=0;panel.config_due=float("inf")
+        return panel.archive_poll_once()
+
     def test_only_fixed_paths_forward_and_event_cursor(self):
+        self.collect()
+        calls=len(self.gateway.calls)
         code,_,raw=self.panel.proxy("events",[("after","0")])
         self.assertEqual(code,200)
-        self.assertEqual(self.gateway.calls[-1][:2],("GET","/api/events?after=0"))
+        self.assertEqual(json.loads(raw)["events"][0]["id"],1)
         self.assertEqual(self.panel.cursor,1)
-        with self.assertRaises(KeyError): self.panel.proxy("/api/evil")
-        self.assertEqual(self.gateway.calls[-1][1],"/api/events?after=0")
-        with self.assertRaises(ValueError): self.panel.proxy("events",[("after","-1")])
-        files=list((Path(self.tmp.name)/"events").glob("*.jsonl"))
-        self.assertEqual(len(files),1)
-        self.assertIn('"id":1',files[0].read_text())
+        with self.assertRaises(KeyError):self.panel.proxy("/api/evil")
+        with self.assertRaises(ValueError):self.panel.proxy("events",[("after","-1")])
+        self.assertEqual(len(self.gateway.calls),calls)
 
     def test_event_boot_reset_rewinds_cursor_and_archive_dedup_is_boot_scoped(self):
-        class BootGateway:
-            def __init__(self): self.boot="A";self.calls=[]
-            def request(self,path,method="GET",body=None,content_type=None):
-                self.calls.append(path)
-                after=int(path.split("after=",1)[1]) if "after=" in path else 0
-                events=[] if after and self.boot=="B" else [{"id":1,"ts_ms":2500,"stage":"confirmed"}]
-                body=json.dumps({"boot_id":self.boot,"after":after,"next_sequence":2,"oldest":1,"lost":0,"events":events}).encode()
-                return 200,"application/json",body
+        class BootGateway(StubGateway):
+            def __init__(self):super().__init__();self.boot=1
+            def request(self,*args,**kwargs):
+                code,ct,raw=super().request(*args,**kwargs)
+                data=json.loads(raw)
+                if "events" in data:data["events"]["boot_id"]=self.boot
+                return code,ct,json.dumps(data).encode()
         gw=BootGateway();panel=app.Panel(gw,self.archive)
-        panel.proxy("events",[("after","0")]);self.assertEqual((panel.boot_id,panel.cursor),("A",1))
-        gw.boot="B";panel.proxy("events",[("after","1")])
-        self.assertEqual(gw.calls[-2:], ["/api/events?after=1","/api/events?after=0"])
-        self.assertEqual((panel.boot_id,panel.cursor),("B",1))
-        panel.archive.record({"boot_id":"B","events":[{"id":1,"ts_ms":2500,"stage":"confirmed"}]})
+        self.collect(panel);self.assertEqual((panel.boot_id,panel.cursor),(1,1))
+        gw.boot=2;self.collect(panel)
+        self.assertEqual((panel.boot_id,panel.cursor),(2,1))
+        data=json.loads(panel.proxy("events",[("after","1"),("boot_id","1")])[2])
+        self.assertTrue(data["reset"]);self.assertEqual(len(data["events"]),1)
         rows=[json.loads(line) for f in (Path(self.tmp.name)/"events").glob("*.jsonl") for line in f.read_text().splitlines()]
         self.assertEqual(len(rows),2)
-        self.assertEqual({r["boot_id"] for r in rows},{"A","B"})
-        self.assertTrue(all(r.get("ha_received_at") for r in rows))
+        self.assertEqual({r["boot_id"] for r in rows},{1,2})
 
     def test_background_archive_poll_runs_without_dashboard_proxy(self):
-        payload=self.panel.archive_poll_once()
+        payload=self.collect()
         self.assertEqual(payload["events"][0]["id"],1)
-        self.assertEqual(self.panel.archive_cursor,1)
-        self.assertEqual(self.panel.cursor,0)
-        self.assertEqual(self.gateway.calls[-1][1],"/api/events?after=0")
+        self.assertEqual((self.panel.archive_cursor,self.panel.cursor),(1,1))
+        self.assertEqual(len(self.gateway.calls),1)
         rows=[json.loads(line) for f in (Path(self.tmp.name)/"events").glob("*.jsonl") for line in f.read_text().splitlines()]
         self.assertEqual(len(rows),1)
         self.assertTrue(rows[0]["ha_received_at"])
@@ -122,10 +129,11 @@ class AddonTests(unittest.TestCase):
         return h
 
     def test_handler_auth_route_and_cursor_validation(self):
+        self.collect()
         h=self.handler(path="/api/status")
         h.do_GET()
         self.assertEqual(h.results[0][0],200)
-        self.assertEqual(self.gateway.calls[-1][1],"/api/status")
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
         denied=self.handler(peer="10.0.0.8",path="/api/status")
         denied.do_GET()
         self.assertEqual(denied.results[0][0],403)
@@ -183,22 +191,138 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(captured["timeout"],300)
 
     def test_reconnect_after_gateway_disconnect(self):
+        self.collect()
         self.gateway.fail=True
-        with self.assertRaises(OSError): self.panel.proxy("status")
+        self.collect()
         self.assertFalse(self.panel.online)
+        self.assertTrue(json.loads(self.panel.proxy("status")[2])["monitoring"]["delayed"])
         self.gateway.fail=False
-        self.assertEqual(self.panel.proxy("status")[0],200)
+        self.collect()
         self.assertTrue(self.panel.online)
         self.assertIsNone(self.panel.last_error)
 
     def test_firmware_reboot_status_and_endpoint_reconnect(self):
+        self.collect()
         self.assertTrue(json.loads(self.panel.proxy("status")[2])["endpoint_online"])
         code,_,raw=self.panel.proxy("update",body=b"firmware",content_type="application/octet-stream")
         self.assertEqual(code,202)
         self.assertEqual(json.loads(raw)["status"],"rebooting")
+        self.collect()
         self.assertFalse(json.loads(self.panel.proxy("status")[2])["endpoint_online"])
-        self.gateway.endpoint_online=True
+        self.gateway.endpoint_online=True;self.collect()
         self.assertTrue(json.loads(self.panel.proxy("status")[2])["endpoint_online"])
+
+    def test_ten_browsers_never_add_upstream_requests(self):
+        from concurrent.futures import ThreadPoolExecutor
+        self.collect();calls=len(self.gateway.calls)
+        def browse(_):
+            for _ in range(20):
+                for route in ("status","devices","events"):
+                    self.assertEqual(self.panel.proxy(route)[0],200)
+        with ThreadPoolExecutor(max_workers=10) as pool:list(pool.map(browse,range(10)))
+        self.assertEqual(len(self.gateway.calls),calls)
+
+    def test_backoff_and_retry_after_cannot_be_bypassed_by_browser(self):
+        self.gateway.fail=True;self.gateway.retry_after=0
+        for n,delay in enumerate((2,4,8,16,30,30),1):
+            with patch("app.time.monotonic",return_value=100):
+                self.panel.next_poll=0;self.panel.archive_poll_once()
+                self.assertEqual(self.panel.next_poll,100+delay)
+                calls=len(self.gateway.calls)
+                self.panel.archive_poll_once()
+                self.panel.proxy("status");self.panel.proxy("events")
+                self.assertEqual(len(self.gateway.calls),calls)
+        self.gateway.retry_after=60
+        with patch("app.time.monotonic",return_value=200):
+            self.panel.next_poll=0;self.panel.archive_poll_once()
+            self.assertEqual(self.panel.next_poll,260)
+
+    def test_program_cache_busy_and_explicit_refresh(self):
+        query=[("zone","0"),("page","0")]
+        self.assertEqual(self.panel.proxy("program",query)[0],200)
+        calls=len(self.gateway.calls)
+        self.panel.proxy("program",query)
+        self.assertEqual(len(self.gateway.calls),calls)
+        self.panel.proxy("program",query+[("refresh","1")])
+        self.assertEqual(len(self.gateway.calls),calls+1)
+        with self.panel.upstream:
+            self.assertEqual(self.panel.proxy("program",[("zone","1")])[0],503)
+            self.assertIsNone(self.panel.archive_poll_once())
+        self.assertEqual(len(self.gateway.calls),calls+1)
+
+    def test_legacy_collector_is_serial_and_browser_reads_are_cached(self):
+        class Legacy(StubGateway):
+            def request(self,path,*args):
+                if path.startswith("/api/snapshot"):
+                    self.calls.append(("GET",path,None,None));return 404,"application/json",b'{}'
+                return super().request(path,*args)
+        self.panel.gateway=Legacy()
+        self.collect();self.assertFalse(self.panel.snapshot_supported)
+        self.collect();self.collect()
+        calls=len(self.panel.gateway.calls)
+        self.panel.proxy("status");self.panel.proxy("devices")
+        self.assertEqual(len(self.panel.gateway.calls),calls)
+
+    def test_gaps_inside_cached_event_history_are_reported(self):
+        with self.panel.lock:
+            self.panel._events({"boot_id":1,"events":[{"id":1},{"id":5}]})
+        data=json.loads(self.panel.proxy("events",[("after","1"),("boot_id","1")])[2])
+        self.assertEqual(data["lost"],3)
+        self.assertEqual([e["id"] for e in data["events"]],[5])
+
+    def test_optional_config_failure_does_not_starve_snapshots(self):
+        self.collect()
+        class DeferredConfig(StubGateway):
+            retry_after=2
+            def request(self,path,*args):
+                if path=="/api/config":return 503,"application/json",b'{}'
+                return super().request(path,*args)
+        self.panel.gateway=DeferredConfig()
+        self.panel.next_poll=self.panel.config_due=0
+        self.panel.archive_poll_once()
+        self.assertGreater(self.panel.config_due,0)
+        self.assertTrue(self.panel.online)
+        self.panel.next_poll=0
+        self.panel.archive_poll_once()
+        self.assertTrue(self.panel.gateway.calls[-1][1].startswith("/api/snapshot"))
+
+    def test_legacy_gateway_upgrade_is_detected_without_app_restart(self):
+        self.panel.snapshot_supported=False
+        self.panel.snapshot_retry_at=50
+        with patch("app.time.monotonic",return_value=100):
+            self.collect()
+        self.assertTrue(self.panel.snapshot_supported)
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+
+    def test_inflight_collection_does_not_queue_browser_operations(self):
+        import threading
+        self.collect()
+        entered=threading.Event();release=threading.Event()
+        class SlowGateway(StubGateway):
+            def request(self,*args):
+                entered.set();release.wait(3)
+                return super().request(*args)
+        self.panel.gateway=SlowGateway();self.panel.next_poll=0
+        worker=threading.Thread(target=self.panel.archive_poll_once)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            for _ in range(10):
+                self.assertEqual(self.panel.proxy("status")[0],200)
+                self.assertEqual(self.panel.proxy("program")[0],503)
+                self.assertIsNone(self.panel.archive_poll_once())
+            self.assertEqual(len(self.panel.gateway.calls),0)
+        finally:release.set();worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(self.panel.gateway.calls),1)
+
+    def test_maintenance_is_explicit_and_can_end_during_monitoring_backoff(self):
+        bad=self.handler(path="/api/maintenance")
+        bad.headers["Content-Length"]="16";bad.rfile=io.BytesIO(b'{"enabled":"no"}')
+        bad.do_POST();self.assertEqual(bad.results[0][0],400)
+        self.panel.last_error="offline";self.panel.next_poll=float("inf")
+        self.assertEqual(self.panel.proxy("maintenance",body=b'{"enabled":false}',content_type="application/json")[0],200)
+        self.assertEqual(self.gateway.calls[-1][0:2],("POST","/api/maintenance"))
 
     def test_gateway_response_size_limit(self):
         class Response:

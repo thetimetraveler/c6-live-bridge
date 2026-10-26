@@ -36,6 +36,16 @@ const context={document,status,location:{href:'http://ha.local/api/hassio_ingres
 const html=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
+for(const seq of [0,10,40,255,0]){
+  const legacy=eventFields({stage:'report-sent',requested:seq,confirmed:10000});
+  if(legacy.requested!=='—'||legacy.confirmed!=='—'||legacy.reported!=='100%'||legacy.sequence!==String(seq)) throw Error('legacy report counter must never be rendered as brightness');
+  const typed=eventFields({schema_version:2,stage:'report-sent',requested:seq,confirmed:10000,reported:10000,report_seq:seq,command_seq:0,reason:'command-settled',endpoint_ts_ms:0});
+  if(typed.reported!=='100%'||typed.sequence!==String(seq)||typed.command!=='0'||typed.reason!=='command-settled'||typed.endpoint==='—') throw Error('typed report identity must survive zero and wrap');
+}
+const missing=eventFields({schema_version:2,stage:'report-failed',requested:40,confirmed:10000,reported:null,report_seq:null,command_seq:null});
+if(missing.reported!=='—'||missing.command!=='—'||missing.sequence!=='—') throw Error('v2 null values must not fall back to overloaded legacy fields');
+const observed=eventFields({stage:'observed',requested:-1,confirmed:2500});
+if(observed.requested!=='—'||observed.confirmed!=='25%') throw Error('missing requested sentinel must be hidden');
 health({...status,monitoring:{age_s:9,delayed:true},diagnostics:{maintenance:false,wifi_disconnects:0}});
 if(!document.getElementById('node-gateway').className.includes('warn')) throw Error('stale monitoring must not establish a Wi-Fi outage');
 if(!document.getElementById('maintenance-toggle').textContent.includes('Enter')) throw Error('maintenance must be explicit');

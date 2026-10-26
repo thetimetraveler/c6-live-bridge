@@ -16,6 +16,17 @@ Zones are matched to Lutron lights by serial number first (decimal, or hex such 
 
 ## Proxy surface
 
+Activity schema 2 adds nullable `command_seq`, `report_seq`, `reported`,
+`reason`, and `endpoint_ts_ms` to each event, preserving the legacy fields.
+On report events, legacy `requested` is a report counter and `confirmed` is
+the reported level. The dashboard renders these as separate report sequence
+and reported brightness columns, including on older gateways. Levels are
+hundredths of a percent (10000 = 100%); missing values display as “—”. Command
+and report counters are independent and can wrap. Endpoint time is endpoint
+uptime; the event's original `ts_ms` remains gateway uptime. A sent report
+establishes local send success, not acceptance or displayed state in Lutron.
+The cache and seven-day archive preserve new fields without extra polling.
+
 - `GET /api/status`, `/api/devices`
 - `GET /api/events?after=N`
 - `GET /api/program?zone=N&page=N`

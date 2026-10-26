@@ -59,14 +59,20 @@ responses add a `monitoring` object containing `age_s`, `delayed` and `error`.
 `POST /api/maintenance` forwards exactly an `enabled` boolean. Programming reads
 accept `refresh=1`. The private gateway bearer token remains server-side.
 
-## Activity (0.5.0)
+## Activity (0.5.1)
 
 The Activity tab shows one row per lighting command: what was asked, where it
-got to (sent → hub → lights → Lutron) and how it ended. Select a row to see each
-step with its event number and gateway uptime. Commands are grouped by zone and
-command `seq` when the gateway reports one; otherwise each `requested` event
-starts a new command for its zone. Repeated identical N4 readings collapse into
-one row, and **Problems only** hides healthy rows.
+got to (from Lutron → to hub → lights → to Lutron) and how it ended. Select a
+row to see each step. Every step names who sent it and who received it
+(Lutron → Bridge, Bridge → Ketra hub, Ketra hub → Bridge, Bridge → Lutron) and
+shows only the level that step carried; its grey line holds the event number,
+the technical path (Thread, UART, N4), gateway uptime and the raw `requested`
+and `confirmed` fields. Commands are grouped by zone and command `seq` when the
+gateway reports one; otherwise each `requested` event starts a new command for
+its zone. A command ends when it is reported, dropped, undeliverable or
+replaced. Reports after that are not part of it and are listed as a zone's
+status updates, merged into one row until the next command. Repeated identical
+N4 readings collapse into one row, and **Problems only** hides healthy rows.
 
 The gateway has no wall clock, so the collector records the boot time
 (host clock minus `gateway_uptime_ms`) and stamps each event with `wall_ms`
@@ -74,5 +80,5 @@ when it first sees it. The archive keeps `wall_ms`, and `/api/events` returns
 the boot time as `boot_epoch_ms`. Times are shown in Home Assistant's time zone,
 or in Pacific time (`America/Los_Angeles`) when that is unavailable.
 
-Levels are `level_x100` (0–10000, so 5000 is 50 %). Any other value, including
-`-1`, is shown exactly as received with a `?` marker.
+Levels are `level_x100` (0–10000, so 5000 is 50 %). `-1` means not known yet
+and is left out. Any other value is shown exactly as received with a `?` marker.

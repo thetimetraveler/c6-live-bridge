@@ -148,6 +148,8 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .lvl+.lvl{margin-top:2px}
 .lvl-k{font-size:.75rem;color:var(--label2);min-width:44px}
 .warn-text{color:var(--orange)}
+.hop{display:inline-block;justify-self:start;font-size:.68rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;color:var(--label2);background:var(--fill);border-radius:6px;padding:2px 7px;cursor:help}
+.match{font-size:.75rem;font-weight:600;color:var(--green)}
 .unknown{display:inline-flex;align-items:center;gap:5px;font:12px ui-monospace,"SF Mono",Menlo,monospace;color:var(--orange);background:var(--orange-t);border-radius:6px;padding:1px 6px;cursor:help}
 .unknown-icon{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--orange);color:#fff;font:700 10px/1 -apple-system,system-ui,sans-serif}
 .track{display:flex;flex-wrap:wrap;align-items:center;list-style:none;margin:8px 0 0;padding:0;font-size:.72rem;color:var(--label2)}
@@ -161,11 +163,11 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .disclose{background:none;color:var(--label3);padding:2px 8px;font-size:1.3rem;line-height:1;transition:transform .3s var(--spring)}
 .disclose[aria-expanded=true]{transform:rotate(90deg)}
 .event-steps{list-style:none;margin:0;padding:0}
-.event-steps li{display:grid;grid-template-columns:150px 190px 1fr;gap:4px 14px;align-items:center;padding:7px 0;border-bottom:.5px solid var(--sep)}
+.event-steps li{display:grid;grid-template-columns:165px 150px max-content 1fr;gap:4px 14px;align-items:center;padding:7px 0;border-bottom:.5px solid var(--sep)}
 .event-steps li:last-child{border-bottom:0}
 .event-steps .when{font-size:.85rem;white-space:nowrap}
 .event-steps .lv{display:flex;flex-wrap:wrap;gap:2px 16px}
-.event-steps .code{grid-column:1/-1;margin:0}
+.event-steps .code{grid-column:1/-1;margin:0;overflow-wrap:anywhere}
 @media(max-width:640px){
   table.activity{min-width:0}
   table.activity thead{display:none}
@@ -180,8 +182,8 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
   #events td.disc{grid-area:1/3;width:auto}
   #events tr.day td{padding:16px 4px 4px}
   #events tr.detail td{padding:4px 10px 8px}
-  .event-steps li{grid-template-columns:1fr auto}
-  .event-steps .lv{grid-column:1/-1}
+  .event-steps li{display:flex;flex-wrap:wrap;gap:6px 10px}
+  .event-steps .when,.event-steps .code{flex-basis:100%}
 }
 
 /* Topology */
@@ -371,9 +373,9 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 <div id="panel-activity" class="panel" role="tabpanel" hidden>
   <section class="card">
     <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
-    <p class="lede">Each row is one lighting command and the steps it went through, newest first. Select a row to see every step. <span id="events-tz"></span></p>
+    <p class="lede">Each row is one lighting command and the steps it went through, or a status update the bridge sent on its own, newest first. Select a row to see every step. <span id="events-tz"></span></p>
     <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
-    <p class="event-legend muted small"><b>Asked</b> is the level Lutron requested. <b>Lights</b> is the level the Ketra hub reports the lights are at. <span class="unknown"><span class="unknown-icon">?</span>-1</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
+    <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports that aren't part of a command are listed as status updates. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
     <div class="scroll"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
     <p id="events-note" class="muted small">No events yet.</p>
     <p id="cursor-note" class="muted small"></p>
@@ -425,8 +427,13 @@ function clock(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0
 function duration(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000));const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`}
 function roleName(role){return ({0:'disabled',1:'detached',2:'child',3:'router',4:'leader'})[Number(role)]||'unknown'}
 function hex16(v){return Number.isInteger(Number(v))&&v!==null?'0x'+Number(v).toString(16).toUpperCase().padStart(4,'0'):val(v)}
-const STAGES={requested:['Command received','good'],applied:['Applied to N4','good'],failed:['Output attempt unconfirmed (legacy)','warn'],retrying:['Output retry scheduled','warn'],superseded:['Replaced by newer command',''], 'delivery-failed':['Delivery retries exhausted','bad'],observed:['N4 level observed','good'],correction:['N4 level corrected','warn'],confirmed:['Level confirmed','good'],'command-dropped':['Command dropped','bad'],'report-sent':['Report sent to Thread','good'],'report-failed':['Report failed','bad'],'program-installed':['Programming installed','good'],'program-rejected':['Programming rejected','bad']};
+const STAGES={requested:['Command from Lutron','good'],applied:['Sent to the hub','good'],failed:['Hub write unconfirmed (legacy)','warn'],retrying:['Retrying the hub','warn'],superseded:['Replaced by newer command',''], 'delivery-failed':['Couldn’t reach the hub','bad'],observed:['Hub reading','good'],correction:['Hub reports a different level','warn'],confirmed:['Hub confirmed the level','good'],'command-dropped':['Command dropped','bad'],'report-sent':['Reported to Lutron','good'],'report-failed':['Report to Lutron failed','bad'],'program-installed':['Programming installed','good'],'program-rejected':['Programming rejected','bad']};
+// Who sent each step and who received it, in the four names the command track uses; the third entry is the technical path.
+const HOPS={requested:['Lutron','Bridge','Thread → endpoint → UART → gateway'],applied:['Bridge','Ketra hub','gateway → N4 PUT'],failed:['Bridge','Ketra hub','gateway → N4 PUT'],retrying:['Bridge','Ketra hub','gateway → N4 PUT'],'delivery-failed':['Bridge','Ketra hub','gateway → N4 PUT'],
+  observed:['Ketra hub','Bridge','N4 → gateway'],correction:['Ketra hub','Bridge','N4 → gateway'],confirmed:['Ketra hub','Bridge','N4 → gateway'],'report-sent':['Bridge','Lutron','endpoint → Thread report'],'report-failed':['Bridge','Lutron','endpoint → Thread report'],
+  superseded:['Bridge',null,'gateway'],'command-dropped':['Bridge',null,'endpoint'],'program-installed':['Lutron','Bridge','Thread → endpoint'],'program-rejected':['Lutron','Bridge','Thread → endpoint']};
 function stageInfo(stage){return STAGES[stage]||[typeof stage==='string'?stage:'Unknown event','info']}
+function hopChip(stage){const h=HOPS[stage];if(!h)return null;const c=el('span','hop',h[1]?`${h[0]} → ${h[1]}`:'At '+h[0]);c.title=(h[1]?`From ${h[0]} to ${h[1]}`:`Handled by the ${h[0]}`)+` (${h[2]})`;return c}
 function pill(text,tone){return el('span','pill '+tone,text)}
 function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$('detail-'+id).setAttribute('class','detail '+kind);$('detail-'+id).textContent=label}
 function pulse(ids,tone=''){for(const id of ids){const e=$(id);e.setAttribute('class',e.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
@@ -554,24 +561,35 @@ function since(ms){return ms<1000?Math.round(ms)+' ms':(ms/1000).toFixed(1)+' s'
 // The gateway stamps events with its uptime; the add-on (or, failing that, the latest status) supplies the boot time.
 function wallTime(e){if(Number.isFinite(e.wall_ms))return e.wall_ms;const anchor=eventAnchor??statusAnchor;return anchor!==null&&typeof e.ts_ms==='number'&&Number.isFinite(e.ts_ms)?anchor+e.ts_ms:null}
 function present(v){return v!==undefined&&v!==null}
+// -1 means "not known yet" (no reading before a command, nothing asked on a reading), so it is left out rather than flagged.
+function known(v){return present(v)&&v!==-1}
 // Levels travel as level_x100 (0–10000); anything else is shown exactly as received and marked unknown.
 function isLevel(v){return Number.isInteger(v)&&v>=0&&v<=10000}
 function pct(v){return v===0?'Off':Math.round(v/10)/10+'%'}
 function levelValue(v,cls){if(isLevel(v)){const b=el('strong',cls||'',pct(v));b.title=`Raw value ${v} (hundredths of a percent)`;return b}const u=el('span','unknown');u.title=`${v===-1?'Not reported':'Not a recognised level'}. Raw value ${val(v)}, shown as received.`;u.append(el('span','unknown-icon','?'),el('span','',val(v)));return u}
 function levelLine(label,v,cls){const line=el('span','lvl');line.append(el('span','lvl-k',label),levelValue(v,cls));return line}
 // One row per command: by (zone, seq) when the gateway sends seq, otherwise each "requested" opens a new command for its zone.
+// A command ends once it is reported, dropped, undeliverable or replaced; reports after that are status updates, not part of it.
+const CLOSING_STAGES=['report-sent','command-dropped','delivery-failed','superseded'],REPORT_STAGES=new Set(['report-sent','report-failed']);
+const closed=g=>CLOSING_STAGES.some(s=>g.stages.has(s));
 function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),solo=new Map();
+  const single=(z,e)=>{const mine=solo.get(z)||new Map(),prev=mine.get(e.stage),p=prev?.events[0];solo.set(z,mine);
+    if(p&&(REPORT_STAGES.has(e.stage)&&z!==null||e.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested)){prev.events.push(e);return}
+    const g={kind:'single',zone:z,events:[e]};groups.push(g);mine.set(e.stage,g)};
   for(const e of rows){const z=Number.isInteger(e.zone)&&e.zone>=0?e.zone:null;
-    if(z===null||!COMMAND_STAGES.has(e.stage)){const prev=solo.get(z),p=prev?.events[0];if(p&&e.stage==='observed'&&p.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested){prev.events.push(e);continue}const g={kind:'single',zone:z,events:[e]};groups.push(g);solo.set(z,g);continue}
-    solo.delete(z);const list=commands.get(z)||[];commands.set(z,list);let g=null;
+    if(z===null||!COMMAND_STAGES.has(e.stage)){single(z,e);continue}
+    const list=commands.get(z)||[];commands.set(z,list);let g=null;
     if(Number.isInteger(e.seq)){g=bySeq.get(z+':'+e.seq)||null;if(g&&e.stage==='requested'&&g.stages.has('requested'))g=null}
     else if(e.stage==='superseded')g=list.slice(0,-1).reverse().find(c=>!FINAL_STAGES.some(s=>c.stages.has(s)))||list[list.length-1]||null;
     else if(e.stage!=='requested')g=list[list.length-1]||null;
+    if(g&&closed(g)&&e.stage!=='superseded')g=null;
+    if(!g&&REPORT_STAGES.has(e.stage)&&(!Number.isInteger(e.seq)||bySeq.has(z+':'+e.seq))){single(z,e);continue}
+    solo.delete(z);
     if(!g){g={kind:'command',zone:z,events:[],stages:new Set()};groups.push(g);list.push(g);if(Number.isInteger(e.seq))bySeq.set(z+':'+e.seq,g)}
     g.events.push(e);g.stages.add(e.stage)}
   return groups}
 function commandSummary(g){const has=x=>g.stages.has(x),ev=g.events,last=ev[ev.length-1];
-  const asked=ev.map(e=>e.requested).filter(present),lights=ev.map(e=>e.confirmed).filter(present);
+  const asked=ev.filter(e=>!REPORT_STAGES.has(e.stage)).map(e=>e.requested).filter(known),lights=ev.map(e=>e.confirmed).filter(known);
   const req=asked.find(isLevel)??asked[0],conf=lights.slice().reverse().find(isLevel)??lights[lights.length-1];
   let [label,tone]=has('command-dropped')?['Dropped by the endpoint','bad']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Done · hub corrected the level','warn']:['Done','good']):has('confirmed')?['Confirmed · reporting to Lutron','good']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:has('applied')?['Applied · waiting for lights','info']:['Sent · waiting for hub','info'];
   const age=Number(latestStatus?.gateway_uptime_ms)-Number(last.ts_ms);if(!FINAL_STAGES.some(has)&&!has('confirmed')&&Number.isFinite(age)&&age>120000)[label,tone]=[`No progress for ${duration(age)}`,'warn'];
@@ -579,14 +597,24 @@ function commandSummary(g){const has=x=>g.stages.has(x),ev=g.events,last=ev[ev.l
   return {title,label,tone,req,conf,corrected:has('correction')}}
 function commandSteps(g){const has=x=>g.stages.has(x),stopped=has('superseded')||has('command-dropped')||has('delivery-failed');
   const hub=has('applied')?['good','Applied by the Ketra hub (N4)']:has('command-dropped')?['bad','Dropped before reaching the hub']:has('delivery-failed')?['bad','Never reached the hub']:has('correction')?['warn','The hub reported a different level']:has('retrying')||has('failed')?['warn','Retrying the hub']:stopped?['skip','Skipped']:['pending','Waiting for the hub'];
-  return [['Sent',...(has('requested')?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],['Hub',...hub],
+  return [['From Lutron',...(has('requested')?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],['To hub',...hub],
     ['Lights',...(has('confirmed')?['good','The lights confirmed the level']:has('correction')?['warn','The hub reports the lights at a different level']:stopped?['skip','Skipped']:['pending','Waiting for the lights to settle'])],
-    ['Lutron',...(has('report-sent')?['good','Reported back to Lutron']:has('report-failed')?['bad','The report to Lutron failed']:stopped?['skip','Skipped']:['pending','Not reported yet'])]]}
+    ['To Lutron',...(has('report-sent')?['good','Reported back to Lutron']:has('report-failed')?['bad','The report to Lutron failed']:stopped?['skip','Skipped']:['pending','Not reported yet'])]]}
 function stepTrack(steps){const ol=el('ol','track');for(const [name,state,tip] of steps){const li=el('li',state);li.title=`${name}: ${tip}`;li.append(el('i'),el('span','',name));ol.append(li)}return ol}
-function eventDetail(g){const list=el('ol','event-steps'),first=g.events[0];
+// Each step shows only the level that step carried: what Lutron asked, what went to the hub, what the hub says the lights are at.
+function stepLevels(e,asked){const s=e.stage,out=[],add=(k,v,cls)=>{if(!known(v))return null;const l=levelLine(k,v,cls);out.push(l);return l};
+  if(s==='requested')add('Asked',e.requested);
+  else if(['applied','failed','retrying','delivery-failed'].includes(s))add('Sent',e.requested);
+  else if(s==='superseded'||s==='command-dropped')add('Level',e.requested);
+  else if(['observed','correction','confirmed'].includes(s)||REPORT_STAGES.has(s)){const off=isLevel(asked)&&isLevel(e.confirmed)&&asked!==e.confirmed,l=add('Lights',e.confirmed,off&&s!=='observed'?'warn-text':'');
+    if(l&&isLevel(asked)&&s!=='observed'){if(off)add('Expected',asked);else l.append(el('span','match','✓ as asked'))}}
+  else{add('Asked',e.requested);add('Lights',e.confirmed)}
+  return out}
+function rawFields(e){return ['requested','confirmed'].filter(k=>present(e[k])).map(k=>`${k} ${val(e[k])}`).join(' · ')}
+function eventDetail(g,asked){const list=el('ol','event-steps'),first=g.events[0];
   for(const e of g.events){const li=el('li'),at=wallTime(e),[label,tone]=stageInfo(e.stage),p=pill(label,tone),d=Number(e.ts_ms)-Number(first.ts_ms);p.title=val(e.stage);
-    const lv=el('span','lv');if(present(e.requested))lv.append(levelLine('Asked',e.requested));if(present(e.confirmed))lv.append(levelLine('Lights',e.confirmed));
-    li.append(el('span','when',(at===null?'Uptime '+clock(e.ts_ms):wallClock(at))+(e!==first&&Number.isFinite(d)?` · +${since(d)}`:'')),p,lv,el('span','code',`Event #${val(e.id)} · ${val(e.stage)} · uptime ${clock(e.ts_ms)}${Number.isInteger(e.seq)?' · seq '+e.seq:''}`));list.append(li)}
+    const lv=el('span','lv');lv.append(...stepLevels(e,asked));const raw=rawFields(e),path=HOPS[e.stage]?.[2];
+    li.append(el('span','when',(at===null?'Uptime '+clock(e.ts_ms):wallClock(at))+(e!==first&&Number.isFinite(d)?` · +${since(d)}`:'')),hopChip(e.stage)||el('span'),p,lv,el('span','code',`Event #${val(e.id)} · ${val(e.stage)}${path?' · '+path:''} · uptime ${clock(e.ts_ms)}${Number.isInteger(e.seq)?' · seq '+e.seq:''}${raw?' · raw '+raw:''}`));list.append(li)}
   return list}
 function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0;eventAnchor=null;expandedEvents.clear()}if(Number.isFinite(data.boot_epoch_ms))eventAnchor=data.boot_epoch_ms;for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
   eventLost=Number(data.lost)||0;eventOldest=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(eventLost?` · ${eventLost} events missed`:'');renderEvents()}
@@ -601,10 +629,11 @@ function renderEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneN
     const tr=el('tr',eventLost&&g.events.some(e=>Number(e.id)===eventOldest)?'gap':'');if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');tr.onclick=()=>{if(!expandedEvents.delete(key))expandedEvents.add(key);renderEvents()};
     const tc=cell(tr,'');tc.title='Gateway uptime '+clock(first.ts_ms);if(at!==null)tc.append(el('strong','time',wallClock(at)),el('span','sub',ago(at)));else tc.append(el('span','time','Uptime '+clock(first.ts_ms)),el('span','sub','Clock time unavailable'));
     const zc=cell(tr,'');if(g.zone===null)zc.textContent=val(first.zone);else{const zi=zoneInfo(g.zone);zc.append(el('strong','',zi.title));const sub=[zi.area,zi.title==='Zone '+g.zone?null:'Zone '+g.zone].filter(Boolean).join(' · ');if(sub)zc.append(el('span','sub',sub))}
-    const wc=cell(tr,''),p=pill(label,tone);if(sum)wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));else{p.title=val(first.stage);wc.append(p);if(g.events.length>1)wc.append(el('span','sub',`${g.events.length} identical readings`))}
-    const lc=cell(tr,''),req=sum?sum.req:first.requested,conf=sum?sum.conf:first.confirmed;if(present(req))lc.append(levelLine('Asked',req));if(present(conf)){lc.append(levelLine('Lights',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}if(!present(req)&&!present(conf))lc.append(el('span','muted','—'));
+    const wc=cell(tr,''),p=pill(label,tone),last=g.events[g.events.length-1],n=g.events.length;if(sum)wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));else{p.title=val(first.stage);const hop=hopChip(first.stage);if(REPORT_STAGES.has(first.stage))wc.append(el('span','what',n>1?'Status updates':'Status update'));wc.append(p);if(hop)wc.append(' ',hop);
+      if(n>1){const end=wallTime(last);wc.append(el('span','sub',REPORT_STAGES.has(first.stage)?`${n} reports${at!==null&&end!==null?` · ${wallClock(at)}–${wallClock(end)}`:''} · not part of a command`:`${n} identical readings`))}else if(REPORT_STAGES.has(first.stage))wc.append(el('span','sub','Not part of a command'))}
+    const lc=cell(tr,'');if(sum){const req=sum.req,conf=sum.conf;if(known(req))lc.append(levelLine('Asked',req));if(known(conf)){lc.append(levelLine('Lights',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}}else lc.append(...stepLevels(last));if(!lc.children.length)lc.append(el('span','muted','—'));
     const btn=el('button','disclose','›');btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Hide steps':'Show steps');const dc=cell(tr,'');dc.className='disc';dc.append(btn);body.append(tr);
-    if(open){const d=el('tr','detail'),td=el('td');td.setAttribute('colspan','5');td.append(eventDetail(g));d.append(td);body.append(d)}}
+    if(open){const d=el('tr','detail'),td=el('td');td.setAttribute('colspan','5');td.append(eventDetail(g,sum?.req));d.append(td);body.append(d)}}
   shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
   if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No activity matches these filters.':'Waiting for the first event…');td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
   const commands=groups.filter(g=>g.kind==='command').length;$('events-count').textContent=eventRows.length?`${commands} command${commands===1?'':'s'} · ${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=eventLost?' ':'';

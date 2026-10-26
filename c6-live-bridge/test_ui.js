@@ -72,12 +72,35 @@ if(!text(rows()[0]).includes('Turn off')) throw Error('level 0 should read as tu
 const pacific=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',minute:'2-digit',second:'2-digit'}).format(new Date(boot+1000));
 if(!text(rows()[2]).includes(pacific)) throw Error('time should default to Pacific: '+pacific);
 if(!document.getElementById('events-tz').textContent.includes('Pacific')) throw Error('fallback time zone should be named');
-const unknown=rows()[1].children[3].children.find(l=>l.children.some(c=>c.className==='unknown'));
-if(!unknown||!text(unknown).includes('-1')) throw Error('unrecognised levels must be shown raw and marked unknown');
-if(!text(rows()[0]).includes('??')) throw Error('non-numeric levels must be shown raw');
+if(text(rows()[1].children[3]).includes('-1')||!text(rows()[1].children[3]).includes('25%')) throw Error('a reading should show only the lights level, never the -1 placeholder: '+text(rows()[1].children[3]));
+const unknown=rows()[0].children[3].children.find(l=>l.children.some(c=>c.className==='unknown'));
+if(!unknown||!text(unknown).includes('??')) throw Error('non-numeric levels must be shown raw and marked unknown');
 if(text(rows()[2]).includes('#1')) throw Error('event numbers belong in the details, not the row');
 rows()[2].onclick();const detail=document.getElementById('events').children.find(r=>r.className==='detail');
 if(!detail||!text(detail).includes('Event #4')||!text(detail).includes('+2.1 s')) throw Error('expanding a row should list each step');
+// The screenshot case: no seq, a finished command, then reports driven by later hub readings.
+const at=(id,ts,stage,requested,confirmed)=>({id,ts_ms:ts,stage,zone:20,requested,confirmed});
+eventView({boot_id:'boot-d',next:40,oldest:1,lost:0,boot_epoch_ms:boot,events:[
+  at(4,15000,'requested',10000,-1),at(9,15989,'applied',10000,10000),at(10,15989,'confirmed',-1,10000),at(13,16100,'report-sent',0,10000),
+  at(22,29500,'report-sent',10,10000),at(26,33300,'report-sent',10,10000),at(38,56800,'report-sent',40,10000)]});
+if(rows().length!==2) throw Error('later reports must not join the finished command, got '+rows().length+' rows');
+const updates=text(rows()[0]),cmd=text(rows()[1]);
+if(!updates.includes('Status updates')||!updates.includes('3 reports')||!updates.includes('Bridge → Lutron')) throw Error('later reports should merge into one status-update row: '+updates);
+if(updates.includes('Asked')||updates.includes('0.4%')) throw Error('a report row must not present its requested field as an asked level: '+updates);
+if(!cmd.includes('Set to 100%')||!cmd.includes('Done')||!cmd.includes('From Lutron')) throw Error('the command should read as done: '+cmd);
+const marked=n=>typeof n!=='string'&&(n.className==='unknown'||(n.children||[]).some(marked));
+rows()[1].onclick();const stepRow=document.getElementById('events').children.find(r=>r.className==='detail'),steps=text(stepRow);
+for(const want of ['Lutron → Bridge','Bridge → Ketra hub','Ketra hub → Bridge','Bridge → Lutron','✓ as asked','raw requested 0']) if(!steps.includes(want)) throw Error('steps should include '+want+': '+steps);
+if(steps.includes('Event #22')||marked(stepRow)) throw Error('steps should hold only this command and no -1 placeholders: '+steps);
+if(marked(rows()[1])) throw Error('the summary should hide -1 placeholders');
+eventView({boot_id:'boot-e',next:3,oldest:1,lost:0,events:[at(1,1000,'requested',5000,-1),at(2,1100,'applied',5000,-1),at(3,1200,'correction',5000,4000)]});
+rows()[0].onclick();const fixed=text(document.getElementById('events').children.find(r=>r.className==='detail'));
+if(!fixed.includes('Expected')||!fixed.includes('40%')) throw Error('a correction should show the lights against what was asked: '+fixed);
+expandedEvents.clear();
+eventView({boot_id:'boot-c',next:7,oldest:1,lost:0,boot_epoch_ms:boot,events:[
+  {id:1,ts_ms:1000,stage:'requested',zone:3,requested:5000,confirmed:-1},{id:2,ts_ms:1200,stage:'applied',zone:3,requested:5000,confirmed:-1},
+  {id:3,ts_ms:3000,stage:'confirmed',zone:3,requested:5000,confirmed:5000},{id:4,ts_ms:3100,stage:'report-sent',zone:3,requested:5000,confirmed:5000},
+  {id:5,ts_ms:4000,stage:'observed',zone:4,requested:-1,confirmed:2500},{id:6,ts_ms:5000,stage:'requested',zone:4,requested:0,confirmed:'??'}]});
 document.getElementById('filter-problems').checked=true;renderEvents();
 if(rows().length!==1||!text(rows()[0]).includes('No activity')) throw Error('problems filter should hide healthy rows');
 document.getElementById('filter-problems').checked=false;

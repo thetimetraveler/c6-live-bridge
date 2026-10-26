@@ -1,5 +1,5 @@
 name: C6 Live Bridge
-version: 0.4.0
+version: 0.5.2
 slug: c6-live-bridge
 url: https://github.com/thetimetraveler/c6-live-bridge
 description: Ingress dashboard for C6 bridge health, endpoints, events, configuration, and firmware

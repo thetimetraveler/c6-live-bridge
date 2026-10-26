@@ -8,6 +8,7 @@ import hashlib
 import http.client
 import json
 import logging
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,7 @@ HA_TEMPLATE = """{%- set ns = namespace(lights=[]) -%}
 {%- set ns.lights = ns.lights + [{"entity_id": eid, "integration": integration,
   "name": state_attr(eid, 'friendly_name'), "state": states(eid),
   "brightness": state_attr(eid, 'brightness'), "color_temp_kelvin": state_attr(eid, 'color_temp_kelvin'),
-  "area": area_name(eid), "device_id": dev,
+  "area": area_name(eid), "device_id": dev, "zone_id": state_attr(eid, 'zone_id'),
   "device": (device_attr(dev, 'name_by_user') or device_attr(dev, 'name')) if dev else none,
   "serial": device_attr(dev, 'serial_number') if dev else none,
   "model": device_attr(dev, 'model') if dev else none}] -%}
@@ -125,13 +126,15 @@ class HomeAssistant:
         if not isinstance(item, dict) or not isinstance(item.get("entity_id"), str):
             return None
         brightness, kelvin, serial = item.get("brightness"), item.get("color_temp_kelvin"), item.get("serial")
+        zone = item.get("zone_id")
         return {"entity_id": item["entity_id"][:255], "integration": clean_text(item.get("integration"), 64),
                 "name": clean_text(item.get("name")), "state": clean_text(item.get("state"), 32),
                 "brightness": brightness if type(brightness) is int and 0 <= brightness <= 255 else None,
                 "color_temp_kelvin": kelvin if type(kelvin) in (int, float) and 1000 <= kelvin <= 20000 else None,
                 "area": clean_text(item.get("area")), "device_id": clean_text(item.get("device_id"), 64),
                 "device": clean_text(item.get("device")), "model": clean_text(item.get("model")),
-                "serial": clean_text(str(serial), 64) if type(serial) in (str, int) and serial != "" else None}
+                "serial": clean_text(str(serial), 64) if type(serial) in (str, int) and serial != "" else None,
+                "zone_id": str(zone) if type(zone) in (str, int) and SAFE_INT.match(str(zone)) else None}
 
     def snapshot(self):
         if not self.token:
@@ -235,6 +238,7 @@ class Panel:
         self.programs = OrderedDict()
         self.cursor = self.archive_cursor = 0
         self.boot_id = self.archive_boot_id = None
+        self.boot_epoch_ms = None
         self.last_error = self.last_contact = None
         self.online = False
         self.stop = threading.Event()
@@ -249,16 +253,34 @@ class Panel:
     def result(value, code=200):
         return code, "application/json", json.dumps(value, separators=(",", ":")).encode()
 
-    def _events(self, data):
+    @staticmethod
+    def _millis(value):
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            return None
+        return value
+
+    def _anchor(self, status):
+        # The gateway has no wall clock; its uptime plus the host clock places events in time.
+        uptime = self._millis(status.get("gateway_uptime_ms")) if isinstance(status, dict) else None
+        if uptime is not None:
+            self.boot_epoch_ms = round(time.time() * 1000 - uptime)
+
+    def _events(self, data, status=None):
         boot = data.get("boot_id")
         if boot != self.boot_id:
             self.boot_id = self.archive_boot_id = boot
             self.cursor = self.archive_cursor = 0
+            self.boot_epoch_ms = None
             self.events.clear()
             self.programs.clear()
             self.config_due = 0
+        if status is not None:
+            self._anchor(status)
         for event in data["events"]:
             if isinstance(event, dict) and type(event.get("id")) is int and event["id"] > self.cursor:
+                ts = self._millis(event.get("ts_ms"))
+                if ts is not None and self.boot_epoch_ms is not None and "wall_ms" not in event:
+                    event["wall_ms"] = round(self.boot_epoch_ms + ts)
                 self.events.append(event)
                 self.cursor = self.archive_cursor = event["id"]
 
@@ -300,8 +322,10 @@ class Panel:
             if route == "snapshot" and (events is None or not isinstance(data.get("status"), dict) or not isinstance(data.get("devices"), dict)):
                 raise ValueError("invalid gateway snapshot")
             with self.lock:
+                if route == "status":
+                    self._anchor(data)
                 if events is not None:
-                    self._events(events)
+                    self._events(events, data["status"] if route == "snapshot" else None)
                 if route == "snapshot":
                     self.snapshot_supported = True
                     for key in ("status", "devices"):
@@ -363,7 +387,8 @@ class Panel:
                     lost += max(0, event["id"] - previous - 1)
                     previous = event["id"]
                 return self.result({"boot_id": self.boot_id, "reset": reset, "after": after, "next": self.cursor + 1,
-                                    "oldest": oldest, "lost": lost, "events": selected})
+                                    "oldest": oldest, "lost": lost, "boot_epoch_ms": self.boot_epoch_ms,
+                                    "events": selected})
         if route in ("status", "devices", "config"):
             with self.lock:
                 entry = self.cache.get(route)

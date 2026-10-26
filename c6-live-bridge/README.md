@@ -10,9 +10,9 @@ The dashboard targets one-second live refreshes and shows a topology strip from 
 
 ## Home Assistant data
 
-The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
+The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their Lutron zone ID, device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
 
-Zones are matched to Lutron lights by serial number first (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
+Zones are matched to Lutron lights by Lutron zone ID first (the `zone_id` attribute that the Lutron Caséta/RA3 integration puts on each light), then by serial number (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
 
 ## Proxy surface
 
@@ -20,7 +20,7 @@ Activity schema 2 adds nullable `command_seq`, `report_seq`, `reported`,
 `reason`, and `endpoint_ts_ms` to each event, preserving the legacy fields.
 On report events, legacy `requested` is a report counter and `confirmed` is
 the reported level. The dashboard renders these as separate report sequence
-and reported brightness columns, including on older gateways. Levels are
+and reported brightness values in expanded activity steps, including on older gateways. Levels are
 hundredths of a percent (10000 = 100%); missing values display as “—”. Command
 and report counters are independent and can wrap. Endpoint time is endpoint
 uptime; the event's original `ts_ms` remains gateway uptime. A sent report
@@ -69,3 +69,31 @@ The app keeps the existing read routes. Cached status, devices and configuration
 responses add a `monitoring` object containing `age_s`, `delayed` and `error`.
 `POST /api/maintenance` forwards exactly an `enabled` boolean. Programming reads
 accept `refresh=1`. The private gateway bearer token remains server-side.
+
+## Activity (0.5.2)
+
+The Activity tab shows one row per lighting command: what was asked, where it
+got to (from Lutron → to hub → lights → to Lutron) and how it ended. Select a
+row to see each step. Every step names who sent it and who received it
+(Lutron → Bridge, Bridge → Ketra hub, Ketra hub → Bridge, Bridge → Lutron) and
+shows only the level that step carried; its grey line holds the event number,
+the technical path (Thread, UART, N4), gateway uptime and the raw `requested`
+and `confirmed` fields alongside the typed report metadata. Commands are grouped
+by zone and `command_seq` on schema-2 gateways (`seq` on older gateways);
+otherwise each `requested` event starts a new command for its zone. Report
+counters are independent and never used to correlate commands. Query replies
+and other explicitly uncorrelated reports cannot complete a lighting command.
+Each report names its reason and shows its reported brightness, report counter,
+and endpoint uptime in the expanded details. A command ends when it is reported, dropped, undeliverable or
+replaced. Reports after that are not part of it and are listed as a zone's
+status updates, merged into one row until the next command. Repeated identical
+N4 readings collapse into one row, and **Problems only** hides healthy rows.
+
+The gateway has no wall clock, so the collector records the boot time
+(host clock minus `gateway_uptime_ms`) and stamps each event with `wall_ms`
+when it first sees it. The archive keeps `wall_ms`, and `/api/events` returns
+the boot time as `boot_epoch_ms`. Times are shown in Home Assistant's time zone,
+or in Pacific time (`America/Los_Angeles`) when that is unavailable.
+
+Levels are `level_x100` (0–10000, so 5000 is 50 %). `-1` means not known yet
+and is left out. Any other value is shown exactly as received with a `?` marker.

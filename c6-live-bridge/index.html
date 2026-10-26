@@ -132,6 +132,59 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .meter{display:block;height:4px;border-radius:2px;background:var(--fill2);margin-top:6px;max-width:120px;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .6s var(--ease-out)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:0 4px;margin-bottom:6px}
+.check{display:inline-flex;align-items:center;gap:8px;min-height:38px;color:var(--label);font-size:.9rem;cursor:pointer}
+.check input{width:18px;height:18px;padding:0;margin:0;accent-color:var(--blue)}
+.event-legend{margin:0 0 8px}
+
+/* Activity */
+#events tr.day td{padding:16px 10px 6px;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2)}
+#events tr.day:hover,#events tr.detail:hover{background:none}
+#events tr:not(.day):not(.detail){cursor:pointer}
+#events tr.detail td{background:var(--inset);padding:6px 14px 10px}
+#events td.disc{width:1%;text-align:right}
+#events .time{font-weight:600;white-space:nowrap}
+.what{display:block;font-weight:600;margin-bottom:5px}
+.lvl{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.lvl+.lvl{margin-top:2px}
+.lvl-k{font-size:.75rem;color:var(--label2);min-width:44px}
+.warn-text{color:var(--orange)}
+.hop{display:inline-block;justify-self:start;font-size:.68rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;color:var(--label2);background:var(--fill);border-radius:6px;padding:2px 7px;cursor:help}
+.match{font-size:.75rem;font-weight:600;color:var(--green)}
+.unknown{display:inline-flex;align-items:center;gap:5px;font:12px ui-monospace,"SF Mono",Menlo,monospace;color:var(--orange);background:var(--orange-t);border-radius:6px;padding:1px 6px;cursor:help}
+.unknown-icon{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:var(--orange);color:#fff;font:700 10px/1 -apple-system,system-ui,sans-serif}
+.track{display:flex;flex-wrap:wrap;align-items:center;list-style:none;margin:8px 0 0;padding:0;font-size:.72rem;color:var(--label2)}
+.track li{display:flex;align-items:center;gap:5px;--tone:var(--label3)}
+.track li+li::before{content:"";width:12px;height:1.5px;background:var(--sep);margin:0 6px}
+.track li.good{--tone:var(--green)}.track li.warn{--tone:var(--orange)}.track li.bad{--tone:var(--red)}
+.track i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--tone)}
+.track li.pending i{background:none;box-shadow:inset 0 0 0 1.5px var(--label3)}
+.track li.missing i{background:none;border:1.5px dashed var(--label3)}
+.track li.skip{opacity:.45}
+.disclose{background:none;color:var(--label3);padding:2px 8px;font-size:1.3rem;line-height:1;transition:transform .3s var(--spring)}
+.disclose[aria-expanded=true]{transform:rotate(90deg)}
+.event-steps{list-style:none;margin:0;padding:0}
+.event-steps li{display:grid;grid-template-columns:165px 150px max-content 1fr;gap:4px 14px;align-items:center;padding:7px 0;border-bottom:.5px solid var(--sep)}
+.event-steps li:last-child{border-bottom:0}
+.event-steps .when{font-size:.85rem;white-space:nowrap}
+.event-steps .lv{display:flex;flex-wrap:wrap;gap:2px 16px}
+.event-steps .code{grid-column:1/-1;margin:0;overflow-wrap:anywhere}
+@media(max-width:640px){
+  table.activity{min-width:0}
+  table.activity thead{display:none}
+  #events tr,#events td{display:block}
+  #events tr:not(.day):not(.detail){display:grid;grid-template-columns:1fr auto auto;gap:4px 10px;padding:12px 4px;border-bottom:.5px solid var(--sep)}
+  #events tr:not(.day):not(.detail)>td{border:0;padding:0}
+  #events tr:not(.day):not(.detail)>td:nth-child(1){grid-area:1/2;text-align:right}
+  #events tr:not(.day):not(.detail)>td:nth-child(2){grid-area:1/1}
+  #events tr:not(.day):not(.detail)>td:nth-child(3){grid-column:1/-1;margin-top:4px}
+  #events tr:not(.day):not(.detail)>td:nth-child(4){grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 18px}
+  #events tr:not(.day):not(.detail)>td:nth-child(4) .meter{flex-basis:100%;margin-top:2px}
+  #events td.disc{grid-area:1/3;width:auto}
+  #events tr.day td{padding:16px 4px 4px}
+  #events tr.detail td{padding:4px 10px 8px}
+  .event-steps li{display:flex;flex-wrap:wrap;gap:6px 10px}
+  .event-steps .when,.event-steps .code{flex-basis:100%}
+}
 
 /* Topology */
 .topology{width:100%;min-width:680px;height:auto;display:block;background:var(--inset);border-radius:12px}
@@ -320,9 +373,10 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 <div id="panel-activity" class="panel" role="tabpanel" hidden>
   <section class="card">
     <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
-    <p class="lede">Every step the bridge reports, newest first. Times are measured from the gateway's last restart.</p>
-    <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All observed stages</option></select></label></div>
-    <div class="scroll"><table><thead><tr><th>Since boot</th><th>Zone</th><th>What happened</th><th>Requested</th><th>Confirmed</th><th>Reported</th><th>Command seq</th><th>Report seq</th><th>Reason</th><th>Endpoint time</th><th>Event</th></tr></thead><tbody id="events"></tbody></table></div>
+    <p class="lede">Each row is one lighting command and the steps it went through, or a status report or query reply, newest first. Select a row to see every step. <span id="events-tz"></span></p>
+    <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
+    <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports without a command association are listed as status updates. Report details separate the report counter from brightness and show why each report was sent. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
+    <div class="scroll"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
     <p id="events-note" class="muted small">No events yet.</p>
     <p id="cursor-note" class="muted small"></p>
   </section>
@@ -373,8 +427,13 @@ function clock(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0
 function duration(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000));const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`}
 function roleName(role){return ({0:'disabled',1:'detached',2:'child',3:'router',4:'leader'})[Number(role)]||'unknown'}
 function hex16(v){return Number.isInteger(Number(v))&&v!==null?'0x'+Number(v).toString(16).toUpperCase().padStart(4,'0'):val(v)}
-const STAGES={requested:['Command received','good'],applied:['Applied to N4','good'],failed:['Output attempt unconfirmed (legacy)','warn'],retrying:['Output retry scheduled','warn'],superseded:['Replaced by newer command',''], 'delivery-failed':['Delivery retries exhausted','bad'],observed:['N4 level observed','good'],correction:['N4 level corrected','warn'],confirmed:['Level confirmed','good'],'command-dropped':['Command dropped','bad'],'report-sent':['Report sent to Thread','good'],'report-failed':['Report failed','bad'],'program-installed':['Programming installed','good'],'program-rejected':['Programming rejected','bad']};
+const STAGES={requested:['Command from Lutron','good'],applied:['Sent to the hub','good'],failed:['Hub write unconfirmed (legacy)','warn'],retrying:['Retrying the hub','warn'],superseded:['Replaced by newer command',''], 'delivery-failed':['Couldn’t reach the hub','bad'],observed:['Hub reading','good'],correction:['Hub reports a different level','warn'],confirmed:['Hub confirmed the level','good'],'command-dropped':['Command dropped','bad'],'report-sent':['Reported to Lutron','good'],'report-failed':['Report to Lutron failed','bad'],'program-installed':['Programming installed','good'],'program-rejected':['Programming rejected','bad']};
+// Who sent each step and who received it, in the four names the command track uses; the third entry is the technical path.
+const HOPS={requested:['Lutron','Bridge','Thread → endpoint → UART → gateway'],applied:['Bridge','Ketra hub','gateway → N4 PUT'],failed:['Bridge','Ketra hub','gateway → N4 PUT'],retrying:['Bridge','Ketra hub','gateway → N4 PUT'],'delivery-failed':['Bridge','Ketra hub','gateway → N4 PUT'],
+  observed:['Ketra hub','Bridge','N4 → gateway'],correction:['Ketra hub','Bridge','N4 → gateway'],confirmed:['Ketra hub','Bridge','N4 → gateway'],'report-sent':['Bridge','Lutron','endpoint → Thread report'],'report-failed':['Bridge','Lutron','endpoint → Thread report'],
+  superseded:['Bridge',null,'gateway'],'command-dropped':['Bridge',null,'endpoint'],'program-installed':['Lutron','Bridge','Thread → endpoint'],'program-rejected':['Lutron','Bridge','Thread → endpoint']};
 function stageInfo(stage){return STAGES[stage]||[typeof stage==='string'?stage:'Unknown event','info']}
+function hopChip(stage){const h=HOPS[stage];if(!h)return null;const c=el('span','hop',h[1]?`${h[0]} → ${h[1]}`:'At '+h[0]);c.title=(h[1]?`From ${h[0]} to ${h[1]}`:`Handled by the ${h[0]}`)+` (${h[2]})`;return c}
 function pill(text,tone){return el('span','pill '+tone,text)}
 function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$('detail-'+id).setAttribute('class','detail '+kind);$('detail-'+id).textContent=label}
 function pulse(ids,tone=''){for(const id of ids){const e=$(id);e.setAttribute('class',e.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
@@ -389,7 +448,7 @@ function setHero(tone,title,detail,online=true){$('hero').className='hero '+tone
 function tile(label,value,tone,hint){const d=el('div','tile '+tone);d.append(el('span','tile-dot'),el('span','tile-label',label),el('strong','',value),el('small','',hint||' '));return d}
 function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row');r.append(el('span','',k),el('strong',tone||'',v));list.append(r)}g.append(el('h3','',title),list);return g}
 const errTone=v=>Number(v)>0?'warn':'';
-function health(s){latestStatus=s;const role=roleName(s.thread_role),roleTone=['child','router','leader'].includes(role)?'good':role==='disabled'?'bad':'warn';
+function health(s){latestStatus=s;const up=s.gateway_uptime_ms;statusAnchor=typeof up==='number'&&Number.isFinite(up)?Date.now()-(Number(s.monitoring?.age_s)||0)*1000-up:null;const role=roleName(s.thread_role),roleTone=['child','router','leader'].includes(role)?'good':role==='disabled'?'bad':'warn';
   const issues=[];if(!s.wifi_up)issues.push(['bad','Gateway Wi-Fi is down']);if(!s.endpoint_online)issues.push(['warn','The endpoint board is offline']);if(s.config_match===false)issues.push(['warn','Zone mapping is not yet in sync on both boards']);if(s.endpoint_online&&roleTone!=='good')issues.push([roleTone,`The Thread radio is ${role}`]);
   const tone=issues.some(i=>i[0]==='bad')?'bad':issues.length?'warn':'good';
   setHero(tone,tone==='good'?'Everything is working':issues.length===1?issues[0][1]:`${issues.length} things need attention`,tone==='good'?`Gateway on Wi-Fi · endpoint connected over Thread as ${role} · mapping in sync.`:issues.map(i=>i[1]).join(' · ')+'.');
@@ -410,17 +469,17 @@ function health(s){latestStatus=s;const role=roleName(s.thread_role),roleTone=['
   $('maintenance-note').textContent=maintenance?`Maintenance active · lighting output is paused; latest commands are retained. Idle session expires in ${Math.ceil((s.diagnostics?.maintenance_remaining_ms||0)/1000)} seconds.`:'Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.';
   $('maintenance-toggle').textContent=maintenance?'End maintenance':'Enter maintenance';
   renderFlow(s);if(delayed)node('gateway','warn','monitoring delayed')}
-function deviceView(data){lastDevices=data;const rows=data.zones||[];renderProgramZones(rows);$('ha-col').hidden=!haData;$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const info=zoneInfo(zoneOf(d)),dev=cell(tr,d.name||info.match?.light.name||'—');if(info.sub)dev.append(el('span','sub',info.sub));const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));cell(tr,d.requested===null?'—':val(d.requested));
+function deviceView(data){lastDevices=data;const rows=data.zones||[];renderProgramZones(rows);$('ha-col').hidden=!haData;$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const info=zoneInfo(zoneOf(d)),dev=cell(tr,d.name||info.match?.light.name||'—');if(info.sub)dev.append(el('span','sub',info.sub));const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));const rq=cell(tr,present(d.requested)?'':'—');if(isLevel(d.requested)){rq.textContent=pct(d.requested);rq.title=`Raw value ${d.requested} (hundredths of a percent)`}else if(present(d.requested))rq.append(levelValue(d.requested));
     const c=d.confirmed,td=cell(tr,c?`${c.level_x100===undefined?'':(c.level_x100/100)+'%'}${c.source===undefined?'':' · '+c.source}${c.seq===undefined?'':' · seq '+c.seq}`:'—');if(c&&Number.isFinite(Number(c.level_x100))){const m=el('span','meter'),bar=el('i');bar.style.width=Math.max(0,Math.min(100,c.level_x100/100))+'%';m.append(bar);td.append(m)}
-    if(haData){const h=cell(tr,'');if(info.match){const [t,tone]=haLightText(info.match.light);h.append(pill(t,tone),haLink(info.match.light,info.match.by==='serial'?'Matched by serial ↗':'Matched by name ↗'))}else h.append(el('span','muted small','No matching Lutron light'))}
+    if(haData){const h=cell(tr,'');if(info.match){const [t,tone]=haLightText(info.match.light);h.append(pill(t,tone),haLink(info.match.light,{zone:'Matched by Lutron zone ID ↗',serial:'Matched by serial ↗'}[info.match.by]||'Matched by name ↗'))}else h.append(el('span','muted small','No matching Lutron light'))}
     const at=c?.at_ms??d.last_confirmed_ms;const age=Number(latestStatus?.gateway_uptime_ms)-Number(at);const f=cell(tr,'');f.append(at===undefined||at===null?pill('Never confirmed','warn'):!Number.isFinite(age)?pill('Age unavailable','wait'):age>120000?pill(`Stale · ${duration(age)} ago`,'warn'):pill(`Fresh · ${duration(age)} ago`,'good'));$('devices').append(tr)}
   if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones reported yet.');td.setAttribute('colspan',haData?'6':'5');tr.append(td);$('devices').append(tr)}
   $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';$('device-note').textContent=rows.length?'Ages are measured with the gateway clock.':'The gateway has not reported any zone records.';$('ha-note').textContent=haData?`Names, areas and live state come from Home Assistant's Lutron integration${haData.location_name?' at '+haData.location_name:''}.`:''}
 const zoneOf=d=>d.zone??d.zone_id;
-let haData=null,haError='',haIndex={serial:new Map(),name:new Map()},haLabelSig='',haSunSig='',lastDevices=null,lastProgram=null,zoneFilterSig='';
+let haData=null,haError='',haIndex={zone:new Map(),serial:new Map(),name:new Map()},haLabelSig='',haSunSig='',lastDevices=null,lastProgram=null,zoneFilterSig='';
 const normName=s=>String(s??'').toLowerCase().replace(/[^a-z0-9]+/g,'');
 const serialNorm=s=>{const t=String(s??'').trim().toLowerCase();return /^\d+$/.test(t)?t.replace(/^0+(?=\d)/,''):t};
-function haFor(z){if(!haData||!z)return null;const s=z.serial;if(s!==undefined&&s!==null&&String(s).trim()!==''){let hit=haIndex.serial.get(serialNorm(s));const t=String(s).trim();if(!hit&&/^(0x)?[0-9a-f]+$/i.test(t)&&/[a-fx]/i.test(t)){const n=parseInt(t.replace(/^0x/i,''),16);if(Number.isSafeInteger(n))hit=haIndex.serial.get(String(n))}if(hit)return {light:hit,by:'serial'}}
+function haFor(z){if(!haData||!z)return null;const zid=z.zone_id??z.zone;if(zid!==undefined&&zid!==null&&String(zid).trim()!==''){const hit=haIndex.zone.get(serialNorm(zid));if(hit)return {light:hit,by:'zone'}}const s=z.serial;if(s!==undefined&&s!==null&&String(s).trim()!==''){let hit=haIndex.serial.get(serialNorm(s));const t=String(s).trim();if(!hit&&/^(0x)?[0-9a-f]+$/i.test(t)&&/[a-fx]/i.test(t)){const n=parseInt(t.replace(/^0x/i,''),16);if(Number.isSafeInteger(n))hit=haIndex.serial.get(String(n))}if(hit)return {light:hit,by:'serial'}}
   const n=normName(z.name);return n&&haIndex.name.has(n)?{light:haIndex.name.get(n),by:'name'}:null}
 function zoneById(id){if(id===undefined||id===null||id==='')return null;const k=String(id),dev=(lastDevices?.zones||[]).find(d=>String(zoneOf(d))===k),cfg=(configBase?.zones||[]).find(z=>String(z?.zone_id)===k);return dev||cfg?Object.assign({},cfg,dev):null}
 function zoneInfo(id){const z=zoneById(id),m=haFor(z),title=z?.name||m?.light.name||(id===undefined||id===null||id===''?'—':'Zone '+id);const same=x=>normName(x)===normName(title),area=m?.light.area&&!same(m.light.area)?m.light.area:'';return {title,area,sub:[area,m&&!same(m.light.name)?m.light.name:null].filter(Boolean).join(' · '),match:m}}
@@ -429,9 +488,9 @@ const nowMinute=()=>haMinute(new Date());
 function sunMinutes(){const r=new Date(haData?.sun?.next_rising||''),s=new Date(haData?.sun?.next_setting||'');return Number.isFinite(r.getTime())&&Number.isFinite(s.getTime())?{rise:haMinute(r),set:haMinute(s)}:null}
 function haLightText(l){if(l.state==='unavailable'||l.state==='unknown')return ['Unavailable','warn'];if(l.state!=='on')return [l.state==='off'?'Off':val(l.state),'idle'];return [['On',l.brightness===null?null:Math.round(l.brightness/255*100)+'%',l.color_temp_kelvin?Math.round(l.color_temp_kelvin)+' K':null].filter(Boolean).join(' · '),'good']}
 function haLink(l,text){const a=el('a','sub link',text);a.href=l.device_id?'/config/devices/device/'+encodeURIComponent(l.device_id):'/history?entity_id='+encodeURIComponent(l.entity_id);a.target='_top';a.title='Open in Home Assistant';return a}
-function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={serial:new Map(),name:new Map()};const dup=new Set();
-  for(const l of haData?.lights||[]){if(l.serial)haIndex.serial.set(serialNorm(l.serial),l);for(const n of new Set([normName(l.name),normName(l.device)])){if(!n)continue;if(haIndex.name.has(n)&&haIndex.name.get(n)!==l)dup.add(n);else haIndex.name.set(n,l)}}for(const n of dup)haIndex.name.delete(n);
-  const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);eventView({events:[],boot_id:eventBootId,next_sequence:eventCursor,lost:0});renderSerialOptions();editorChanged(false)}
+function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={zone:new Map(),serial:new Map(),name:new Map()};const dup=new Set();
+  for(const l of haData?.lights||[]){if(l.zone_id&&!haIndex.zone.has(serialNorm(l.zone_id)))haIndex.zone.set(serialNorm(l.zone_id),l);if(l.serial)haIndex.serial.set(serialNorm(l.serial),l);for(const n of new Set([normName(l.name),normName(l.device)])){if(!n)continue;if(haIndex.name.has(n)&&haIndex.name.get(n)!==l)dup.add(n);else haIndex.name.set(n,l)}}for(const n of dup)haIndex.name.delete(n);
+  const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial,l.zone_id]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);renderEvents();renderSerialOptions();editorChanged(false)}
   const sunSig=JSON.stringify([haData?.sun,haData?.time_zone]);if(sunSig!==haSunSig){haSunSig=sunSig;if(lastProgram)renderProgram(lastProgram)}}
 async function loadHA(){try{applyHA(await req('ha'))}catch(e){applyHA({available:false,error:e.message})}}
 function renderSerialOptions(){const list=$('ha-serials');list.replaceChildren(...(haData?.lights||[]).filter(l=>l.serial).map(l=>Object.assign(document.createElement('option'),{value:l.serial,label:[l.name,l.area].filter(Boolean).join(' — ')})))}
@@ -490,24 +549,103 @@ function renderProgram(data){lastProgram=data;const viz=$('program-viz');const s
   if(!shows.length&&!presets.length)out.push(el('p','empty-state','This zone has no shows or presets programmed.'));viz.replaceChildren(...out)}
 async function loadProgram(force=false){const z=Number($('program-zone').value),btn=$('load-program'),viz=$('program-viz');markProgramZone();btn.disabled=true;btn.textContent='Loading…';viz.setAttribute('aria-busy','true');
   try{const data=await req(`program?zone=${z}&page=0&refresh=${force?1:0}`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;viz.replaceChildren(el('p','empty-state',`Couldn't load zone ${z}: ${e.message}`))}finally{btn.disabled=false;btn.textContent='Load snapshot';viz.setAttribute('aria-busy','false')}}
-function eventFields(e){
-  const report=e.stage==='report-sent'||e.stage==='report-failed';
-  const level=v=>Number.isInteger(v)&&v>=0&&v<=10000?`${v/100}%`:'—';
-  const optional=v=>Number.isInteger(v)&&v>=0?String(v):'—';
-  const lighting=['requested','applied','confirmed','observed','correction','retrying','superseded','delivery-failed','config-busy','command-dropped'].includes(e.stage);
-  return {requested:!report&&lighting?level(e.requested):'—',confirmed:!report&&lighting?level(e.confirmed):'—',
-    reported:report?level(e.schema_version>=2?e.reported:e.confirmed):'—',
-    command:optional(e.command_seq),sequence:report?optional(e.schema_version>=2?e.report_seq:e.requested):'—',
-    reason:typeof e.reason==='string'?e.reason:'—',endpoint:Number.isInteger(e.endpoint_ts_ms)?clock(e.endpoint_ts_ms):'—'};
-}
-function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0}for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
-  const lost=Number(data.lost)||0;const from=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(lost?` · ${lost} events missed`:'');$('events').replaceChildren();
-  const zoneIds=[...new Set(eventRows.map(e=>e.zone).filter(z=>Number.isInteger(z)&&z>=0).map(String))].sort((a,b)=>a-b),fsig=JSON.stringify(zoneIds)+haLabelSig;if(fsig!==zoneFilterSig){zoneFilterSig=fsig;const fz=$('filter-zone'),prev=fz.value;fz.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All zones'}),...zoneIds.map(z=>{const t=zoneInfo(z).title;return Object.assign(document.createElement('option'),{value:z,textContent:t==='Zone '+z?t:`${z} · ${t}`})}));fz.value=zoneIds.includes(prev)?prev:''}
-  const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All observed stages'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:stageInfo(s)[0]})));select.value=stages.includes(previous)?previous:'';
-  let shown=0;const seen=new Set();for(const e of eventRows.slice().reverse()){if(zone&&String(e.zone)!==zone||stage&&String(e.stage)!==stage)continue;shown++;const key=String(eventBootId)+':'+String(e.id);seen.add(key);const tr=document.createElement('tr');if(lost&&Number.isFinite(from)&&Number(e.id)===from)tr.className='gap';if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');cell(tr,clock(e.ts_ms));const zc=cell(tr,e.zone===-1?'Bridge':val(e.zone));if(Number.isInteger(e.zone)&&e.zone>=0){const zi=zoneInfo(e.zone);if(zi.title!=='Zone '+e.zone)zc.append(el('span','sub',zi.title));if(zi.area)zc.append(el('span','sub',zi.area))}const [label,tone]=stageInfo(e.stage),st=cell(tr,'');st.append(pill(label,tone),el('span','code',val(e.stage)));const f=eventFields(e);for(const value of [f.requested,f.confirmed,f.reported,f.command,f.sequence,f.reason,f.endpoint])cell(tr,value);cell(tr,`#${val(e.id)}`);$('events').append(tr)}shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
-  if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No events match these filters.':'Waiting for the first event…');td.setAttribute('colspan','11');tr.append(td);$('events').append(tr)}
-  $('events-count').textContent=eventRows.length?`${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=lost?' ':'';
-  $('events-note').textContent=lost?`Gap: ${lost} older events were no longer available on the gateway. The highlighted row is where the gap begins.`:eventRows.length?'Live feed. The add-on also archives events on the Home Assistant host for seven days.':'No events received.';if(latestStatus)renderFlow(latestStatus)}
+const PACIFIC='America/Los_Angeles',COMMAND_STAGES=new Set(['requested','applied','failed','retrying','superseded','delivery-failed','confirmed','command-dropped','report-sent','report-failed','correction']),FINAL_STAGES=['superseded','delivery-failed','command-dropped','report-sent','report-failed'];
+let eventAnchor=null,statusAnchor=null,eventLost=0,eventOldest=NaN,expandedEvents=new Set();
+function activityZone(){const tz=haData?.time_zone;if(tz){try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return tz}catch{}}return PACIFIC}
+function zoned(ms,opts){return new Intl.DateTimeFormat('en-US',{timeZone:activityZone(),...opts}).format(new Date(ms))}
+function wallClock(ms){return zoned(ms,{hour:'numeric',minute:'2-digit',second:'2-digit'})}
+function dayKey(ms){return zoned(ms,{year:'numeric',month:'2-digit',day:'2-digit'})}
+function dayLabel(ms){const k=dayKey(ms),now=Date.now(),date=zoned(ms,{weekday:'short',month:'short',day:'numeric'});return k===dayKey(now)?'Today · '+date:k===dayKey(now-864e5)?'Yesterday · '+date:date}
+function ago(ms){const d=Date.now()-ms;return d<5000?'just now':duration(d)+' ago'}
+function since(ms){return ms<1000?Math.round(ms)+' ms':(ms/1000).toFixed(1)+' s'}
+// The gateway stamps events with its uptime; the add-on (or, failing that, the latest status) supplies the boot time.
+function wallTime(e){if(Number.isFinite(e.wall_ms))return e.wall_ms;const anchor=eventAnchor??statusAnchor;return anchor!==null&&typeof e.ts_ms==='number'&&Number.isFinite(e.ts_ms)?anchor+e.ts_ms:null}
+function present(v){return v!==undefined&&v!==null}
+// -1 means "not known yet" (no reading before a command, nothing asked on a reading), so it is left out rather than flagged.
+function known(v){return present(v)&&v!==-1}
+// Levels travel as level_x100 (0–10000); anything else is shown exactly as received and marked unknown.
+function isLevel(v){return Number.isInteger(v)&&v>=0&&v<=10000}
+function pct(v){return v===0?'Off':Math.round(v/10)/10+'%'}
+function levelValue(v,cls){if(isLevel(v)){const b=el('strong',cls||'',pct(v));b.title=`Raw value ${v} (hundredths of a percent)`;return b}const u=el('span','unknown');u.title=`${v===-1?'Not reported':'Not a recognised level'}. Raw value ${val(v)}, shown as received.`;u.append(el('span','unknown-icon','?'),el('span','',val(v)));return u}
+function levelLine(label,v,cls){const line=el('span','lvl');line.append(el('span','lvl-k',label),levelValue(v,cls));return line}
+// One row per command: by (zone, seq) when the gateway sends seq, otherwise each "requested" opens a new command for its zone.
+// A command ends once it is reported, dropped, undeliverable or replaced; reports after that are status updates, not part of it.
+const CLOSING_STAGES=['report-sent','command-dropped','delivery-failed','superseded'],REPORT_STAGES=new Set(['report-sent','report-failed']);
+const closed=g=>CLOSING_STAGES.some(s=>g.stages.has(s));
+function commandSeq(e){const seq=e.schema_version>=2?e.command_seq:e.seq;return Number.isInteger(seq)&&seq>=0?seq:null}
+function reportSeq(e){const seq=e.schema_version>=2?e.report_seq:e.requested;return Number.isInteger(seq)&&seq>=0?seq:null}
+function reportLevel(e){return e.schema_version>=2?e.reported:e.confirmed}
+const REPORT_REASONS={'command-settled':'Command settled','observed-brightness-change':'Brightness changed','observed-color-change':'Color changed','periodic-refresh':'Periodic refresh',correction:'Hub correction','retry-after-failure':'Retry after failure','query-reply':'Property query reply','initial-observation':'Initial observation'};
+function reportReason(e){return REPORT_REASONS[e.reason]||e.reason||null}
+function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),solo=new Map();
+  const single=(z,e)=>{const mine=solo.get(z)||new Map(),prev=mine.get(e.stage),p=prev?.events[0];solo.set(z,mine);
+    if(p&&(REPORT_STAGES.has(e.stage)&&z!==null&&p.reason===e.reason||e.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested)){prev.events.push(e);return}
+    const g={kind:'single',zone:z,events:[e]};groups.push(g);mine.set(e.stage,g)};
+  for(const e of rows){const z=Number.isInteger(e.zone)&&e.zone>=0?e.zone:null,seq=commandSeq(e);
+    if(z===null||!COMMAND_STAGES.has(e.stage)){single(z,e);continue}
+    // Explicitly uncorrelated v2 reports (including queries) cannot finish a command.
+    if(REPORT_STAGES.has(e.stage)&&e.schema_version>=2&&seq===null){single(z,e);continue}
+    const list=commands.get(z)||[];commands.set(z,list);let g=null;
+    if(seq!==null){g=bySeq.get(z+':'+seq)||null;if(g&&e.stage==='requested'&&g.stages.has('requested'))g=null}
+    else if(e.stage==='superseded')g=list.slice(0,-1).reverse().find(c=>!FINAL_STAGES.some(s=>c.stages.has(s)))||list[list.length-1]||null;
+    else if(e.stage!=='requested')g=list[list.length-1]||null;
+    if(g&&closed(g)&&e.stage!=='superseded')g=null;
+    if(!g&&REPORT_STAGES.has(e.stage)&&(seq===null||bySeq.has(z+':'+seq))){single(z,e);continue}
+    solo.delete(z);
+    if(!g){g={kind:'command',zone:z,events:[],stages:new Set()};groups.push(g);list.push(g);if(seq!==null)bySeq.set(z+':'+seq,g)}
+    g.events.push(e);g.stages.add(e.stage)}
+  return groups}
+function commandSummary(g){const has=x=>g.stages.has(x),ev=g.events,last=ev[ev.length-1];
+  const asked=ev.filter(e=>!REPORT_STAGES.has(e.stage)).map(e=>e.requested).filter(known),lights=ev.map(e=>REPORT_STAGES.has(e.stage)?reportLevel(e):e.confirmed).filter(known);
+  const req=asked.find(isLevel)??asked[0],conf=lights.slice().reverse().find(isLevel)??lights[lights.length-1];
+  let [label,tone]=has('command-dropped')?['Dropped by the endpoint','bad']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Done · hub corrected the level','warn']:['Done','good']):has('confirmed')?['Confirmed · reporting to Lutron','good']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:has('applied')?['Applied · waiting for lights','info']:['Sent · waiting for hub','info'];
+  const age=Number(latestStatus?.gateway_uptime_ms)-Number(last.ts_ms);if(!FINAL_STAGES.some(has)&&!has('confirmed')&&Number.isFinite(age)&&age>120000)[label,tone]=[`No progress for ${duration(age)}`,'warn'];
+  const title=isLevel(req)?(req===0?'Turn off':'Set to '+pct(req)):has('requested')?'Command':'Command (start no longer in feed)';
+  return {title,label,tone,req,conf,corrected:has('correction')}}
+function commandSteps(g){const has=x=>g.stages.has(x),stopped=has('superseded')||has('command-dropped')||has('delivery-failed');
+  const hub=has('applied')?['good','Applied by the Ketra hub (N4)']:has('command-dropped')?['bad','Dropped before reaching the hub']:has('delivery-failed')?['bad','Never reached the hub']:has('correction')?['warn','The hub reported a different level']:has('retrying')||has('failed')?['warn','Retrying the hub']:stopped?['skip','Skipped']:['pending','Waiting for the hub'];
+  return [['From Lutron',...(has('requested')?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],['To hub',...hub],
+    ['Lights',...(has('confirmed')?['good','The lights confirmed the level']:has('correction')?['warn','The hub reports the lights at a different level']:stopped?['skip','Skipped']:['pending','Waiting for the lights to settle'])],
+    ['To Lutron',...(has('report-sent')?['good','Reported back to Lutron']:has('report-failed')?['bad','The report to Lutron failed']:stopped?['skip','Skipped']:['pending','Not reported yet'])]]}
+function stepTrack(steps){const ol=el('ol','track');for(const [name,state,tip] of steps){const li=el('li',state);li.title=`${name}: ${tip}`;li.append(el('i'),el('span','',name));ol.append(li)}return ol}
+// Each step shows only the level that step carried: what Lutron asked, what went to the hub, what the hub says the lights are at.
+function stepLevels(e,asked){const s=e.stage,out=[],add=(k,v,cls)=>{if(!known(v))return null;const l=levelLine(k,v,cls);out.push(l);return l};
+  if(s==='requested')add('Asked',e.requested);
+  else if(['applied','failed','retrying','delivery-failed'].includes(s))add('Sent',e.requested);
+  else if(s==='superseded'||s==='command-dropped')add('Level',e.requested);
+  else if(REPORT_STAGES.has(s))add('Reported',reportLevel(e));
+  else if(['observed','correction','confirmed'].includes(s)){const off=isLevel(asked)&&isLevel(e.confirmed)&&asked!==e.confirmed,l=add('Lights',e.confirmed,off&&s!=='observed'?'warn-text':'');
+    if(l&&isLevel(asked)&&s!=='observed'){if(off)add('Expected',asked);else l.append(el('span','match','✓ as asked'))}}
+  else{add('Asked',e.requested);add('Lights',e.confirmed)}
+  return out}
+function rawFields(e){return ['requested','confirmed','command_seq','report_seq','reported','reason','endpoint_ts_ms'].filter(k=>present(e[k])).map(k=>`${k} ${val(e[k])}`).join(' · ')}
+function eventDetail(g,asked){const list=el('ol','event-steps'),first=g.events[0];
+  for(const e of g.events){const li=el('li'),at=wallTime(e),[label,tone]=stageInfo(e.stage),p=pill(label,tone),d=Number(e.ts_ms)-Number(first.ts_ms);p.title=val(e.stage);
+    const lv=el('span','lv');lv.append(...stepLevels(e,asked));const raw=rawFields(e),path=HOPS[e.stage]?.[2],seq=commandSeq(e),report=reportSeq(e);if(REPORT_STAGES.has(e.stage)){const reason=reportReason(e);if(reason)lv.append(el('span','sub',reason))}
+    li.append(el('span','when',(at===null?'Uptime '+clock(e.ts_ms):wallClock(at))+(e!==first&&Number.isFinite(d)?` · +${since(d)}`:'')),hopChip(e.stage)||el('span'),p,lv,el('span','code',`Event #${val(e.id)} · ${val(e.stage)}${path?' · '+path:''} · uptime ${clock(e.ts_ms)}${seq!==null?' · command seq '+seq:''}${REPORT_STAGES.has(e.stage)&&report!==null?' · report seq '+report:''}${Number.isInteger(e.endpoint_ts_ms)?' · endpoint uptime '+clock(e.endpoint_ts_ms):''}${raw?' · raw '+raw:''}`));list.append(li)}
+  return list}
+function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0;eventAnchor=null;expandedEvents.clear()}if(Number.isFinite(data.boot_epoch_ms))eventAnchor=data.boot_epoch_ms;for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
+  eventLost=Number(data.lost)||0;eventOldest=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(eventLost?` · ${eventLost} events missed`:'');renderEvents()}
+function renderEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneName:'short'}).split(' ').pop();$('events-tz').textContent=tz===haData?.time_zone?`Times are in Home Assistant's time zone (${tz}, ${abbr}).`:`Times are in Pacific time (${abbr}) because Home Assistant's time zone isn't available.`;
+  const zoneIds=[...new Set(eventRows.map(e=>e.zone).filter(z=>Number.isInteger(z)&&z>=0).map(String))].sort((a,b)=>a-b),fsig=JSON.stringify(zoneIds)+haLabelSig;if(fsig!==zoneFilterSig){zoneFilterSig=fsig;const fz=$('filter-zone'),prev=fz.value;fz.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All zones'}),...zoneIds.map(z=>{const t=zoneInfo(z).title;return Object.assign(document.createElement('option'),{value:z,textContent:t==='Zone '+z?t:`${t} · ${z}`})}));fz.value=zoneIds.includes(prev)?prev:''}
+  const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value,problems=!!$('filter-problems').checked;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All steps'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:stageInfo(s)[0]})));select.value=stages.includes(previous)?previous:'';
+  const groups=groupEvents(eventRows),body=$('events');body.replaceChildren();let shown=0,day='';const seen=new Set();
+  for(const g of groups.slice().reverse()){if(zone&&String(g.zone)!==zone||stage&&!g.events.some(e=>String(e.stage)===stage))continue;
+    const first=g.events[0],sum=g.kind==='command'?commandSummary(g):null,[label,tone]=sum?[sum.label,sum.tone]:stageInfo(first.stage);if(problems&&tone!=='warn'&&tone!=='bad')continue;
+    const key=g.kind[0]+':'+String(eventBootId)+':'+String(first.id),open=expandedEvents.has(key),at=wallTime(first);shown++;seen.add(key);
+    if(at!==null&&dayKey(at)!==day){day=dayKey(at);const tr=el('tr','day'),td=el('td','',dayLabel(at));td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
+    const tr=el('tr',eventLost&&g.events.some(e=>Number(e.id)===eventOldest)?'gap':'');if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');tr.onclick=()=>{if(!expandedEvents.delete(key))expandedEvents.add(key);renderEvents()};
+    const tc=cell(tr,'');tc.title='Gateway uptime '+clock(first.ts_ms);if(at!==null)tc.append(el('strong','time',wallClock(at)),el('span','sub',ago(at)));else tc.append(el('span','time','Uptime '+clock(first.ts_ms)),el('span','sub','Clock time unavailable'));
+    const zc=cell(tr,'');if(g.zone===null)zc.textContent=first.zone===-1?'Bridge':val(first.zone);else{const zi=zoneInfo(g.zone);zc.append(el('strong','',zi.title));const sub=[zi.area,zi.title==='Zone '+g.zone?null:'Zone '+g.zone].filter(Boolean).join(' · ');if(sub)zc.append(el('span','sub',sub))}
+    const wc=cell(tr,''),p=pill(label,tone),last=g.events[g.events.length-1],n=g.events.length;if(sum)wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));else{p.title=val(first.stage);const hop=hopChip(first.stage);if(REPORT_STAGES.has(first.stage))wc.append(el('span','what',n>1?'Status updates':'Status update'));wc.append(p);if(hop)wc.append(' ',hop);if(REPORT_STAGES.has(first.stage)&&reportReason(first))wc.append(el('span','sub',reportReason(first)));
+      if(n>1){const end=wallTime(last);wc.append(el('span','sub',REPORT_STAGES.has(first.stage)?`${n} reports${at!==null&&end!==null?` · ${wallClock(at)}–${wallClock(end)}`:''} · not part of a command`:`${n} identical readings`))}else if(REPORT_STAGES.has(first.stage))wc.append(el('span','sub','Not part of a command'))}
+    const lc=cell(tr,'');if(sum){const req=sum.req,conf=sum.conf;if(known(req))lc.append(levelLine('Asked',req));if(known(conf)){lc.append(levelLine('Lights',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}}else lc.append(...stepLevels(last));if(!lc.children.length)lc.append(el('span','muted','—'));
+    const btn=el('button','disclose','›');btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Hide steps':'Show steps');const dc=cell(tr,'');dc.className='disc';dc.append(btn);body.append(tr);
+    if(open){const d=el('tr','detail'),td=el('td');td.setAttribute('colspan','5');td.append(eventDetail(g,sum?.req));d.append(td);body.append(d)}}
+  shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
+  if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No activity matches these filters.':'Waiting for the first event…');td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
+  const commands=groups.filter(g=>g.kind==='command').length;$('events-count').textContent=eventRows.length?`${commands} command${commands===1?'':'s'} · ${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=eventLost?' ':'';
+  $('events-note').textContent=eventLost?`Gap: ${eventLost} older events were no longer available on the gateway. The highlighted row is where the gap begins.`:eventRows.length?'Live feed. The add-on also archives events on the Home Assistant host for seven days.':'No events received.';if(latestStatus)renderFlow(latestStatus)}
 let configAutoPoll=true,configPollAfter=0,configMatch=null,configBase=null,draftFrom=null,draftZones=[],jsonError='';
 function configPill(text,tone){$('config-pill').className='pill '+tone;$('config-pill').textContent=text}
 const ZONE_FIELDS=[['zone_id','e.g. 1','numeric'],['name','Name',''],['n4_group','Group ID',''],['serial','Lutron serial',''],['warm_dim_curve','Optional','']];
@@ -524,7 +662,7 @@ function renderZones(){const locked=configBase?.editable===false;const rows=draf
     const td=el('td'),rm=el('button','remove','−');rm.type='button';rm.title='Remove zone';rm.setAttribute('aria-label',`Remove row ${i+1}`);rm.disabled=locked;rm.onclick=()=>{draftZones.splice(draftZones.indexOf(r),1);renderZones()};td.append(rm);tr.append(td);return tr});
   if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones mapped yet. Select “Add zone” to create one.');td.setAttribute('colspan','7');tr.append(td);rows.push(tr)}
   $('zone-rows').replaceChildren(...rows);$('add-zone').disabled=locked;editorChanged(true)}
-function updateZoneMatches(){$('ha-editor-col').hidden=!haData;$('zone-table').className=haData?'editor with-ha':'editor';let fillable=0;for(const r of draftZones){const c=r.haCell;if(!c)continue;c.hidden=!haData;if(!haData){c.replaceChildren();continue}const m=haFor(r.z);if(!m){c.replaceChildren(el('span','muted','No match'));continue}const l=m.light;c.replaceChildren(el('span','',l.name||l.entity_id),el('span','sub',[l.area,m.by==='serial'?'by serial':'by name'].filter(Boolean).join(' · ')));if(!r.z.name&&l.name&&configBase?.editable!==false){fillable++;const b=el('button','plain','Use this name');b.type='button';b.onclick=()=>useHAName(r,l.name);c.append(b)}}$('fill-names').hidden=!fillable}
+function updateZoneMatches(){$('ha-editor-col').hidden=!haData;$('zone-table').className=haData?'editor with-ha':'editor';let fillable=0;for(const r of draftZones){const c=r.haCell;if(!c)continue;c.hidden=!haData;if(!haData){c.replaceChildren();continue}const m=haFor(r.z);if(!m){c.replaceChildren(el('span','muted','No match'));continue}const l=m.light;c.replaceChildren(el('span','',l.name||l.entity_id),el('span','sub',[l.area,{zone:'by zone ID',serial:'by serial'}[m.by]||'by name'].filter(Boolean).join(' · ')));if(!r.z.name&&l.name&&configBase?.editable!==false){fillable++;const b=el('button','plain','Use this name');b.type='button';b.onclick=()=>useHAName(r,l.name);c.append(b)}}$('fill-names').hidden=!fillable}
 function useHAName(r,name){r.z.name=name;if(r.inputs.name)r.inputs.name.value=name;editorChanged(true)}
 function editorChanged(syncJson){updateZoneMatches();const errs=zoneErrors(),bad=new Set(errs.map(e=>e[0]));for(const r of draftZones)for(const [key] of ZONE_FIELDS){const input=r.inputs[key];if(!input)continue;const changed=!r.orig?r.z[key]!==undefined:JSON.stringify(r.z[key])!==JSON.stringify(r.orig[key]);input.className=(key==='zone_id'&&bad.has(r)?'invalid':changed?'changed':'')}
   const messages=[...new Set(errs.map(e=>e[1]))];if(jsonError)messages.unshift('The JSON editor contains invalid JSON: '+jsonError);$('config-errors').textContent=messages.join(' ');
@@ -575,7 +713,7 @@ $('dropzone').addEventListener('dragleave',dropzoneClass);
 $('dropzone').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer?.files?.[0];if(!f)return dropzoneClass();try{$('firmware').files=e.dataTransfer.files}catch{}pickFirmware(f)});
 $('upload').onclick=async()=>{const f=firmwareFile;if(!f)return uploadNote('Choose a firmware image first.','warn');if(f.size>FW_LIMIT)return uploadNote('This image is larger than the 786,432 byte limit.','bad');if(!await confirmSheet('Install this firmware?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent to the endpoint, which then restarts to run it.`,'Upload'))return;
   fw('uploading','Uploading…','info');$('upload').disabled=true;let sent=false;try{if(!await ensureMaintenance())return;const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sent=true;firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;fw('waiting',`Upload ${val(r.status||'accepted')}. Waiting for the endpoint to restart…`,'info')}catch(e){fw('failed','Upload failed: '+e.message,'bad')}finally{if(!sent)$('upload').disabled=false}};
-for(const id of ['filter-zone','filter-stage'])$(id).addEventListener('input',()=>eventView({events:[],boot_id:eventBootId,next_sequence:eventCursor,lost:0}));
+for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 loadHA();setInterval(loadHA,15000);refresh();$('reload-config').click();setInterval(refresh,1000);
 </script></body></html>

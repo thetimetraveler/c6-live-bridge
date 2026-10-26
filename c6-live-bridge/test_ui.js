@@ -83,6 +83,11 @@ if(rows().length!==1||!text(rows()[0]).includes('No activity')) throw Error('pro
 document.getElementById('filter-problems').checked=false;
 haData={time_zone:'Europe/London',lights:[]};renderEvents();
 if(!document.getElementById('events-tz').textContent.includes('Europe/London')) throw Error('Home Assistant time zone should win');
+deviceView({zones:[{zone:1,requested:7500},{zone:2,requested:-1},{zone:3,requested:null}]});
+const requestedCells=[...document.getElementById('devices').children].map(r=>text(r.children[2]));
+if(!requestedCells[0].includes('75%')||requestedCells[0].includes('7500')) throw Error('requested level should read as a percent: '+requestedCells[0]);
+if(!document.getElementById('devices').children[1].children[2].children.some(c=>c.className==='unknown')) throw Error('unrecognised requested level must be marked unknown');
+if(!requestedCells[2].includes('—')) throw Error('missing requested level should read as a dash');
 applyHA({available:true,time_zone:'Europe/London',lights:[{entity_id:'light.k',name:'First Floor Kitchen kitchen',zone_id:'1379',serial:null}]});
 if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should match by Lutron zone ID');
 `;

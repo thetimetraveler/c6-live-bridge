@@ -10,9 +10,9 @@ The dashboard targets one-second live refreshes and shows a topology strip from 
 
 ## Home Assistant data
 
-The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
+The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their Lutron zone ID, device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
 
-Zones are matched to Lutron lights by serial number first (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
+Zones are matched to Lutron lights by Lutron zone ID first (the `zone_id` attribute that the Lutron Caséta/RA3 integration puts on each light), then by serial number (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
 
 ## Proxy surface
 
@@ -58,3 +58,21 @@ The app keeps the existing read routes. Cached status, devices and configuration
 responses add a `monitoring` object containing `age_s`, `delayed` and `error`.
 `POST /api/maintenance` forwards exactly an `enabled` boolean. Programming reads
 accept `refresh=1`. The private gateway bearer token remains server-side.
+
+## Activity (0.5.0)
+
+The Activity tab shows one row per lighting command: what was asked, where it
+got to (sent → hub → lights → Lutron) and how it ended. Select a row to see each
+step with its event number and gateway uptime. Commands are grouped by zone and
+command `seq` when the gateway reports one; otherwise each `requested` event
+starts a new command for its zone. Repeated identical N4 readings collapse into
+one row, and **Problems only** hides healthy rows.
+
+The gateway has no wall clock, so the collector records the boot time
+(host clock minus `gateway_uptime_ms`) and stamps each event with `wall_ms`
+when it first sees it. The archive keeps `wall_ms`, and `/api/events` returns
+the boot time as `boot_epoch_ms`. Times are shown in Home Assistant's time zone,
+or in Pacific time (`America/Los_Angeles`) when that is unavailable.
+
+Levels are `level_x100` (0–10000, so 5000 is 50 %). Any other value, including
+`-1`, is shown exactly as received with a `?` marker.

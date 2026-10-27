@@ -72,6 +72,12 @@ accept `refresh=1`. The private gateway bearer token remains server-side.
 
 ## Activity (0.5.2)
 
+Gateway availability/configuration events have readable labels. Endpoint
+disconnects and configuration mismatches appear under **Problems only**;
+recovery events are healthy. Updated gateway firmware emits these only when
+state changes, while periodic heartbeats continue updating the health display.
+Older gateways can still emit an activity row for each heartbeat.
+
 The Activity tab shows one row per lighting command: what was asked, where it
 got to (from Lutron → to hub → lights → to Lutron) and how it ended. Select a
 row to see each step. Every step names who sent it and who received it

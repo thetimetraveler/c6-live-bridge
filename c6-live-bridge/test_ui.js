@@ -79,6 +79,11 @@ if(!zero.stages.has('report-sent')||one.stages.has('report-sent')||grouped.filte
 const wrapped=groupEvents([typed(1,'requested',0),typed(2,'report-sent',0,{reported:10000}),typed(3,'requested',0),typed(4,'confirmed',0,{confirmed:10000})]);
 if(wrapped.length!==2||wrapped[0].events.length!==2||wrapped[1].events.length!==2) throw Error('a reused command sequence must open a new command');
 const rows=()=>document.getElementById('events').children.filter(r=>r.className!=='day'&&r.className!=='detail');
+eventView({boot_id:'availability',events:['endpoint-online','endpoint-offline','config-mismatch','config-matched','endpoint-config-changed'].map((stage,i)=>({id:i+1,ts_ms:1000+i,zone:-1,stage,requested:-1,confirmed:-1}))});
+if(rows().length!==5||!rows().every(row=>text(row.children[1]).includes('Bridge'))) throw Error('endpoint-wide transitions should be labeled Bridge');
+document.getElementById('filter-problems').checked=true;renderEvents();
+if(rows().length!==2||!rows().some(row=>text(row).includes('Endpoint disconnected'))||!rows().some(row=>text(row).includes('Endpoint configuration mismatch'))) throw Error('endpoint disconnect and mismatch must be visible in Problems only');
+document.getElementById('filter-problems').checked=false;
 const boot=Date.UTC(2026,9,26,19,0,0);
 eventView({boot_id:'boot-c',next:7,oldest:1,lost:0,boot_epoch_ms:boot,events:[
   {id:1,ts_ms:1000,stage:'requested',zone:3,requested:5000,confirmed:-1},{id:2,ts_ms:1200,stage:'applied',zone:3,requested:5000,confirmed:-1},

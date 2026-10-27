@@ -51,7 +51,9 @@ older firmware is polled serially and upgraded snapshot support is detected
 within 60 seconds. Configuration refresh uses a collection slot every 30 seconds.
 Timeouts back off to 30 seconds, honoring longer gateway Retry-After values.
 The dashboard shows snapshot age and monitoring delays separately from actual
-Wi-Fi disconnects. Existing HA Lutron labels and schedule charts are preserved.
+network disconnects. The gateway's link (Ethernet or Wi-Fi) comes from its
+`network_link` status; firmware that does not report one is shown as
+"Network" rather than assumed to be Wi-Fi. Existing HA Lutron labels and schedule charts are preserved.
 
 Programming snapshots are cached until the mapping generation or boot changes.
 Select **Load snapshot** to force a refresh; a busy gateway can defer inspection

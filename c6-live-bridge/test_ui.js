@@ -39,6 +39,16 @@ const checks=`
 health({...status,monitoring:{age_s:9,delayed:true},diagnostics:{maintenance:false,wifi_disconnects:0}});
 if(!document.getElementById('node-gateway').className.includes('warn')) throw Error('stale monitoring must not establish a Wi-Fi outage');
 if(!document.getElementById('maintenance-toggle').textContent.includes('Enter')) throw Error('maintenance must be explicit');
+health({...status,network_up:true,network_link:'ethernet',diagnostics:{maintenance:false,link_disconnects:0}});
+if(document.getElementById('detail-gateway').textContent!=='Ethernet up') throw Error('gateway must show its reported Ethernet link');
+if(document.getElementById('health-note').textContent.includes('Wi-Fi')) throw Error('an Ethernet gateway must not show Wi-Fi diagnostics');
+health({...status,network_up:false,network_link:'ethernet',diagnostics:{maintenance:false}});
+if(document.getElementById('detail-gateway').textContent!=='Ethernet down') throw Error('a down Ethernet link must name Ethernet');
+health({...status,network_up:true,network_link:'wifi',diagnostics:{maintenance:false}});
+if(document.getElementById('detail-gateway').textContent!=='Wi-Fi up') throw Error('gateway must show its reported Wi-Fi link');
+health({...status,diagnostics:{maintenance:false}});
+if(document.getElementById('detail-gateway').textContent!=='Network up') throw Error('older firmware must not be assumed to use Wi-Fi');
+if(STAGES['ethernet-disconnected'][1]!=='bad'||STAGES['wifi-connected'][1]!=='good') throw Error('link transitions must be labelled');
 health({...status,diagnostics:{maintenance:true,maintenance_remaining_ms:300000}});
 if(!document.getElementById('maintenance-toggle').textContent.includes('End')) throw Error('active maintenance must be visible');
 if(STAGES.retrying[1]==='bad'||STAGES.superseded[1]==='bad') throw Error('retry and supersession must not claim lost delivery');

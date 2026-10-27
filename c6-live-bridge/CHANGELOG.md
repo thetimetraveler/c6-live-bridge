@@ -1,3 +1,7 @@
+## 0.5.3
+
+- Rename the add-on and dashboard to CCX Bridge. The slug and repository URL are unchanged, so existing installs update in place.
+
 ## 0.5.2
 
 - Support gateway activity schema 2 while preserving the command timeline, sender/receiver steps, local times, and zone-ID matching.

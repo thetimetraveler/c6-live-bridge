@@ -1,4 +1,4 @@
-# C6 Live Bridge
+# CCX Bridge
 
 A Home Assistant app (add-on) for the two-board ESP32-C6 lighting bridge.
 It provides a live activity diagram, requested and confirmed device state,
@@ -17,7 +17,7 @@ uploads through the gateway.
    https://github.com/thetimetraveler/c6-live-bridge
    ```
 
-3. Find **C6 Live Bridge** in the store and select **Install**. Home Assistant
+3. Find **CCX Bridge** in the store and select **Install**. Home Assistant
    builds the image locally; the first installation can take a few minutes.
 4. In **Configuration**, enter the gateway URL and management bearer token:
 

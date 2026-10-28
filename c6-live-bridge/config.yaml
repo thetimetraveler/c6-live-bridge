@@ -1,5 +1,5 @@
 name: CCX Bridge
-version: 0.5.3
+version: 0.6.0
 slug: c6-live-bridge
 url: https://github.com/thetimetraveler/c6-live-bridge
 description: Ingress dashboard for C6 bridge health, endpoints, events, configuration, and firmware
@@ -11,6 +11,8 @@ startup: application
 boot: auto
 ingress: true
 homeassistant_api: true
+services:
+  - mqtt:want
 ingress_port: 8099
 panel_icon: mdi:access-point-network
 map:
@@ -21,8 +23,10 @@ options:
   lutron_integrations:
     - lutron_caseta
     - lutron
+  show_sensors: true
 schema:
   gateway_host: url
   gateway_token: password
   lutron_integrations:
     - match(^[a-z0-9_]{1,64}$)
+  show_sensors: bool

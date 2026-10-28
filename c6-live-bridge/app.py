@@ -13,13 +13,22 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+import select
+import socket
 import threading
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
 MAX_FIRMWARE = 786_432
+# Show sensors: one programming read per collector slot, each zone at most every two minutes.
+PROGRAM_SLOT_S, PROGRAM_REFRESH_S, PROGRAM_STALE_S, PROGRAM_TIMEOUT_S = 30, 120, 600, 20
+SNAPSHOT_STALE_S = 120
+LEVEL_FULL_ON = 0xFEFF
+DAY_MS = 86_400_000
+DEFAULT_TIME_ZONE = "America/Los_Angeles"
 SAFE_INT = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "events": ("GET", "/api/events"), "program": ("GET", "/api/program"),
@@ -67,10 +76,10 @@ class Gateway:
         self.token, self.timeout = token, timeout
         self.retry_after = 0
 
-    def request(self, path, method="GET", body=None, content_type=None):
+    def request(self, path, method="GET", body=None, content_type=None, timeout=None):
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
         long_operation = path == "/api/endpoint/update" or path.startswith("/api/program?")
-        conn = conn_cls(self.hostname, self.port, timeout=300 if long_operation else self.timeout)
+        conn = conn_cls(self.hostname, self.port, timeout=timeout or (300 if long_operation else self.timeout))
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = content_type or "application/octet-stream"
@@ -162,6 +171,17 @@ class HomeAssistant:
             self.cached, self.cached_at = result, time.monotonic()
             return result
 
+    def time_zone(self):
+        """Home Assistant's time zone, read once; None while it cannot be read."""
+        with self.lock:
+            if self.core_config is None and self.token:
+                try:
+                    config = json.loads(self.request("GET", "/config"))
+                    self.core_config = config if isinstance(config, dict) else {}
+                except (OSError, http.client.HTTPException, ValueError, TypeError):
+                    return None
+            return clean_text((self.core_config or {}).get("time_zone"), 64)
+
 
 class EventArchive:
     """Best-effort append-only daily event snapshots with seven-day retention."""
@@ -227,6 +247,104 @@ class EventArchive:
             self.prune()
 
 
+def _interpolate(a, b, elapsed, duration):
+    # The endpoint's integer interpolation, including C's rounding and truncating division.
+    change = (b - a) * elapsed
+    change += -(duration // 2) if change < 0 else duration // 2
+    return a + (abs(change) // duration) * (1 if change >= 0 else -1)
+
+
+def level16_to_x100(level):
+    if level == 0:
+        return 0
+    if level >= LEVEL_FULL_ON:
+        return 10000
+    return 100 + (level * 9900 + LEVEL_FULL_ON // 2) // LEVEL_FULL_ON
+
+
+def show_state(knots, local_ms):
+    """Evaluate a show the way the endpoint does: knots in stored order, wrapping at midnight."""
+    if not knots or not 0 <= local_ms < DAY_MS:
+        return None
+    left, right = knots[-1], knots[0]
+    start, end = left["minute"] * 60000 - DAY_MS, right["minute"] * 60000
+    for i, knot in enumerate(knots):
+        if knot["minute"] * 60000 <= local_ms:
+            left, right = knot, knots[(i + 1) % len(knots)]
+            start = left["minute"] * 60000
+            end = right["minute"] * 60000 + (DAY_MS if i + 1 == len(knots) else 0)
+    elapsed, duration = local_ms - start, end - start
+    if duration <= 0:
+        return None
+    state = {"level_x100": level16_to_x100(_interpolate(left["level"], right["level"], elapsed, duration)),
+             "cct": _interpolate(left["cct"], right["cct"], elapsed, duration), "vibrancy": None}
+    # Only a transferred vibrancy track is evaluated; a missing endpoint does not invent one.
+    if left["field2"] is not None and right["field2"] is not None and left["field2"] <= 100 and right["field2"] <= 100:
+        state["vibrancy"] = _interpolate(left["field2"], right["field2"], elapsed, duration)
+    return state
+
+
+def _u16(value):
+    return type(value) is int and 0 <= value <= 0xffff
+
+
+def show_program(data):
+    """The selection, override and shows of a zone programming snapshot; None if it is not one."""
+    if not isinstance(data, dict) or type(data.get("selected")) is not bool:
+        return None
+    shows = {}
+    for show in data.get("shows") if isinstance(data.get("shows"), list) else []:
+        knots = show.get("knots") if isinstance(show, dict) else None
+        if type(show.get("id") if isinstance(show, dict) else None) is not int or not isinstance(knots, list) or not 0 < len(knots) <= 64:
+            continue
+        if all(isinstance(k, dict) and type(k.get("minute")) is int and 0 <= k["minute"] < 1440 and _u16(k.get("level"))
+               and _u16(k.get("cct")) and (k.get("field2") is None or _u16(k.get("field2"))) for k in knots):
+            shows[show["id"]] = [{key: k.get(key) for key in ("minute", "level", "cct", "field2")} for k in knots]
+    show, override = data.get("show"), data.get("brightness_override_x100")
+    return {"selected": data["selected"], "show": show if type(show) is int else 0, "shows": shows,
+            "programmed": data.get("programmed") is True,
+            "override_x100": override if type(override) is int and 0 <= override <= 10000 else None}
+
+
+def _percent(value):
+    return round(value / 100, 2) if type(value) is int and 0 <= value <= 10000 else None
+
+
+def zone_show_state(zone, program, program_age_s, local_ms):
+    """Sensor values for one zone: what its show calls for, what the bridge sent, what N4 confirmed."""
+    requested = zone.get("requested") if isinstance(zone.get("requested"), dict) else {}
+    confirmed = zone.get("confirmed") if isinstance(zone.get("confirmed"), dict) else {}
+    flags = requested.get("flags") if type(requested.get("flags")) is int else 0
+    cct = requested.get("cct")
+    xy = (requested.get("x"), requested.get("y"))
+    state = {"active_show": None, "target_cct": None, "target_brightness": None,
+             "requested_cct": cct if flags & 0x02 and type(cct) is int and 1000 <= cct <= 20000 else None,
+             "requested_brightness": _percent(requested.get("level_x100")) if flags & 0x01 else None,
+             "confirmed_brightness": _percent(confirmed.get("level_x100"))}
+    attributes = {"zone": zone.get("zone"), "zone_id": zone.get("zone_id"), "serial": zone.get("serial"),
+                  "selected": None, "programmed": None, "installed_shows": [], "brightness_override": None,
+                  "target_vibrancy": None,
+                  "requested_vibrancy": requested.get("vibrancy") if flags & 0x08 else None,
+                  "requested_xy": [v / 10000 for v in xy] if flags & 0x04 and all(type(v) is int and 0 <= v <= 10000 for v in xy) else None,
+                  "requested_seq": requested.get("seq"), "confirmed_source": clean_text(confirmed.get("source"), 32)}
+    if program is not None and program_age_s is not None and program_age_s <= PROGRAM_STALE_S:
+        attributes.update(selected=program["selected"], programmed=program["programmed"],
+                          installed_shows=sorted(program["shows"]),
+                          brightness_override=_percent(program["override_x100"]))
+        if program["selected"] and program["show"]:
+            state["active_show"] = str(program["show"])
+            sample = show_state(program["shows"].get(program["show"]), local_ms) if local_ms is not None else None
+            if sample:
+                # A brightness override is absolute; the show's colour keeps running beneath it.
+                level = program["override_x100"] if program["override_x100"] is not None else sample["level_x100"]
+                state.update(target_cct=sample["cct"], target_brightness=_percent(level))
+                attributes["target_vibrancy"] = sample["vibrancy"]
+        else:
+            state["active_show"] = "not_selected"
+    state["attributes"] = attributes
+    return state
+
+
 class Panel:
     """One upstream owner; browser reads never create gateway traffic."""
     def __init__(self, gateway, archive):
@@ -248,6 +366,11 @@ class Panel:
         self.next_poll = 0
         self.config_due = 0
         self.legacy_index = 0
+        # Programming reads for show sensors; off unless sensors are publishing.
+        self.track_programs = False
+        self.program_due = 0
+        self.zone_programs = {}
+        self.program_attempts = {}
 
     @staticmethod
     def result(value, code=200):
@@ -273,6 +396,8 @@ class Panel:
             self.boot_epoch_ms = None
             self.events.clear()
             self.programs.clear()
+            self.zone_programs.clear()
+            self.program_attempts.clear()
             self.config_due = 0
         if status is not None:
             self._anchor(status)
@@ -284,6 +409,26 @@ class Panel:
                 self.events.append(event)
                 self.cursor = self.archive_cursor = event["id"]
 
+    def _program_zone(self, now):
+        """The bridged zone whose programming was read least recently, if one is due."""
+        with self.lock:
+            entry = self.cache.get("devices")
+            zones = entry[0].get("zones") if entry and isinstance(entry[0], dict) else None
+            due = [(self.program_attempts.get(z["zone"], -math.inf), z["zone"]) for z in zones or []
+                   if isinstance(z, dict) and type(z.get("zone")) is int and type(z.get("serial")) is int and z["serial"] > 0]
+            due = [d for d in due if now - d[0] >= PROGRAM_REFRESH_S]
+            return min(due)[1] if due else None
+
+    def show_inputs(self):
+        """A consistent copy of what the show sensors need."""
+        now = time.monotonic()
+        with self.lock:
+            entry = self.cache.get("devices")
+            zones = entry[0].get("zones") if entry and isinstance(entry[0], dict) else None
+            return {"age_s": now - entry[1] if entry else None,
+                    "zones": [dict(z) for z in zones if isinstance(z, dict)] if isinstance(zones, list) else [],
+                    "programs": {zone: (program, now - at) for zone, (program, at) in self.zone_programs.items()}}
+
     def archive_poll_once(self):
         """Single collector step, also used during mixed-version rollout."""
         if time.monotonic() < self.next_poll or not self.upstream.acquire(blocking=False):
@@ -291,8 +436,13 @@ class Panel:
         try:
             now = time.monotonic()
             self.next_poll = now + 1
+            program_zone = self._program_zone(now) if self.track_programs and now >= self.program_due else None
             if self.cache and now >= self.config_due:
                 route, path = "config", "/api/config"
+            elif program_zone is not None:
+                route, path = "program", "/api/program?" + urlencode({"zone": program_zone, "page": 0})
+                with self.lock:
+                    self.program_attempts[program_zone] = now
             elif self.snapshot_supported or now >= self.snapshot_retry_at:
                 route = "snapshot"
                 path = "/api/snapshot?" + urlencode({"after": self.cursor, "boot_id": self.boot_id or 0})
@@ -302,7 +452,11 @@ class Panel:
                 path = "/api/" + route
                 if route == "events":
                     path += "?" + urlencode({"after": self.cursor, "boot_id": self.boot_id or 0})
-            code, _, raw = self.gateway.request(path)
+            if route == "program":
+                # A bounded wait: programming inspection must not hold the collector for minutes.
+                code, ctype, raw = self.gateway.request(path, timeout=PROGRAM_TIMEOUT_S)
+            else:
+                code, ctype, raw = self.gateway.request(path)
             if route == "snapshot" and code in (404, 405):
                 self.snapshot_supported = False
                 self.snapshot_retry_at = now + 60
@@ -311,11 +465,18 @@ class Panel:
                 self.config_due = now + max(30, getattr(self.gateway, "retry_after", 0))
                 self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
                 return None
+            if route == "program" and code != 200:
+                self.program_due = now + max(PROGRAM_SLOT_S, getattr(self.gateway, "retry_after", 0))
+                self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
+                return None
             if code != 200:
                 raise ValueError(f"gateway {route} returned HTTP {code}")
             data = json.loads(raw)
             if not isinstance(data, dict):
                 raise ValueError("invalid gateway response")
+            program = show_program(data) if route == "program" else None
+            if route == "program" and program is None:
+                raise ValueError("invalid gateway programming snapshot")
             events = data.get("events") if route == "snapshot" else data if route == "events" else None
             if events is not None and (not isinstance(events, dict) or not isinstance(events.get("events"), list)):
                 raise ValueError("invalid gateway events")
@@ -330,6 +491,13 @@ class Panel:
                     self.snapshot_supported = True
                     for key in ("status", "devices"):
                         self.cache[key] = (data[key], now)
+                elif route == "program":
+                    self.zone_programs[program_zone] = (program, now)
+                    # The dashboard reads the same snapshot without another gateway request.
+                    self.programs[path] = (code, ctype, raw)
+                    while len(self.programs) > 16:
+                        self.programs.popitem(last=False)
+                    self.program_due = now + PROGRAM_SLOT_S
                 elif route != "events":
                     self.cache[route] = (data, now)
                 if route == "config":
@@ -337,6 +505,8 @@ class Panel:
                     generation = (data.get("generation"), data.get("hash"))
                     if generation != previous:
                         self.programs.clear()
+                        self.zone_programs.clear()
+                        self.program_attempts.clear()
                     self.program_generation = generation
                     self.config_due = now + 30
                 self.last_contact = time.time()
@@ -352,6 +522,11 @@ class Panel:
                 self.config_due = time.monotonic() + 30
                 self.next_poll = time.monotonic() + 1
                 LOG.warning("Optional configuration snapshot deferred: %s", exc)
+                return None
+            if route == "program":
+                self.program_due = time.monotonic() + PROGRAM_SLOT_S
+                self.next_poll = time.monotonic() + 1
+                LOG.warning("Show programming read deferred: %s", exc)
                 return None
             with self.lock:
                 self.failures += 1
@@ -427,6 +602,234 @@ class Panel:
             return result
         finally:
             self.upstream.release()
+
+
+def _mqtt_string(value):
+    data = value if isinstance(value, bytes) else value.encode()
+    if len(data) > 0xffff:
+        raise ValueError("MQTT string too long")
+    return len(data).to_bytes(2, "big") + data
+
+
+def _mqtt_packet(header, body):
+    length, encoded = len(body), bytearray()
+    if length > 268_435_455:
+        raise ValueError("MQTT packet too long")
+    while True:
+        length, digit = divmod(length, 128)
+        encoded.append(digit | (0x80 if length else 0))
+        if not length:
+            return bytes([header]) + bytes(encoded) + body
+
+
+class MqttClient:
+    """Minimal MQTT 3.1.1 publisher: QoS 0, retained messages, a last will, no subscriptions."""
+    def __init__(self, host, port, username, password, client_id, will_topic, keepalive=60, timeout=10):
+        self.host, self.port, self.username, self.password = host, port, username, password
+        self.client_id, self.will_topic, self.keepalive, self.timeout = client_id, will_topic, keepalive, timeout
+        self.sock, self.last_send = None, 0.0
+
+    def connect(self):
+        flags = 0x02 | 0x04 | 0x20  # clean session, will flag, retained will (QoS 0)
+        payload = _mqtt_string(self.client_id) + _mqtt_string(self.will_topic) + _mqtt_string(b"offline")
+        if self.username:
+            flags |= 0x80
+            payload += _mqtt_string(self.username)
+            if self.password:
+                flags |= 0x40
+                payload += _mqtt_string(self.password)
+        header = _mqtt_string(b"MQTT") + bytes([4, flags]) + self.keepalive.to_bytes(2, "big")
+        sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+        try:
+            sock.sendall(_mqtt_packet(0x10, header + payload))
+            ack = b""
+            while len(ack) < 4:
+                chunk = sock.recv(4 - len(ack))
+                if not chunk:
+                    raise ConnectionError("MQTT broker closed the connection")
+                ack += chunk
+            if ack[:2] != b"\x20\x02" or ack[3] != 0:
+                raise ConnectionError(f"MQTT broker refused the connection (code {ack[3]})")
+        except BaseException:
+            sock.close()
+            raise
+        self.sock, self.last_send = sock, time.monotonic()
+        return self
+
+    def _send(self, packet):
+        self.sock.sendall(packet)
+        self.last_send = time.monotonic()
+
+    def publish(self, topic, payload, retain=False):
+        data = payload if isinstance(payload, bytes) else payload.encode()
+        self._send(_mqtt_packet(0x31 if retain else 0x30, _mqtt_string(topic) + data))
+
+    def service(self):
+        """Keep the session alive and notice a broker that has gone away."""
+        if time.monotonic() - self.last_send >= self.keepalive / 2:
+            self._send(b"\xc0\x00")
+        while select.select([self.sock], [], [], 0)[0]:
+            if not self.sock.recv(4096):  # only PINGRESP is ever sent to a publisher
+                raise ConnectionError("MQTT broker closed the connection")
+
+    def close(self):
+        if self.sock:
+            try: self._send(b"\xe0\x00")
+            except OSError: pass
+            self.sock.close()
+            self.sock = None
+
+
+def supervisor_mqtt(token, host="supervisor", timeout=6):
+    """Broker settings the Supervisor provides to apps that declare the mqtt service."""
+    conn = http.client.HTTPConnection(host, timeout=timeout)
+    try:
+        conn.request("GET", "/services/mqtt", headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+        response = conn.getresponse()
+        raw = response.read(65537)
+    finally:
+        conn.close()
+    if response.status != 200 or len(raw) > 65536:
+        raise ConnectionError(f"no MQTT broker is available (Supervisor HTTP {response.status})")
+    body = json.loads(raw)
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict) or not isinstance(data.get("host"), str):
+        raise ConnectionError("Supervisor returned no MQTT broker")
+    if data.get("ssl"):
+        raise ConnectionError("TLS MQTT brokers are not supported")
+    port = data.get("port", 1883)
+    return {"host": data["host"], "port": port if type(port) is int and 0 < port < 65536 else 1883,
+            "username": data.get("username") if isinstance(data.get("username"), str) else None,
+            "password": data.get("password") if isinstance(data.get("password"), str) else None}
+
+
+SHOW_SENSORS = (
+    # key, name, unit, icon, display precision
+    ("active_show", "Active show", None, "mdi:weather-sunset", None),
+    ("target_cct", "Show target color temperature", "K", "mdi:sun-thermometer-outline", 0),
+    ("requested_cct", "Requested color temperature", "K", "mdi:thermometer-lines", 0),
+    ("target_brightness", "Show target brightness", "%", "mdi:brightness-percent", 1),
+    ("requested_brightness", "Requested brightness", "%", "mdi:brightness-6", 1),
+    ("confirmed_brightness", "Confirmed brightness", "%", "mdi:check-circle-outline", 1),
+)
+
+
+class ShowSensors:
+    """Per-zone Natural Show diagnostics, published to Home Assistant through MQTT discovery.
+
+    The target is the show evaluated with the endpoint's arithmetic in Home Assistant's
+    time zone. Requested values are what the bridge last sent to N4; N4 confirms brightness only.
+    """
+    PREFIX = "ccx_bridge"
+    AVAILABILITY = PREFIX + "/status"
+
+    def __init__(self, panel, ha, connect, now=None):
+        self.panel, self.ha, self.connect = panel, ha, connect
+        self.now = now or (lambda tz: datetime.now(tz))
+        self.client, self.retry_at, self.failures = None, 0.0, 0
+        self.discovered, self.published, self.available = {}, {}, None
+        self.stop = threading.Event()
+
+    def local_ms(self):
+        for name in (self.ha.time_zone(), DEFAULT_TIME_ZONE):
+            try:
+                tz = ZoneInfo(name) if name else None
+            except (ZoneInfoNotFoundError, ValueError):
+                continue
+            if tz:
+                t = self.now(tz)
+                return ((t.hour * 60 + t.minute) * 60 + t.second) * 1000 + t.microsecond // 1000, name
+        return None, None
+
+    def discovery(self, zone_id, zone):
+        state_topic = f"{self.PREFIX}/zone/{zone_id}/state"
+        name = clean_text(zone.get("name"), 64) or f"Zone {zone_id}"
+        device = {"identifiers": [f"{self.PREFIX}_zone_{zone_id}"], "name": f"CCX Bridge {name}",
+                  "manufacturer": "CCX Bridge", "model": "Bridged A20 zone"}
+        if type(zone.get("serial")) is int:
+            device["serial_number"] = str(zone["serial"])
+        for key, label, unit, icon, precision in SHOW_SENSORS:
+            config = {"name": label, "unique_id": f"{self.PREFIX}_{zone_id}_{key}", "state_topic": state_topic,
+                      "value_template": "{{ value_json.%s }}" % key, "availability_topic": self.AVAILABILITY,
+                      "icon": icon, "device": device,
+                      "origin": {"name": "CCX Bridge", "support_url": "https://github.com/thetimetraveler/c6-live-bridge"}}
+            if unit:
+                config.update(unit_of_measurement=unit, state_class="measurement", suggested_display_precision=precision)
+            if key == "active_show":
+                config.update(json_attributes_topic=state_topic, json_attributes_template="{{ value_json.attributes | tojson }}")
+            yield f"homeassistant/sensor/{self.PREFIX}_{zone_id}/{key}/config", json.dumps(config, separators=(",", ":"))
+
+    def remove(self, zone_id):
+        for key, *_ in SHOW_SENSORS:
+            self.client.publish(f"homeassistant/sensor/{self.PREFIX}_{zone_id}/{key}/config", b"", retain=True)
+        self.client.publish(f"{self.PREFIX}/zone/{zone_id}/state", b"", retain=True)
+
+    def publish(self):
+        inputs = self.panel.show_inputs()
+        available = inputs["age_s"] is not None and inputs["age_s"] <= SNAPSHOT_STALE_S
+        local_ms, tz_name = self.local_ms()
+        zones = {}
+        for zone in inputs["zones"]:
+            if type(zone.get("zone_id")) is int and zone["zone_id"] > 0 and type(zone.get("serial")) is int and zone["serial"] > 0:
+                zones[zone["zone_id"]] = zone
+        for zone_id in [z for z in self.discovered if z not in zones]:
+            self.remove(zone_id)
+            del self.discovered[zone_id]
+            self.published.pop(zone_id, None)
+        for zone_id, zone in zones.items():
+            signature = json.dumps([zone.get("name"), zone.get("serial")])
+            if self.discovered.get(zone_id) != signature:
+                for topic, config in self.discovery(zone_id, zone):
+                    self.client.publish(topic, config, retain=True)
+                self.discovered[zone_id] = signature
+            program, age = inputs["programs"].get(zone.get("zone"), (None, None))
+            state = zone_show_state(zone, program, age, local_ms)
+            state["attributes"]["time_zone"] = tz_name
+            payload = json.dumps(state, separators=(",", ":"), sort_keys=True)
+            if self.published.get(zone_id) != payload:
+                self.client.publish(f"{self.PREFIX}/zone/{zone_id}/state", payload, retain=True)
+                self.published[zone_id] = payload
+        if available != self.available:
+            self.client.publish(self.AVAILABILITY, "online" if available else "offline", retain=True)
+            self.available = available
+
+    def step(self):
+        if self.client is None:
+            if time.monotonic() < self.retry_at:
+                return
+            try:
+                self.client = self.connect()
+                self.discovered, self.published, self.available = {}, {}, None
+                self.failures = 0
+                self.panel.track_programs = True  # programming reads only while someone consumes them
+                LOG.info("Show sensors connected to MQTT")
+            except (OSError, ConnectionError, ValueError, http.client.HTTPException) as exc:
+                self.failures += 1
+                self.retry_at = time.monotonic() + min(300, 15 * 2 ** min(self.failures, 4))
+                if self.failures == 1 or self.failures % 10 == 0:
+                    LOG.warning("Show sensors waiting for MQTT: %s", exc)
+                return
+        try:
+            self.publish()
+            self.client.service()
+        except (OSError, ConnectionError, ValueError) as exc:
+            LOG.warning("Show sensors lost MQTT; reconnecting: %s", exc)
+            self.client.close()
+            self.client, self.retry_at = None, time.monotonic() + 5
+            self.panel.track_programs = False
+
+    def run(self, interval=5):
+        while not self.stop.is_set():
+            self.step()
+            self.stop.wait(interval)
+
+    def close(self):
+        self.stop.set()
+        if self.client:
+            try: self.client.publish(self.AVAILABILITY, "offline", retain=True)
+            except OSError: pass
+            self.client.close()
+            self.client = None
 
 
 class Server(ThreadingHTTPServer):
@@ -554,13 +957,26 @@ def main():
     gateway = Gateway(options["gateway_host"], options["gateway_token"])
     panel = Panel(gateway, EventArchive("/share/c6-management/events"))
     integrations = options.get("lutron_integrations")
-    ha = HomeAssistant(os.environ.get("SUPERVISOR_TOKEN", ""),
-                       integrations if isinstance(integrations, list) else DEFAULT_INTEGRATIONS)
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
+    ha = HomeAssistant(supervisor_token, integrations if isinstance(integrations, list) else DEFAULT_INTEGRATIONS)
     server = Server(("0.0.0.0", 8099), panel, ha)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
+    sensors = sensor_thread = None
+    if options.get("show_sensors", True) is True and supervisor_token:
+        def connect():
+            broker = supervisor_mqtt(supervisor_token)
+            return MqttClient(broker["host"], broker["port"], broker["username"], broker["password"],
+                              "ccx-bridge-show-sensors", ShowSensors.AVAILABILITY).connect()
+        sensors = ShowSensors(panel, ha, connect)
+        sensor_thread = threading.Thread(target=sensors.run, name="show-sensors", daemon=True)
+        sensor_thread.start()
     try: server.serve_forever()
     finally:
         panel.stop.set()
+        if sensors:
+            sensors.stop.set()
+            sensor_thread.join(timeout=10)
+            sensors.close()
         server.server_close()
 
 

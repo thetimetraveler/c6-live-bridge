@@ -411,4 +411,215 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(denied.results[0][0],403)
 
 
+# Show 31779 as transferred to the Office A20: minute, 16-bit level, Kelvin, vibrancy.
+SHOW_31779=[{"minute":m,"level":l,"cct":c,"field2":v} for m,l,c,v in
+            ((240,19123,1800,25),(377,25717,2130,25),(600,65279,4000,35),(1020,65279,4000,35),(1206,25717,2130,25),(1320,19123,1800,25))]
+
+
+def at(hour,minute=0): return (hour*60+minute)*60000
+
+
+class FakeMqtt:
+    def __init__(self): self.messages=[];self.closed=False;self.fail=False
+    def publish(self,topic,payload,retain=False):
+        if self.fail: raise ConnectionError("broker gone")
+        self.messages.append((topic,payload.decode() if isinstance(payload,bytes) else payload,retain))
+    def service(self):
+        if self.fail: raise ConnectionError("broker closed the connection")
+    def close(self): self.closed=True
+    def topics(self,suffix): return [m for m in self.messages if m[0].endswith(suffix)]
+
+
+class ShowSensorTests(unittest.TestCase):
+    def test_show_evaluation_matches_endpoint_arithmetic(self):
+        self.assertEqual([app.level16_to_x100(v) for v in (0,1,32640,65279,65535)],[0,100,5050,10000,10000])
+        knot=app.show_state(SHOW_31779,at(4))
+        self.assertEqual(knot,{"level_x100":app.level16_to_x100(19123),"cct":1800,"vibrancy":25})
+        # 19:35 is 155 of the 186 minutes from 17:00 (4000 K) to 20:06 (2130 K): 2441.67 K rounds to 2442.
+        evening=app.show_state(SHOW_31779,at(19,35))
+        self.assertEqual((evening["cct"],evening["vibrancy"]),(2442,27))
+        self.assertEqual(app.show_state(SHOW_31779,at(2))["cct"],1800)  # overnight segment wraps 22:00 → 04:00
+        wrap=[{"minute":60,"level":0,"cct":2000,"field2":None},{"minute":1380,"level":65279,"cct":4000,"field2":None}]
+        midnight=app.show_state(wrap,0)
+        self.assertEqual((midnight["cct"],midnight["level_x100"],midnight["vibrancy"]),(3000,5050,None))
+        self.assertEqual(app.show_state(wrap[:1],at(12))["cct"],2000)
+        self.assertIsNone(app.show_state([],0));self.assertIsNone(app.show_state(SHOW_31779,app.DAY_MS))
+
+    def test_programming_snapshot_validation(self):
+        data={"selected":True,"show":31779,"programmed":True,"brightness_override_x100":2500,
+              "shows":[{"id":31779,"knots":SHOW_31779},{"id":5,"knots":[{"minute":1440,"level":0,"cct":0,"field2":None}]},
+                       {"id":"6","knots":SHOW_31779},"junk"]}
+        program=app.show_program(data)
+        self.assertEqual(sorted(program["shows"]),[31779])
+        self.assertEqual((program["selected"],program["show"],program["override_x100"]),(True,31779,2500))
+        self.assertIsNone(app.show_program({"selected":"yes"}))
+        self.assertIsNone(app.show_program([]))
+        self.assertIsNone(app.show_program(dict(data,brightness_override_x100=10001))["override_x100"])
+
+    def test_zone_state_separates_target_requested_and_confirmed(self):
+        program=app.show_program({"selected":True,"show":31779,"programmed":True,"brightness_override_x100":None,
+                                  "shows":[{"id":31779,"knots":SHOW_31779}]})
+        zone={"zone":0,"zone_id":30861,"serial":90130861,"name":"office",
+              "requested":{"flags":0x0b,"level_x100":4950,"cct":2442,"x":4600,"y":4100,"vibrancy":27,"seq":9},
+              "confirmed":{"level_x100":4949,"source":"observed","seq":9,"at_ms":5}}
+        state=app.zone_show_state(zone,program,10,at(19,35))
+        self.assertEqual((state["active_show"],state["target_cct"],state["requested_cct"]),("31779",2442,2442))
+        self.assertEqual((state["requested_brightness"],state["confirmed_brightness"]),(49.5,49.49))
+        self.assertEqual(state["target_brightness"],app.level16_to_x100(app._interpolate(65279,25717,at(2,35),at(3,6)))/100)
+        self.assertEqual(state["attributes"]["target_vibrancy"],27)
+        self.assertIsNone(state["attributes"]["requested_xy"])  # XY flag not set
+        override=dict(program,override_x100=10000)
+        self.assertEqual(app.zone_show_state(zone,override,10,at(19,35))["target_brightness"],100.0)
+        off=dict(zone,requested={"flags":0x01,"level_x100":0,"cct":2442})
+        self.assertEqual((app.zone_show_state(off,program,10,at(19,35))["requested_cct"],
+                          app.zone_show_state(off,program,10,at(19,35))["requested_brightness"]),(None,0.0))
+        xy=dict(zone,requested={"flags":0x05,"level_x100":5000,"x":5137,"y":4164})
+        self.assertEqual(app.zone_show_state(xy,program,10,at(12))["attributes"]["requested_xy"],[0.5137,0.4164])
+        self.assertEqual(app.zone_show_state(zone,dict(program,selected=False),10,at(12))["active_show"],"not_selected")
+        stale=app.zone_show_state(zone,program,app.PROGRAM_STALE_S+1,at(12))
+        self.assertEqual((stale["active_show"],stale["target_cct"],stale["requested_cct"]),(None,None,2442))
+        self.assertIsNone(app.zone_show_state({"zone":0},None,None,at(12))["active_show"])
+
+    def test_mqtt_packets_and_connect_handshake(self):
+        import socket,threading
+        self.assertEqual(app._mqtt_packet(0x30,b"x"*321)[:3],b"\x30\xc1\x02")
+        listener=socket.socket();listener.bind(("127.0.0.1",0));listener.listen(1)
+        received=[]
+        def broker(code):
+            conn,_=listener.accept()
+            received.append(conn.recv(4096));conn.sendall(bytes([0x20,2,0,code]))
+            received.append(conn.recv(4096));conn.close()
+        thread=threading.Thread(target=broker,args=(0,));thread.start()
+        client=app.MqttClient("127.0.0.1",listener.getsockname()[1],"addons","pw","cid","ccx_bridge/status").connect()
+        client.publish("t/a","on",retain=True);client.close();thread.join(5)
+        connect=received[0]
+        self.assertEqual(connect[0],0x10)
+        self.assertIn(b"\x00\x04MQTT\x04\xe6\x00\x3c",connect)  # v3.1.1, user+password+retained will+clean session
+        for part in (b"cid",b"ccx_bridge/status",b"offline",b"addons",b"pw"):self.assertIn(part,connect)
+        self.assertTrue(received[1].startswith(b"\x31\x07\x00\x03t/aon"))
+        thread=threading.Thread(target=broker,args=(5,));thread.start()
+        with self.assertRaises(ConnectionError):
+            app.MqttClient("127.0.0.1",listener.getsockname()[1],None,None,"cid","s").connect()
+        listener.close();thread.join(5)
+
+    def test_supervisor_mqtt_service_lookup(self):
+        class Conn:
+            reply=(200,{"result":"ok","data":{"host":"core-mosquitto","port":1883,"ssl":False,"username":"addons","password":"pw"}})
+            def __init__(self,*a,**k):pass
+            def request(self,method,path,headers):Conn.seen=(method,path,headers["Authorization"])
+            def getresponse(self):return SimpleNamespace(status=Conn.reply[0],read=lambda n:json.dumps(Conn.reply[1]).encode())
+            def close(self):pass
+        with patch.object(app.http.client,"HTTPConnection",Conn):
+            self.assertEqual(app.supervisor_mqtt("tok"),{"host":"core-mosquitto","port":1883,"username":"addons","password":"pw"})
+            self.assertEqual(Conn.seen,("GET","/services/mqtt","Bearer tok"))
+            for reply in ((400,{}),(200,[]),(200,{"data":{"host":"h","ssl":True}})):
+                Conn.reply=reply
+                with self.assertRaises(ConnectionError):app.supervisor_mqtt("tok")
+
+
+class ShowCollectorTests(unittest.TestCase):
+    ZONES=[{"zone":0,"zone_id":30861,"serial":90130861,"name":"office","requested":{"flags":3,"level_x100":4950,"cct":2442},
+            "confirmed":{"level_x100":4950,"source":"observed"}},
+           {"zone":1,"zone_id":0,"serial":0,"name":"spare"}]
+    PROGRAM={"serial":90130861,"programmed":True,"selected":True,"show":31779,"members":[30861],"presets":[],
+             "shows":[{"id":31779,"knots":SHOW_31779}],"brightness_override_x100":None}
+
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        test=self
+        class Gateway(StubGateway):
+            program_code=200
+            def request(self,path,method="GET",body=None,content_type=None,timeout=None):
+                if path.startswith("/api/program"):
+                    self.calls.append((method,path,timeout))
+                    if self.fail:raise OSError("reset")
+                    return self.program_code,"application/json",json.dumps(test.PROGRAM).encode()
+                code,ct,raw=super().request(path,method,body,content_type)
+                if path.startswith("/api/snapshot"):
+                    data=json.loads(raw);data["devices"]={"zones":test.ZONES};raw=json.dumps(data).encode()
+                return code,ct,raw
+        self.gateway=Gateway()
+        self.panel=app.Panel(self.gateway,app.EventArchive(Path(self.tmp.name)/"events"))
+        self.panel.track_programs=True
+        self.ha=StubHomeAssistant("supervisor-token",["lutron_caseta"])
+        self.mqtt=FakeMqtt()
+        self.sensors=app.ShowSensors(self.panel,self.ha,lambda:self.mqtt,
+                                     now=lambda tz:app.datetime(2026,10,28,19,35,tzinfo=tz))
+    def tearDown(self): self.tmp.cleanup()
+
+    def collect(self):
+        self.panel.next_poll=0;self.panel.config_due=float("inf")
+        return self.panel.archive_poll_once()
+
+    def test_programming_reads_take_bounded_slots_and_feed_the_dashboard_cache(self):
+        self.collect();self.collect()
+        self.assertEqual(self.gateway.calls[-1],("GET","/api/program?zone=0&page=0",app.PROGRAM_TIMEOUT_S))
+        self.assertEqual(self.panel.zone_programs[0][0]["show"],31779)
+        calls=len(self.gateway.calls)
+        self.assertEqual(json.loads(self.panel.proxy("program",[("zone","0"),("page","0")])[2])["show"],31779)
+        self.assertEqual(len(self.gateway.calls),calls)
+        self.panel.program_due=0;self.collect()  # zone 0 was just read and zone 1 has no serial
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+        self.panel.track_programs=False;self.panel.program_attempts.clear();self.collect()
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+
+    def test_programming_failures_defer_without_marking_monitoring_offline(self):
+        self.collect()
+        for failure in ("code","exception"):
+            self.panel.program_attempts.clear();self.panel.program_due=0
+            self.gateway.program_code,self.gateway.fail=(503,False) if failure=="code" else (200,True)
+            with patch("app.time.monotonic",return_value=1000.0):self.collect()
+            self.assertTrue(self.gateway.calls[-1][1].startswith("/api/program"))
+            self.assertGreaterEqual(self.panel.program_due,1000+app.PROGRAM_SLOT_S)
+            self.assertTrue(self.panel.online);self.assertIsNone(self.panel.last_error)
+            self.assertNotIn(0,self.panel.zone_programs)
+        self.gateway.fail=False
+        self.collect();self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+
+    def test_new_boot_discards_programming(self):
+        self.collect();self.collect();self.assertIn(0,self.panel.zone_programs)
+        with self.panel.lock:self.panel._events({"boot_id":99,"events":[]})
+        self.assertEqual((self.panel.zone_programs,self.panel.program_attempts),({},{}))
+
+    def test_sensors_publish_discovery_state_and_availability(self):
+        self.sensors.step()
+        self.assertTrue(self.panel.track_programs)
+        self.assertEqual(self.mqtt.topics("ccx_bridge/status"),[("ccx_bridge/status","offline",True)])
+        self.collect();self.collect()
+        self.mqtt.messages.clear();self.sensors.step()
+        configs=self.mqtt.topics("/config")
+        self.assertEqual(len(configs),len(app.SHOW_SENSORS))
+        self.assertTrue(all(c[0].startswith("homeassistant/sensor/ccx_bridge_30861/") and c[2] for c in configs))
+        show=json.loads(next(c[1] for c in configs if "/active_show/" in c[0]))
+        self.assertEqual((show["unique_id"],show["device"]["name"],show["device"]["serial_number"]),
+                         ("ccx_bridge_30861_active_show","CCX Bridge office","90130861"))
+        self.assertEqual(show["availability_topic"],"ccx_bridge/status")
+        self.assertEqual(json.loads(next(c[1] for c in configs if "/target_cct/" in c[0]))["unit_of_measurement"],"K")
+        (topic,payload,retain),=self.mqtt.topics("/state")
+        state=json.loads(payload)
+        self.assertEqual((topic,retain),("ccx_bridge/zone/30861/state",True))
+        self.assertEqual((state["active_show"],state["target_cct"],state["requested_cct"]),("31779",2442,2442))
+        self.assertEqual(state["attributes"]["time_zone"],"Europe/London")
+        self.assertEqual(self.mqtt.topics("ccx_bridge/status"),[("ccx_bridge/status","online",True)])
+        self.mqtt.messages.clear();self.sensors.step();self.assertEqual(self.mqtt.messages,[])  # unchanged: silent
+        with self.panel.lock:
+            data,at_=self.panel.cache["devices"];self.panel.cache["devices"]=({"zones":[]},at_-app.SNAPSHOT_STALE_S-1)
+        self.sensors.step()
+        self.assertEqual(len(self.mqtt.topics("/config")),len(app.SHOW_SENSORS))
+        self.assertTrue(all(m[1]=="" and m[2] for m in self.mqtt.topics("/config")+self.mqtt.topics("/state")))
+        self.assertEqual(self.mqtt.topics("ccx_bridge/status")[-1][1],"offline")
+
+    def test_sensors_reconnect_and_stop_program_reads_without_a_broker(self):
+        self.sensors.step();self.mqtt.fail=True;self.sensors.step()
+        self.assertIsNone(self.sensors.client);self.assertTrue(self.mqtt.closed)
+        self.assertFalse(self.panel.track_programs)
+        attempts=[]
+        def refused():
+            attempts.append(1);raise ConnectionError("no broker")
+        self.sensors.connect=refused;self.sensors.retry_at=0
+        with self.assertLogs("c6-management","WARNING"):self.sensors.step()
+        self.sensors.step();self.assertEqual(len(attempts),1)  # backed off
+        self.assertFalse(self.panel.track_programs)
+
+
 if __name__=="__main__": unittest.main()

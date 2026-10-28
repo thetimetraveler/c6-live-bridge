@@ -105,3 +105,59 @@ or in Pacific time (`America/Los_Angeles`) when that is unavailable.
 
 Levels are `level_x100` (0–10000, so 5000 is 50 %). `-1` means not known yet
 and is left out. Any other value is shown exactly as received with a `?` marker.
+
+## Natural Show sensors (0.6.0)
+
+With an MQTT broker app (such as Mosquitto) running, the app publishes six
+sensors for every bridged zone (a mapped zone with a Lutron zone ID and a
+serial number) through MQTT discovery. Each zone is one device, **CCX Bridge
+<zone name>**:
+
+| Sensor | Source |
+|---|---|
+| Active show | Show ID the endpoint has selected, or `not_selected` |
+| Show target color temperature / brightness | That show evaluated now, with the endpoint's integer interpolation, in Home Assistant's time zone |
+| Requested color temperature / brightness | The latest command the bridge sent to N4 |
+| Confirmed brightness | N4 readback |
+
+N4 confirms brightness only. No confirmed color temperature exists, so
+**Requested color temperature** is what the bridge actually sent for each show
+tick. A lamp that follows its show has a requested color temperature equal to
+the target, apart from the endpoint's five-second sampling and its pause while
+an N4 command is in flight. A brightness override replaces the target
+brightness, while the show's color temperature keeps running. A lamp that is
+off sends no color, so its requested color temperature is unknown.
+
+The Active show sensor's attributes add the selection, installed shows,
+brightness override, target and requested vibrancy, requested XY, command
+sequence, confirmation source and the time zone used. The target assumes that
+the gateway's show time zone matches Home Assistant's. A target that is off by
+whole hours points to a gateway time zone setting.
+
+The selection comes from the zone's programming snapshot. While the sensors are
+connected to MQTT, the collector reads one zone's snapshot per 30-second slot,
+and each zone at most every two minutes, with a 20-second limit. A busy gateway
+defers the read without affecting monitoring. The dashboard reuses these
+snapshots. Show values become unknown when a snapshot is more than ten minutes
+old. All sensors become unavailable when the gateway snapshot is more than two
+minutes old or the app stops (MQTT last will). Messages are retained, and state
+is published only when it changes. A zone removed from the mapping has its
+sensors removed.
+
+Turn this off with `show_sensors: false`. The app reads broker settings from
+the Supervisor (`services: mqtt:want`) and still has no third-party Python
+dependencies.
+
+To flag a lamp that has drifted from its show, create a Template binary sensor
+helper (Settings → Devices & services → Helpers → Template), for example:
+
+```jinja
+{% set show = states('sensor.ccx_bridge_office_active_show') %}
+{% set target = states('sensor.ccx_bridge_office_show_target_color_temperature') | float(none) %}
+{% set sent = states('sensor.ccx_bridge_office_requested_color_temperature') | float(none) %}
+{{ show not in ['not_selected', 'unknown', 'unavailable'] and target is not none
+   and sent is not none and (sent - target) | abs > 25 }}
+```
+
+Check your entity IDs; they follow the gateway's zone names.
+

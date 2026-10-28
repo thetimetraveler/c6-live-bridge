@@ -1,3 +1,11 @@
+## 0.7.0
+
+- Replace the Lights table with one card per bridged lamp. Each card shows what Lutron shows, what the bridge last sent to the Ketra hub, and what the hub reports the lamp is doing, side by side with brightness bars and colour swatches.
+- Check each lamp and show a plain-language verdict: lamp against Lutron, lamp against the running Natural Show (brightness, colour and vibrancy for the current minute), and lamp against the bridge's last command. A lamp on while Lutron shows it off, as after a power cut, is flagged as out of sync.
+- Show the Natural Show's target for now, its next keyframe and a curve for the day with the lamp's position.
+- Render typed gateway commands (brightness, CCT, xy, vibrancy, fade) instead of the unrecognised-value marker, and explain what brightness, K and vibrancy mean.
+- Add `GET /api/zones`, computed from cached data only, which also keeps zone programming fresh while the dashboard is open. The overview headline and a new "Bridged lamps" tile summarise sync.
+
 ## 0.6.1
 
 - Read and configure the gateway show time zone in Setup, with confirmation when changing show timing.

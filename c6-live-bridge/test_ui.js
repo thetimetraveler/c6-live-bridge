@@ -145,11 +145,35 @@ gatewayTimezone={timezone:'unknown-rule'};if(showZone())throw Error('unknown gat
 gatewayTimezone={unsupported:true};if(showZone()!=='America/Los_Angeles')throw Error('old gateways should fall back to HA time');
 haData={time_zone:'Europe/London',lights:[]};renderEvents();
 if(!document.getElementById('events-tz').textContent.includes('Europe/London')) throw Error('Home Assistant time zone should win');
-deviceView({zones:[{zone:1,requested:7500},{zone:2,requested:-1},{zone:3,requested:null}]});
-const requestedCells=[...document.getElementById('devices').children].map(r=>text(r.children[2]));
-if(!requestedCells[0].includes('75%')||requestedCells[0].includes('7500')) throw Error('requested level should read as a percent: '+requestedCells[0]);
-if(!document.getElementById('devices').children[1].children[2].children.some(c=>c.className==='unknown')) throw Error('unrecognised requested level must be marked unknown');
-if(!requestedCells[2].includes('—')) throw Error('missing requested level should read as a dash');
+deviceView({zones:[{zone:1,requested:7500}]});
+if(document.getElementById('device-count').textContent!=='1 zone') throw Error('device view should still count zones');
+const office={zone:0,zone_id:30861,name:'Office A20',n4_group:'office',
+  lutron:{name:'office lamp',area:'Office',on:false,state:'off',level_x100:0,cct:null},sent:null,
+  lamp:{level_x100:10000,seq:0,source:'observed',age_ms:3000,cct:null,xy:null,vibrancy:null},
+  show:{status:'not_selected',installed:[31779],override_x100:null},
+  checks:[{key:'lutron',status:'bad',title:'Lamp is on at 100%, Lutron shows off',detail:'Changed outside Lutron.'},{key:'show',status:'info',title:'No Natural Show selected'}],
+  verdict:{tone:'bad',title:'Lamp is on at 100%, Lutron shows off'}};
+const curve=[0,360,720,1080,1440].map((minute,i)=>({minute,level_x100:[3000,3000,10000,10000,3000][i],cct:1800}));
+const sitting={zone:1,zone_id:31467,name:'Sitting Room A20',n4_group:'Sitting Room',
+  lutron:{on:true,state:'on',level_x100:10000,cct:3000,area:'Sitting Room'},
+  sent:{level_x100:8840,cct:2803,xy:null,vibrancy:27,fade_ms:0,delay_ms:0,seq:16,age_ms:2000},
+  lamp:{level_x100:8840,seq:16,source:'applied',age_ms:1000,cct:2803,xy:null,vibrancy:27},
+  show:{status:'running',id:31779,override_x100:null,now_ms:33412000,curve,target:{level_x100:8840,show_level_x100:8840,cct:2803,vibrancy:27},next:{minute:600,level_x100:10000,cct:3000}},
+  checks:[{key:'lutron',status:'info',title:"Lutron shows the show's next keyframe"},{key:'show',status:'good',title:'Following Natural Show 31779'},{key:'hub',status:'good',title:'Hub confirmed command #16'}],
+  verdict:{tone:'good',title:'In sync · following Natural Show'}};
+zonesView({zones:[office,sitting],time_zone:'America/Los_Angeles',home_assistant:true});
+const cards=document.getElementById('zones').children;
+if(cards.length!==2||!cards[0].className.includes('bad')||!cards[1].className.includes('good')) throw Error('zone cards should carry their verdict tone');
+const all=cards.map(text).join(' | ');
+for(const want of ['Lamp is on at 100%, Lutron shows off','Off','100%','Hub reading','Nothing yet','No Natural Show selected','88.4%','2803 K','vibrancy 27','Hub confirmed command #16','Calls for now: 88.4%','Following Natural Show 31779'])
+  if(!all.includes(want)) throw Error('zone cards should show '+want+': '+all);
+if(text(cards[0]).split('No Natural Show selected').length!==2) throw Error('show status should appear once per card');
+if(all.includes('[object Object]')||all.includes('??')) throw Error('typed commands must render as values, not as unknown markers');
+if(!document.getElementById('device-note').textContent.startsWith('1 of 2 lamps need attention')) throw Error('note should count lamps needing attention');
+const savedHA=haData;haData=null;health(status);haData=savedHA;
+if(!text(document.getElementById('summary')).includes('1 of 2 in sync')) throw Error('overview should summarise lamp sync');
+if(!document.getElementById('headline').textContent.includes('Office A20')) throw Error('headline should name the lamp out of sync');
+zonesView({zones:[]});if(!text(document.getElementById('zones')).includes('No bridged zones')) throw Error('empty zone list needs a message');
 applyHA({available:true,time_zone:'Europe/London',lights:[{entity_id:'light.k',name:'First Floor Kitchen kitchen',zone_id:'1379',serial:null}]});
 if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should match by Lutron zone ID');
 `;

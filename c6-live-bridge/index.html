@@ -131,6 +131,34 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .sub{display:block;color:var(--label2);font-size:.8rem}
 .meter{display:block;height:4px;border-radius:2px;background:var(--fill2);margin-top:6px;max-width:120px;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .6s var(--ease-out)}
+/* Lights: one card per bridged lamp, Lutron | bridge | lamp side by side */
+.zones{display:grid;gap:12px}
+.zone{background:var(--inset);border-radius:12px;padding:14px 16px;box-shadow:inset 3px 0 var(--tone,var(--label3))}
+.zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px 12px;flex-wrap:wrap}
+.zone-name{font-weight:700;font-size:1.05rem}
+.zone-head .pill{white-space:normal}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.side{background:var(--card);border-radius:10px;padding:10px 12px;min-width:0}
+.side-k{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2)}
+.side-v{display:block;font-size:1.25rem;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.side-v.muted{font-size:1rem;font-weight:500}
+.side .meter{max-width:none;margin:6px 0 2px}
+.side-s,.side-t{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.8rem;color:var(--label2);margin-top:4px}
+.swatch{flex:none;width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 1px var(--sep)}
+.show{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,300px);gap:6px 16px;align-items:center;margin-top:12px;padding-top:12px;border-top:.5px solid var(--sep)}
+.show-t{font-weight:600}
+.show p{margin:2px 0;font-size:.86rem;color:var(--label2)}
+.show-curve{width:100%;height:auto;display:block}
+.show-curve .area{fill:var(--blue-t)}.show-curve .line{fill:none;stroke:var(--blue);stroke-width:1.5}
+.show-curve .now{stroke:var(--label2);stroke-width:1;stroke-dasharray:2 2}
+.show-curve .tick{fill:var(--label3);font-size:9px;text-anchor:middle}
+.show-curve .target{fill:var(--blue)}.show-curve .lamp{fill:var(--tone,var(--green));stroke:var(--card);stroke-width:1.5}
+.checks{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:7px}
+.checks li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:1px 8px;align-items:start;font-size:.88rem}
+.checks .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:700;color:#fff;background:var(--tone)}
+.checks small{grid-column:2;color:var(--label2);font-size:.8rem}
+.zones-legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.8rem;color:var(--label2);margin:0 0 12px}
+@media(max-width:640px){.trio,.show{grid-template-columns:1fr}}
 .toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:0 4px;margin-bottom:6px}
 .check{display:inline-flex;align-items:center;gap:8px;min-height:38px;color:var(--label);font-size:.9rem;cursor:pointer}
 .check input{width:18px;height:18px;padding:0;margin:0;accent-color:var(--blue)}
@@ -359,8 +387,9 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 
   <section class="card">
     <div class="card-head"><h2>Lights</h2><span id="device-count" class="muted small"></span></div>
-    <p class="lede">Each zone shows the level that was asked for and the level the lights actually confirmed. “Stale” means no confirmation in the last 2 minutes.</p>
-    <div class="scroll"><table><thead><tr><th>Zone</th><th>Device</th><th>Requested</th><th>Confirmed</th><th id="ha-col" hidden>Lutron (Home Assistant)</th><th>Last confirmation</th></tr></thead><tbody id="devices"></tbody></table></div>
+    <p class="lede">Each bridged lamp is checked three ways: what <b>Lutron</b> shows, what the <b>bridge</b> last sent to the Ketra hub, and what the <b>lamp</b> is doing according to the hub. When a Natural Show is running, the lamp is also checked against what the show calls for right now.</p>
+    <p class="zones-legend"><span><b>Brightness</b> is light output: 0% is off, 100% is full.</span><span><b>K</b> is colour temperature: lower is warmer.</span><span><b>Vibrancy</b> is Ketra's colour saturation, 0–100.</span></p>
+    <div id="zones" class="zones" aria-live="polite"></div>
     <p id="device-note" class="muted small">Waiting for live device data.</p><p id="ha-note" class="muted small"></p>
   </section>
 
@@ -464,14 +493,15 @@ function tile(label,value,tone,hint){const d=el('div','tile '+tone);d.append(el(
 function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row');r.append(el('span','',k),el('strong',tone||'',v));list.append(r)}g.append(el('h3','',title),list);return g}
 const errTone=v=>Number(v)>0?'warn':'';
 function health(s){latestStatus=s;const up=s.gateway_uptime_ms;statusAnchor=typeof up==='number'&&Number.isFinite(up)?Date.now()-(Number(s.monitoring?.age_s)||0)*1000-up:null;const role=roleName(s.thread_role),roleTone=['child','router','leader'].includes(role)?'good':role==='disabled'?'bad':'warn';
-  const net=netName(s),netOk=netUp(s),issues=[];if(!netOk)issues.push(['bad',`Gateway ${net==='Network'?'network':net} is down`]);if(!s.endpoint_online)issues.push(['warn','The endpoint board is offline']);if(s.config_match===false)issues.push(['warn','Zone mapping is not yet in sync on both boards']);if(s.endpoint_online&&roleTone!=='good')issues.push([roleTone,`The Thread radio is ${role}`]);
+  const net=netName(s),netOk=netUp(s),issues=[];if(!netOk)issues.push(['bad',`Gateway ${net==='Network'?'network':net} is down`]);if(!s.endpoint_online)issues.push(['warn','The endpoint board is offline']);if(s.config_match===false)issues.push(['warn','Zone mapping is not yet in sync on both boards']);if(s.endpoint_online&&roleTone!=='good')issues.push([roleTone,`The Thread radio is ${role}`]);const lamps=lastZones?.zones||[],off=lamps.filter(z=>['bad','warn'].includes(z.verdict?.tone));if(off.length)issues.push(['warn',off.length===1?`${off[0].name}: ${off[0].verdict.title}`:`${off.length} lamps are out of sync`]);
   const tone=issues.some(i=>i[0]==='bad')?'bad':issues.length?'warn':'good';
   setHero(tone,tone==='good'?'Everything is working':issues.length===1?issues[0][1]:`${issues.length} things need attention`,tone==='good'?`Gateway on ${net==='Network'?'the network':net} · endpoint connected over Thread as ${role} · mapping in sync.`:issues.map(i=>i[1]).join(' · ')+'.');
   $('summary').replaceChildren(
     tile('Gateway network',netOk?(net==='Network'?'Connected':net):'Down',netOk?'good':'bad',s.gateway_uptime_ms===undefined?'':'Up for '+duration(s.gateway_uptime_ms)),
     tile('Thread network',role[0].toUpperCase()+role.slice(1),s.endpoint_online?roleTone:'warn','RLOC16 '+hex16(s.rloc16)),
     tile('Endpoint board',s.endpoint_online?'Online':'Offline',s.endpoint_online?'good':'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000)),
-    tile('Zone mapping',s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown',s.config_match===true?'good':s.config_match===false?'warn':'wait','Hash '+val(s.config_hash)));
+    tile('Zone mapping',s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown',s.config_match===true?'good':s.config_match===false?'warn':'wait','Hash '+val(s.config_hash)),
+    tile('Bridged lamps',lamps.length?`${lamps.length-off.length} of ${lamps.length} in sync`:'Checking',!lamps.length?'wait':off.length?'warn':'good',off.length?off.map(z=>z.name).join(', '):'Lutron, bridge and lamp agree'));
   const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
   $('health').replaceChildren(
     group('Gateway',[['Network link',net==='Network'?'Not reported':net],['Network connected',yn(netOk),netOk===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'—':clock(s.gateway_uptime_ms)],['N4 writes succeeded',num(s.puts_ok)],['Unconfirmed attempts (includes retries)',num(s.puts_failed)],['Exhausted deliveries',num(s.diagnostics?.delivery_failed),errTone(s.diagnostics?.delivery_failed)],['Superseded commands',num(s.diagnostics?.superseded)],['Configuration match',yn(s.config_match),s.config_match===false?'warn':''],['Configuration hash',val(s.config_hash)]]),
@@ -484,12 +514,57 @@ function health(s){latestStatus=s;const up=s.gateway_uptime_ms;statusAnchor=type
   $('maintenance-note').textContent=maintenance?`Maintenance active · lighting output is paused; latest commands are retained. Idle session expires in ${Math.ceil((s.diagnostics?.maintenance_remaining_ms||0)/1000)} seconds.`:'Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.';
   $('maintenance-toggle').textContent=maintenance?'End maintenance':'Enter maintenance';
   renderFlow(s);if(delayed)node('gateway','warn','monitoring delayed')}
-function deviceView(data){lastDevices=data;const rows=data.zones||[];renderProgramZones(rows);$('ha-col').hidden=!haData;$('devices').replaceChildren();for(const d of rows){const tr=document.createElement('tr');cell(tr,val(d.zone??d.zone_id));const info=zoneInfo(zoneOf(d)),dev=cell(tr,d.name||info.match?.light.name||'—');if(info.sub)dev.append(el('span','sub',info.sub));const extra=[d.serial,d.n4_group!==undefined&&d.n4_group!==null?'N4 group '+d.n4_group:null].filter(Boolean).join(' · ');if(extra)dev.append(el('span','sub',extra));const rq=cell(tr,present(d.requested)?'':'—');if(isLevel(d.requested)){rq.textContent=pct(d.requested);rq.title=`Raw value ${d.requested} (hundredths of a percent)`}else if(present(d.requested))rq.append(levelValue(d.requested));
-    const c=d.confirmed,td=cell(tr,c?`${c.level_x100===undefined?'':(c.level_x100/100)+'%'}${c.source===undefined?'':' · '+c.source}${c.seq===undefined?'':' · seq '+c.seq}`:'—');if(c&&Number.isFinite(Number(c.level_x100))){const m=el('span','meter'),bar=el('i');bar.style.width=Math.max(0,Math.min(100,c.level_x100/100))+'%';m.append(bar);td.append(m)}
-    if(haData){const h=cell(tr,'');if(info.match){const [t,tone]=haLightText(info.match.light);h.append(pill(t,tone),haLink(info.match.light,{zone:'Matched by Lutron zone ID ↗',serial:'Matched by serial ↗'}[info.match.by]||'Matched by name ↗'))}else h.append(el('span','muted small','No matching Lutron light'))}
-    const at=c?.at_ms??d.last_confirmed_ms;const age=Number(latestStatus?.gateway_uptime_ms)-Number(at);const f=cell(tr,'');f.append(at===undefined||at===null?pill('Never confirmed','warn'):!Number.isFinite(age)?pill('Age unavailable','wait'):age>120000?pill(`Stale · ${duration(age)} ago`,'warn'):pill(`Fresh · ${duration(age)} ago`,'good'));$('devices').append(tr)}
-  if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones reported yet.');td.setAttribute('colspan',haData?'6':'5');tr.append(td);$('devices').append(tr)}
-  $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';$('device-note').textContent=rows.length?'Ages are measured with the gateway clock.':'The gateway has not reported any zone records.';$('ha-note').textContent=haData?`Names, areas and live state come from Home Assistant's Lutron integration${haData.location_name?' at '+haData.location_name:''}.`:''}
+function deviceView(data){lastDevices=data;const rows=data.zones||[];renderProgramZones(rows);
+  $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';if(!rows.length)$('device-note').textContent='The gateway has not reported any zone records.'}
+/* Lights: one card per bridged lamp from /api/zones, which compares Lutron, the bridge's last command, the lamp and its show. */
+const CHECK_TONE={good:'good',warn:'warn',bad:'bad',wait:'wait',unknown:'wait',info:'info'},CHECK_ICON={good:'✓',warn:'!',bad:'✕',wait:'…',unknown:'?',info:'i'},
+  LAMP_SOURCE={applied:'Hub confirmed command',observed:'Hub reading',correction:'Hub corrected the level'};
+let lastZones=null;
+const sinceText=ms=>Number.isFinite(ms)?duration(ms)+' ago':'';
+const minuteText=m=>new Date(2000,0,1,Math.floor(m/60)%24,m%60).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+function kelvinRGB(k){const t=k/100;let r,g,b;if(t<=66){r=255;g=99.47*Math.log(t)-161.12;b=t<=19?0:138.52*Math.log(t-10)-305.04}else{r=329.7*Math.pow(t-60,-.1332);g=288.12*Math.pow(t-60,-.0755);b=255}
+  const c=v=>Math.round(Math.max(0,Math.min(255,v)));return `rgb(${c(r)},${c(g)},${c(b)})`}
+function xyRGB(x,y){if(!(y>0))return null;const X=x/y,Z=(1-x-y)/y,lin=[3.2406*X-1.5372-.4986*Z,-.9689*X+1.8758+.0415*Z,.0557*X-.204+1.057*Z],m=Math.max(...lin,1e-6);
+  const c=v=>{v=Math.max(0,v/m);return Math.round(255*(v<=.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-.055))};return `rgb(${lin.map(c).join(',')})`}
+function colourLine(o){if(!o)return null;const parts=[];let sw=null;if(o.cct){sw=kelvinRGB(o.cct);parts.push(o.cct+' K')}else if(o.xy){sw=xyRGB(o.xy[0],o.xy[1]);parts.push(`xy ${o.xy[0].toFixed(3)}, ${o.xy[1].toFixed(3)}`)}
+  if(Number.isInteger(o.vibrancy))parts.push('vibrancy '+o.vibrancy);if(!parts.length)return null;const s=el('span','side-s');if(sw){const d=el('span','swatch');d.style.background=sw;s.append(d)}s.append(el('span','',parts.join(' · ')));return s}
+function side(label,main,level,colour,time){const d=el('div','side');d.append(el('span','side-k',label),el('strong','side-v'+(Number.isInteger(level)?'':' muted'),main));
+  if(Number.isInteger(level)){const m=el('span','meter'),i=el('i');i.style.width=Math.max(0,Math.min(100,level/100))+'%';m.append(i);d.append(m)}const c=colourLine(colour);if(c)d.append(c);if(time)d.append(el('span','side-t',time));return d}
+function lutronSide(l){if(!l)return side('Lutron','Not found',null,null,'No Lutron light in Home Assistant matches this zone.');
+  if(l.on===null)return side('Lutron',l.state?l.state[0].toUpperCase()+l.state.slice(1):'Unknown',null,null,'');
+  return side('Lutron',l.on?(Number.isInteger(l.level_x100)?'On · '+pct(l.level_x100):'On'):'Off',l.on?l.level_x100:0,l.on?{cct:l.cct}:null,'Lutron processor, via Home Assistant')}
+function sentSide(s){if(!s)return side('Bridge sent','Nothing yet',null,null,'No command since the gateway started.');
+  const t=[s.seq!==null?'Command #'+s.seq:'Command',sinceText(s.age_ms),s.fade_ms?`${s.fade_ms/1000} s fade`:'',s.delay_ms?`${s.delay_ms/1000} s delay`:''].filter(Boolean).join(' · ');
+  return side('Bridge sent',Number.isInteger(s.level_x100)?pct(s.level_x100):'Colour only',s.level_x100,s,t)}
+function lampSide(l){if(!l)return side('Lamp · Ketra hub','No reading yet',null,null,'');
+  const src=l.source==='applied'&&l.seq!==null?`Hub confirmed command #${l.seq}`:LAMP_SOURCE[l.source]||'Hub report';return side('Lamp · Ketra hub',pct(l.level_x100),l.level_x100,l,[src,sinceText(l.age_ms)].filter(Boolean).join(' · '))}
+function showCurve(show,lamp,tone){const NS='http://www.w3.org/2000/svg',W=300,H=64,top=6,bot=50,x=m=>m/1440*W,y=v=>bot-v/10000*(bot-top),svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('class','show-curve');svg.setAttribute('role','img');svg.setAttribute('aria-label','Brightness the show calls for through the day; the dashed line is now');
+  const mk=(tag,attrs,text)=>{const e=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;svg.append(e);return e};
+  const pts=show.curve.map(p=>`${x(p.minute).toFixed(1)},${y(p.level_x100).toFixed(1)}`);mk('path',{class:'area',d:`M0,${bot} L${pts.join(' L')} L${W},${bot} Z`});mk('path',{class:'line',d:'M'+pts.join(' L')});
+  for(const h of [0,6,12,18,24])mk('text',{class:'tick',x:Math.min(W-7,Math.max(7,x(h*60))),y:H-3},String(h).padStart(2,'0'));
+  const nx=x(show.now_ms/60000).toFixed(1);mk('line',{class:'now',x1:nx,x2:nx,y1:2,y2:bot});mk('circle',{class:'target',cx:nx,cy:y(show.target.level_x100).toFixed(1),r:3});
+  if(lamp&&Number.isInteger(lamp.level_x100))mk('circle',{class:'lamp '+tone,cx:nx,cy:y(lamp.level_x100).toFixed(1),r:4});return svg}
+function showBlock(z){const s=z.show||{},box=el('div','show'),txt=el('div'),held=s.override_x100!==null&&s.override_x100!==undefined;box.append(txt);
+  if(s.status==='running'&&s.target){const t=s.target;txt.append(el('div','show-t',`Natural Show ${s.id}`+(held?` · brightness held at ${pct(s.override_x100)}`:'')),
+      el('p','',`Calls for now: ${pct(t.level_x100)}${t.cct?' · '+t.cct+' K':''}${Number.isInteger(t.vibrancy)?' · vibrancy '+t.vibrancy:''}`));
+    if(held)txt.append(el('p','',`The show's own brightness now: ${pct(t.show_level_x100)}. Colour keeps following the show.`));
+    if(s.next)txt.append(el('p','',`Next keyframe ${minuteText(s.next.minute)}: ${pct(s.next.level_x100)} · ${s.next.cct} K`));
+    if(Array.isArray(s.curve)&&s.curve.length>1){const c=(z.checks||[]).find(c=>c.key==='show');box.append(showCurve(s,z.lamp,CHECK_TONE[c?.status]||'good'))}}
+  else{txt.append(el('div','show-t',{not_selected:'No Natural Show selected',unknown:'Natural Show: loading the zone’s programming…'}[s.status]||'Natural Show can’t be evaluated'));
+    if(s.status==='not_selected'&&s.installed?.length)txt.append(el('p','',`Installed: show ${s.installed.join(', ')}. Recalling it from a keypad or the Lutron app resumes it.`))}
+  return box}
+/* Informational show/hub notes repeat what the show block and "Bridge sent" column already say. */
+function checkList(checks){const ul=el('ul','checks');for(const c of (checks||[]).filter(c=>!(c.status==='info'&&['show','hub'].includes(c.key)))){const li=el('li',CHECK_TONE[c.status]||'wait');li.append(el('span','ic',CHECK_ICON[c.status]||'?'),el('span','',c.title));if(c.detail)li.append(el('small','',c.detail));ul.append(li)}return ul}
+function zonesView(data){lastZones=data;const zones=Array.isArray(data?.zones)?data.zones:[],cards=[];
+  for(const z of zones){const v=z.verdict||{tone:'wait',title:'Checking…'},tone=CHECK_TONE[v.tone]||'wait',card=el('article','zone '+tone),head=el('div','zone-head'),name=el('div');
+    name.append(el('div','zone-name',z.name||z.lutron?.name||'Zone '+val(z.zone)));
+    const sub=[z.lutron?.area,z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null].filter(Boolean).join(' · ');if(sub)name.append(el('span','sub',sub));
+    head.append(name,pill(v.title,tone));const trio=el('div','trio');trio.append(lutronSide(z.lutron),sentSide(z.sent),lampSide(z.lamp));card.append(head,trio,showBlock(z),checkList(z.checks));cards.push(card)}
+  $('zones').replaceChildren(...(cards.length?cards:[el('p','empty','No bridged zones reported yet.')]));
+  const out=zones.filter(z=>['bad','warn'].includes(z.verdict?.tone)).length;
+  $('device-note').textContent=zones.length?(out?`${out} of ${zones.length} lamp${zones.length===1?' needs':'s need'} attention.`:'Every lamp agrees with Lutron and the hub.')+` Show times use ${data.time_zone||'an unknown time zone'}; ages use the gateway clock.`:'Waiting for live device data.';
+  $('ha-note').textContent=data?.home_assistant?'Lutron states come from Home Assistant’s Lutron integration and refresh about every 15 seconds.':'Home Assistant isn’t reachable, so Lutron states can’t be compared.'}
 const zoneOf=d=>d.zone??d.zone_id;
 let gatewayTimezone=null;
 let haData=null,haError='',haIndex={zone:new Map(),serial:new Map(),name:new Map()},haLabelSig='',haSunSig='',lastDevices=null,lastProgram=null,zoneFilterSig='';
@@ -505,8 +580,6 @@ function showZone(){const t=gatewayTimezone?.timezone;return SHOW_ZONE_RULES[t]|
 function haMinute(date){const tz=showZone();if(tz){try{const p={};for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23'}).formatToParts(date))p[x.type]=x.value;return Number(p.hour)%24*60+Number(p.minute)+Number(p.second)/60}catch{}}return date.getHours()*60+date.getMinutes()+date.getSeconds()/60}
 const nowMinute=()=>haMinute(new Date());
 function sunMinutes(){const r=new Date(haData?.sun?.next_rising||''),s=new Date(haData?.sun?.next_setting||'');return Number.isFinite(r.getTime())&&Number.isFinite(s.getTime())?{rise:haMinute(r),set:haMinute(s)}:null}
-function haLightText(l){if(l.state==='unavailable'||l.state==='unknown')return ['Unavailable','warn'];if(l.state!=='on')return [l.state==='off'?'Off':val(l.state),'idle'];return [['On',l.brightness===null?null:Math.round(l.brightness/255*100)+'%',l.color_temp_kelvin?Math.round(l.color_temp_kelvin)+' K':null].filter(Boolean).join(' · '),'good']}
-function haLink(l,text){const a=el('a','sub link',text);a.href=l.device_id?'/config/devices/device/'+encodeURIComponent(l.device_id):'/history?entity_id='+encodeURIComponent(l.entity_id);a.target='_top';a.title='Open in Home Assistant';return a}
 function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={zone:new Map(),serial:new Map(),name:new Map()};const dup=new Set();
   for(const l of haData?.lights||[]){if(l.zone_id&&!haIndex.zone.has(serialNorm(l.zone_id)))haIndex.zone.set(serialNorm(l.zone_id),l);if(l.serial)haIndex.serial.set(serialNorm(l.serial),l);for(const n of new Set([normName(l.name),normName(l.device)])){if(!n)continue;if(haIndex.name.has(n)&&haIndex.name.get(n)!==l)dup.add(n);else haIndex.name.set(n,l)}}for(const n of dup)haIndex.name.delete(n);
   const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial,l.zone_id]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);renderEvents();renderSerialOptions();editorChanged(false)}
@@ -710,7 +783,7 @@ async function ensureMaintenance(){
   return setMaintenance(true);
 }
 $('maintenance-toggle').onclick=async()=>{try{await setMaintenance(!latestStatus?.diagnostics?.maintenance)}catch(e){$('maintenance-note').textContent=e.message}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor+(eventBootId===null?'':'&boot_id='+encodeURIComponent(eventBootId)))]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;fw('restarted','The endpoint restarted and reconnected. Watching it for 30 seconds… (installation itself cannot be verified from here.)','warn')}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;fw('stable','The endpoint stayed online for 30 seconds after restarting. Installation is still unverified; the board may have rolled back.','good')}else if(now-firmwareStartedAt>=90000){firmwarePending=false;fw('timeout','No restart was seen within 90 seconds. The install or rollback could not be confirmed.','bad')}}}else{setHero('warn',"Monitoring delayed",'The app collector will retry with backoff. '+results[0].reason.message,false);$('health-note').textContent='Lighting control runs independently of this monitoring connection.'}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor+(eventBootId===null?'':'&boot_id='+encodeURIComponent(eventBootId))),req('zones')]);if(results[0].status==='fulfilled'){const s=results[0].value;health(s);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;if(firmwarePending){const now=Date.now(),up=Number(s.endpoint_uptime_s);if(!s.endpoint_online)firmwareOfflineSeen=true;const rebootObserved=(firmwareOfflineSeen&&s.endpoint_online)||(Number.isFinite(firmwareBaselineUptime)&&Number.isFinite(up)&&firmwareBaselineUptime>0&&up<firmwareBaselineUptime);if(!firmwareReconnectAt&&rebootObserved){firmwareReconnectAt=now;fw('restarted','The endpoint restarted and reconnected. Watching it for 30 seconds… (installation itself cannot be verified from here.)','warn')}else if(firmwareReconnectAt&&now-firmwareReconnectAt>=30000){firmwarePending=false;fw('stable','The endpoint stayed online for 30 seconds after restarting. Installation is still unverified; the board may have rolled back.','good')}else if(now-firmwareStartedAt>=90000){firmwarePending=false;fw('timeout','No restart was seen within 90 seconds. The install or rollback could not be confirmed.','bad')}}}else{setHero('warn',"Monitoring delayed",'The app collector will retry with backoff. '+results[0].reason.message,false);$('health-note').textContent='Lighting control runs independently of this monitoring connection.'}if(results[1].status==='fulfilled')deviceView(results[1].value);if(results[3].status==='fulfilled')zonesView(results[3].value);else $('device-note').textContent='Lamp checks unavailable; retrying: '+results[3].reason.message;if(results[2].status==='fulfilled')eventView(results[2].value);else $('events-note').textContent='Event feed unavailable; retrying: '+results[2].reason.message;if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)}finally{refreshing=false}}
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
 const tabs=['overview','activity','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});

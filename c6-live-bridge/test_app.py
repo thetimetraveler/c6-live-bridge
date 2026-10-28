@@ -68,7 +68,7 @@ class AddonTests(unittest.TestCase):
 
     def collect(self, panel=None):
         panel=panel or self.panel
-        panel.next_poll=0;panel.config_due=float("inf")
+        panel.next_poll=0;panel.config_due=float("inf");panel.timezone_due=float("inf")
         return panel.archive_poll_once()
 
     def test_events_get_wall_clock_time_from_gateway_uptime(self):
@@ -210,6 +210,33 @@ class AddonTests(unittest.TestCase):
         method,path,forwarded,ctype=self.gateway.calls[-1]
         self.assertEqual((method,path,ctype),("PUT","/api/config","application/json"))
         self.assertEqual(json.loads(forwarded),doc)
+
+    def test_timezone_proxy_validates_auth_and_writes(self):
+        self.collect()
+        with self.panel.lock: self.panel.cache["timezone"] = ({"timezone":"UTC0"}, 1)
+        h=self.handler(path="/api/timezone");h.do_GET()
+        self.assertEqual(json.loads(h.results[0][1])["timezone"],"UTC0")
+        for zone, peer, expected in [("America/Los_Angeles","172.30.32.2",200),("No/Such_Zone","172.30.32.2",400),("America/Los_Angeles","10.0.0.8",403)]:
+            body=json.dumps({"timezone":zone}).encode();h=self.handler(peer,path="/api/timezone")
+            h.headers["Content-Type"]="application/json";h.headers["Content-Length"]=str(len(body));h.rfile=io.BytesIO(body);h.do_PUT()
+            self.assertEqual(h.results[0][0],expected)
+        self.assertEqual([c[1] for c in self.gateway.calls].count("/api/timezone"),1)
+        self.assertEqual(self.panel.timezone_due,0)
+        self.assertEqual(json.loads(self.panel.proxy("timezone")[2])["timezone"],"UTC0")
+
+    def test_timezone_collector_gracefully_handles_old_gateway_and_retry(self):
+        self.collect()
+        original=self.gateway.request
+        def respond(path, *args):
+            if path == "/api/timezone": return 404,"application/json",b'{}'
+            return original(path,*args)
+        self.gateway.request=respond;self.panel.next_poll=0;self.panel.timezone_due=0;self.panel.config_due=float("inf")
+        self.panel.archive_poll_once()
+        self.assertTrue(json.loads(self.panel.proxy("timezone")[2])["unsupported"])
+        self.assertTrue(self.panel.online)
+        self.assertGreater(self.panel.timezone_due,app.time.monotonic())
+        self.panel.next_poll=0;self.panel.archive_poll_once()
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
 
     def test_gateway_adds_computed_firmware_digest_and_long_timeout(self):
         binary=b"abc\x00"
@@ -548,7 +575,7 @@ class ShowCollectorTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def collect(self):
-        self.panel.next_poll=0;self.panel.config_due=float("inf")
+        self.panel.next_poll=0;self.panel.config_due=float("inf");self.panel.timezone_due=float("inf")
         return self.panel.archive_poll_once()
 
     def test_programming_reads_take_bounded_slots_and_feed_the_dashboard_cache(self):
@@ -574,7 +601,8 @@ class ShowCollectorTests(unittest.TestCase):
             self.assertTrue(self.panel.online);self.assertIsNone(self.panel.last_error)
             self.assertNotIn(0,self.panel.zone_programs)
         self.gateway.fail=False
-        self.collect();self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+        with patch("app.time.monotonic",return_value=1001.0):self.collect()
+        self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
 
     def test_new_boot_discards_programming(self):
         self.collect();self.collect();self.assertIn(0,self.panel.zone_programs)
@@ -608,6 +636,25 @@ class ShowCollectorTests(unittest.TestCase):
         self.assertEqual(len(self.mqtt.topics("/config")),len(app.SHOW_SENSORS))
         self.assertTrue(all(m[1]=="" and m[2] for m in self.mqtt.topics("/config")+self.mqtt.topics("/state")))
         self.assertEqual(self.mqtt.topics("ccx_bridge/status")[-1][1],"offline")
+
+    def test_gateway_timezone_overrides_home_assistant_for_show_targets(self):
+        self.collect();self.collect();self.sensors.step()
+        with self.panel.lock:
+            self.panel.cache["timezone"] = ({"timezone":"UTC0"}, app.time.monotonic())
+        self.mqtt.messages.clear();self.sensors.step()
+        state=json.loads(self.mqtt.topics("/state")[-1][1])
+        self.assertEqual(state["attributes"]["time_zone"],"UTC")
+        with self.panel.lock:
+            self.panel.cache["timezone"] = ({"timezone":"America/Los_Angeles"}, app.time.monotonic())
+        self.mqtt.messages.clear();self.sensors.step()
+        state=json.loads(self.mqtt.topics("/state")[-1][1])
+        self.assertEqual(state["attributes"]["time_zone"],"America/Los_Angeles")
+        with self.panel.lock:
+            self.panel.cache["timezone"] = ({"timezone":"unsupported-posix"}, app.time.monotonic())
+        self.mqtt.messages.clear();self.sensors.step()
+        state=json.loads(self.mqtt.topics("/state")[-1][1])
+        self.assertIsNone(state["attributes"]["time_zone"])
+        self.assertIsNone(state["target_cct"])
 
     def test_sensors_reconnect_and_stop_program_reads_without_a_broker(self):
         self.sensors.step();self.mqtt.fail=True;self.sensors.step()

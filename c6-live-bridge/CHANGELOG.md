@@ -1,3 +1,8 @@
+## 0.6.1
+
+- Read and configure the gateway show time zone in Setup, with confirmation when changing show timing.
+- Evaluate show sensors and charts using the gateway's configured time zone; retain compatibility with older gateways.
+
 ## 0.6.0
 
 - Publish per-zone Natural Show sensors through MQTT discovery: active show, show target color temperature and brightness, requested color temperature and brightness, and confirmed brightness. Targets use the endpoint's own interpolation in Home Assistant's time zone.

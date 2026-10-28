@@ -137,6 +137,12 @@ eventView({boot_id:'boot-c',next:7,oldest:1,lost:0,boot_epoch_ms:boot,events:[
 document.getElementById('filter-problems').checked=true;renderEvents();
 if(rows().length!==1||!text(rows()[0]).includes('No activity')) throw Error('problems filter should hide healthy rows');
 document.getElementById('filter-problems').checked=false;
+gatewayTimezone={timezone:'UTC0'};haData={time_zone:'America/Los_Angeles',lights:[]};
+if(showZone()!=='UTC'||haMinute(new Date('2026-10-28T12:00:00Z'))!==720) throw Error('show chart must use gateway UTC rather than HA Pacific');
+gatewayTimezone={timezone:'America/Los_Angeles'};
+if(showZone()!=='America/Los_Angeles'||haMinute(new Date('2026-10-28T12:00:00Z'))!==300) throw Error('show chart must use gateway Pacific time');
+gatewayTimezone={timezone:'unknown-rule'};if(showZone())throw Error('unknown gateway rules must not be mistaken for HA time');
+gatewayTimezone={unsupported:true};if(showZone()!=='America/Los_Angeles')throw Error('old gateways should fall back to HA time');
 haData={time_zone:'Europe/London',lights:[]};renderEvents();
 if(!document.getElementById('events-tz').textContent.includes('Europe/London')) throw Error('Home Assistant time zone should win');
 deviceView({zones:[{zone:1,requested:7500},{zone:2,requested:-1},{zone:3,requested:null}]});

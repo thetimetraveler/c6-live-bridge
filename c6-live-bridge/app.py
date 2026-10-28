@@ -29,10 +29,24 @@ SNAPSHOT_STALE_S = 120
 LEVEL_FULL_ON = 0xFEFF
 DAY_MS = 86_400_000
 DEFAULT_TIME_ZONE = "America/Los_Angeles"
+SHOW_TIME_ZONES = ("UTC", "America/Los_Angeles", "America/Denver", "America/Phoenix",
+                   "America/Chicago", "America/New_York", "America/Anchorage", "Pacific/Honolulu")
+# Older/newly installed gateways report the compiled POSIX rule until a zone is saved.
+POSIX_SHOW_ZONES = {"UTC0": "UTC", "PST8PDT,M3.2.0,M11.1.0": "America/Los_Angeles",
+                    "MST7MDT,M3.2.0,M11.1.0": "America/Denver", "MST7": "America/Phoenix",
+                    "CST6CDT,M3.2.0,M11.1.0": "America/Chicago",
+                    "EST5EDT,M3.2.0,M11.1.0": "America/New_York",
+                    "AKST9AKDT,M3.2.0,M11.1.0": "America/Anchorage", "HST10": "Pacific/Honolulu"}
+
+def show_timezone(value):
+    if value in SHOW_TIME_ZONES:
+        return value
+    return POSIX_SHOW_ZONES.get(value) if isinstance(value, str) else None
 SAFE_INT = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "events": ("GET", "/api/events"), "program": ("GET", "/api/program"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
+          "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
           "update": ("POST", "/api/endpoint/update"),
           "maintenance": ("POST", "/api/maintenance")}
 
@@ -365,6 +379,7 @@ class Panel:
         self.failures = 0
         self.next_poll = 0
         self.config_due = 0
+        self.timezone_due = 0
         self.legacy_index = 0
         # Programming reads for show sensors; off unless sensors are publishing.
         self.track_programs = False
@@ -399,6 +414,8 @@ class Panel:
             self.zone_programs.clear()
             self.program_attempts.clear()
             self.config_due = 0
+            self.timezone_due = time.monotonic() + 5
+            self.cache.pop("timezone", None)
         if status is not None:
             self._anchor(status)
         for event in data["events"]:
@@ -426,6 +443,7 @@ class Panel:
             entry = self.cache.get("devices")
             zones = entry[0].get("zones") if entry and isinstance(entry[0], dict) else None
             return {"age_s": now - entry[1] if entry else None,
+                    "timezone": self.cache.get("timezone", (None, 0))[0],
                     "zones": [dict(z) for z in zones if isinstance(z, dict)] if isinstance(zones, list) else [],
                     "programs": {zone: (program, now - at) for zone, (program, at) in self.zone_programs.items()}}
 
@@ -439,6 +457,8 @@ class Panel:
             program_zone = self._program_zone(now) if self.track_programs and now >= self.program_due else None
             if self.cache and now >= self.config_due:
                 route, path = "config", "/api/config"
+            elif self.cache and now >= self.timezone_due:
+                route, path = "timezone", "/api/timezone"
             elif program_zone is not None:
                 route, path = "program", "/api/program?" + urlencode({"zone": program_zone, "page": 0})
                 with self.lock:
@@ -465,6 +485,13 @@ class Panel:
                 self.config_due = now + max(30, getattr(self.gateway, "retry_after", 0))
                 self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
                 return None
+            if route == "timezone" and code != 200:
+                with self.lock:
+                    if code in (404, 405):
+                        self.cache["timezone"] = ({"unsupported": True}, now)
+                    self.timezone_due = now + (300 if code in (404, 405) else max(30, getattr(self.gateway, "retry_after", 0)))
+                    self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
+                return None
             if route == "program" and code != 200:
                 self.program_due = now + max(PROGRAM_SLOT_S, getattr(self.gateway, "retry_after", 0))
                 self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
@@ -474,6 +501,8 @@ class Panel:
             data = json.loads(raw)
             if not isinstance(data, dict):
                 raise ValueError("invalid gateway response")
+            if route == "timezone" and not isinstance(data.get("timezone"), str):
+                raise ValueError("invalid gateway time zone")
             program = show_program(data) if route == "program" else None
             if route == "program" and program is None:
                 raise ValueError("invalid gateway programming snapshot")
@@ -500,6 +529,8 @@ class Panel:
                     self.program_due = now + PROGRAM_SLOT_S
                 elif route != "events":
                     self.cache[route] = (data, now)
+                if route == "timezone":
+                    self.timezone_due = now + 30
                 if route == "config":
                     previous = self.program_generation if hasattr(self, "program_generation") else None
                     generation = (data.get("generation"), data.get("hash"))
@@ -518,6 +549,11 @@ class Panel:
                 self.archive.record(events)
             return events or data
         except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+            if route == "timezone":
+                self.timezone_due = time.monotonic() + 30
+                self.next_poll = time.monotonic() + 1
+                LOG.warning("Optional time-zone snapshot deferred: %s", exc)
+                return None
             if route == "config":
                 self.config_due = time.monotonic() + 30
                 self.next_poll = time.monotonic() + 1
@@ -564,7 +600,7 @@ class Panel:
                 return self.result({"boot_id": self.boot_id, "reset": reset, "after": after, "next": self.cursor + 1,
                                     "oldest": oldest, "lost": lost, "boot_epoch_ms": self.boot_epoch_ms,
                                     "events": selected})
-        if route in ("status", "devices", "config"):
+        if route in ("status", "devices", "config", "timezone"):
             with self.lock:
                 entry = self.cache.get(route)
                 if entry is None:
@@ -596,6 +632,8 @@ class Panel:
                     self.programs[base] = result
                     while len(self.programs) > 16:
                         self.programs.popitem(last=False)
+                if route == "timezone_put" and result[0] == 200:
+                    self.timezone_due = 0
                 if route in ("config_put", "update") and result[0] == 202:
                     self.programs.clear()
                     self.config_due = 0
@@ -717,8 +755,8 @@ SHOW_SENSORS = (
 class ShowSensors:
     """Per-zone Natural Show diagnostics, published to Home Assistant through MQTT discovery.
 
-    The target is the show evaluated with the endpoint's arithmetic in Home Assistant's
-    time zone. Requested values are what the bridge last sent to N4; N4 confirms brightness only.
+    The target is the show evaluated with the endpoint's arithmetic in the gateway's
+    time zone when available. Requested values are what the bridge last sent to N4; N4 confirms brightness only.
     """
     PREFIX = "ccx_bridge"
     AVAILABILITY = PREFIX + "/status"
@@ -730,8 +768,15 @@ class ShowSensors:
         self.discovered, self.published, self.available = {}, {}, None
         self.stop = threading.Event()
 
-    def local_ms(self):
-        for name in (self.ha.time_zone(), DEFAULT_TIME_ZONE):
+    def local_ms(self, gateway_zone=None):
+        # A known gateway rule is authoritative. Unknown rules must not silently
+        # produce a target in HA's potentially different timezone.
+        if isinstance(gateway_zone, dict) and not gateway_zone.get("unsupported"):
+            name = show_timezone(gateway_zone.get("timezone"))
+            candidates = (name,) if name else ()
+        else:
+            candidates = (self.ha.time_zone(), DEFAULT_TIME_ZONE)
+        for name in candidates:
             try:
                 tz = ZoneInfo(name) if name else None
             except (ZoneInfoNotFoundError, ValueError):
@@ -767,7 +812,7 @@ class ShowSensors:
     def publish(self):
         inputs = self.panel.show_inputs()
         available = inputs["age_s"] is not None and inputs["age_s"] <= SNAPSHOT_STALE_S
-        local_ms, tz_name = self.local_ms()
+        local_ms, tz_name = self.local_ms(inputs.get("timezone"))
         zones = {}
         for zone in inputs["zones"]:
             if type(zone.get("zone_id")) is int and zone["zone_id"] > 0 and type(zone.get("serial")) is int and zone["serial"] > 0:
@@ -877,7 +922,7 @@ class Handler(BaseHTTPRequestHandler):
         if parts.path == "/api/ha":
             if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
             return self.reply(200, self.server.ha.snapshot())
-        route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config"}.get(parts.path)
+        route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
         allowed = {"events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
@@ -905,19 +950,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         if not self.authorized(): return
-        if self.path != "/api/config": return self.reply(404, {"error": "unknown endpoint"})
+        if self.path not in ("/api/config", "/api/timezone"): return self.reply(404, {"error": "unknown endpoint"})
         try:
             if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
-            body = self.read_body(65536)
+            body = self.read_body(128 if self.path == "/api/timezone" else 65536)
             payload = json.loads(body)
-            if not isinstance(payload, dict) or set(payload) != {"generation", "hash", "zones"} or not isinstance(payload["zones"], list):
+            if self.path == "/api/timezone":
+                if not isinstance(payload, dict) or set(payload) != {"timezone"} or payload["timezone"] not in SHOW_TIME_ZONES:
+                    raise ValueError("expected a supported time zone")
+            elif not isinstance(payload, dict) or set(payload) != {"generation", "hash", "zones"} or not isinstance(payload["zones"], list):
                 raise ValueError("expected generation, hash, and zones")
             packed = json.dumps(payload, separators=(",", ":")).encode()
         except OverflowError as exc: return self.reply(413, {"error": str(exc)})
         except EOFError as exc: return self.reply(400, {"error": str(exc)})
         except (ValueError, UnicodeDecodeError) as exc: return self.reply(400, {"error": str(exc)})
         try:
-            code, ctype, raw = self.server.panel.proxy("config_put", body=packed, content_type="application/json")
+            code, ctype, raw = self.server.panel.proxy("timezone_put" if self.path == "/api/timezone" else "config_put", body=packed, content_type="application/json")
             return self.send(code, raw, ctype)
         except (OSError, http.client.HTTPException, ValueError) as exc: return self.reply(502, {"error": str(exc)})
 

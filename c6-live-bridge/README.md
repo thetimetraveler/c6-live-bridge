@@ -12,7 +12,7 @@ The dashboard targets one-second live refreshes and shows a topology strip from 
 
 The add-on requests read-only Home Assistant API access (`homeassistant_api`). Through the Supervisor it renders one fixed template that lists the lights of the integrations in `lutron_integrations` (default `lutron_caseta` and `lutron`), with their Lutron zone ID, device serial number, name, area and current state, plus `sun.sun` sunrise and sunset and the Home Assistant time zone. Results are cached for 15 seconds. The Supervisor token never reaches the browser, and no request data is ever placed in the template.
 
-Zones are matched to Lutron lights by Lutron zone ID first (the `zone_id` attribute that the Lutron Caséta/RA3 integration puts on each light), then by serial number (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses Home Assistant's time zone for "Now". Without API access the dashboard works as before.
+Zones are matched to Lutron lights by Lutron zone ID first (the `zone_id` attribute that the Lutron Caséta/RA3 integration puts on each light), then by serial number (decimal, or hex such as `0x5397FB1`), then by a unique name. Matches add names, areas, live Lutron state and a link to the device in Home Assistant across the dashboard. The mapping editor suggests known serials and can fill empty zone names. The schedule chart shades night and uses the gateway show time zone for "Now" when available. Without API access the dashboard works as before.
 
 ## Proxy surface
 
@@ -31,6 +31,7 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/events?after=N`
 - `GET /api/program?zone=N&page=N`
 - `GET /api/config`, `PUT /api/config` (transactional mapping configuration)
+- `GET /api/timezone`, `PUT /api/timezone` (gateway show time zone, when supported)
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 
@@ -116,7 +117,7 @@ serial number) through MQTT discovery. Each zone is one device, **CCX Bridge
 | Sensor | Source |
 |---|---|
 | Active show | Show ID the endpoint has selected, or `not_selected` |
-| Show target color temperature / brightness | That show evaluated now, with the endpoint's integer interpolation, in Home Assistant's time zone |
+| Show target color temperature / brightness | That show evaluated now, with the endpoint's integer interpolation, in the gateway's show time zone |
 | Requested color temperature / brightness | The latest command the bridge sent to N4 |
 | Confirmed brightness | N4 readback |
 
@@ -130,9 +131,9 @@ off sends no color, so its requested color temperature is unknown.
 
 The Active show sensor's attributes add the selection, installed shows,
 brightness override, target and requested vibrancy, requested XY, command
-sequence, confirmation source and the time zone used. The target assumes that
-the gateway's show time zone matches Home Assistant's. A target that is off by
-whole hours points to a gateway time zone setting.
+sequence, confirmation source and the time zone used. The gateway show time zone is read by the collector, so target values follow
+its setting even when Home Assistant is configured differently. Older gateways
+that do not expose a time zone use Home Assistant's time zone as before.
 
 The selection comes from the zone's programming snapshot. While the sensors are
 connected to MQTT, the collector reads one zone's snapshot per 30-second slot,
@@ -161,3 +162,15 @@ helper (Settings → Devices & services → Helpers → Template), for example:
 
 Check your entity IDs; they follow the gateway's zone names.
 
+
+## Gateway show time zone (0.6.1)
+
+Setup displays the gateway's current show time zone and Home Assistant's when
+they differ. Choose a supported zone and select **Apply time zone** to update
+the gateway without a reboot or maintenance. The confirmation warns that show
+timing and show-driven lighting can change within seconds. Zone mappings and
+endpoint programming are not changed. Older gateways show that the setting is
+unavailable. The collector reads the gateway setting every 30 seconds and the
+show sensors and programming chart use it, including daylight-saving changes.
+If a gateway reports an unrecognized legacy POSIX rule, target values remain
+unknown instead of silently using a different time zone.

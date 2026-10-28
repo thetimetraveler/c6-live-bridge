@@ -394,6 +394,18 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 </div>
 
 <div id="panel-setup" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Show time zone</h2></div>
+    <p class="lede">The gateway uses this time zone for every daily show. Changes take effect within seconds and can change show-driven lighting.</p>
+    <label>Gateway time zone <select id="show-timezone" disabled>
+      <option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific</option>
+      <option value="America/Denver">Mountain</option><option value="America/Phoenix">Arizona</option>
+      <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option>
+      <option value="America/Anchorage">Alaska</option><option value="Pacific/Honolulu">Hawaii</option>
+    </select></label>
+    <div class="actions"><button id="save-timezone" disabled>Apply time zone</button></div>
+    <p id="timezone-note" class="muted small" role="status">Loading gateway time zone…</p>
+  </section>
   <section class="card"><h2>Maintenance</h2><p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.</p><button id="maintenance-toggle" class="secondary">Enter maintenance</button></section>
   <section class="card">
     <div class="card-head"><h2>Zone mapping</h2><span id="config-pill" class="pill wait">Loading</span></div>
@@ -479,6 +491,7 @@ function deviceView(data){lastDevices=data;const rows=data.zones||[];renderProgr
   if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones reported yet.');td.setAttribute('colspan',haData?'6':'5');tr.append(td);$('devices').append(tr)}
   $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';$('device-note').textContent=rows.length?'Ages are measured with the gateway clock.':'The gateway has not reported any zone records.';$('ha-note').textContent=haData?`Names, areas and live state come from Home Assistant's Lutron integration${haData.location_name?' at '+haData.location_name:''}.`:''}
 const zoneOf=d=>d.zone??d.zone_id;
+let gatewayTimezone=null;
 let haData=null,haError='',haIndex={zone:new Map(),serial:new Map(),name:new Map()},haLabelSig='',haSunSig='',lastDevices=null,lastProgram=null,zoneFilterSig='';
 const normName=s=>String(s??'').toLowerCase().replace(/[^a-z0-9]+/g,'');
 const serialNorm=s=>{const t=String(s??'').trim().toLowerCase();return /^\d+$/.test(t)?t.replace(/^0+(?=\d)/,''):t};
@@ -486,7 +499,10 @@ function haFor(z){if(!haData||!z)return null;const zid=z.zone_id??z.zone;if(zid!
   const n=normName(z.name);return n&&haIndex.name.has(n)?{light:haIndex.name.get(n),by:'name'}:null}
 function zoneById(id){if(id===undefined||id===null||id==='')return null;const k=String(id),dev=(lastDevices?.zones||[]).find(d=>String(zoneOf(d))===k),cfg=(configBase?.zones||[]).find(z=>String(z?.zone_id)===k);return dev||cfg?Object.assign({},cfg,dev):null}
 function zoneInfo(id){const z=zoneById(id),m=haFor(z),title=z?.name||m?.light.name||(id===undefined||id===null||id===''?'—':'Zone '+id);const same=x=>normName(x)===normName(title),area=m?.light.area&&!same(m.light.area)?m.light.area:'';return {title,area,sub:[area,m&&!same(m.light.name)?m.light.name:null].filter(Boolean).join(' · '),match:m}}
-function haMinute(date){const tz=haData?.time_zone;if(tz){try{const p={};for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23'}).formatToParts(date))p[x.type]=x.value;return Number(p.hour)%24*60+Number(p.minute)+Number(p.second)/60}catch{}}return date.getHours()*60+date.getMinutes()+date.getSeconds()/60}
+const SHOW_ZONE_RULES={'UTC0':'UTC','PST8PDT,M3.2.0,M11.1.0':'America/Los_Angeles','MST7MDT,M3.2.0,M11.1.0':'America/Denver','MST7':'America/Phoenix','CST6CDT,M3.2.0,M11.1.0':'America/Chicago','EST5EDT,M3.2.0,M11.1.0':'America/New_York','AKST9AKDT,M3.2.0,M11.1.0':'America/Anchorage','HST10':'Pacific/Honolulu'};
+const SHOW_ZONES=['UTC','America/Los_Angeles','America/Denver','America/Phoenix','America/Chicago','America/New_York','America/Anchorage','Pacific/Honolulu'];
+function showZone(){const t=gatewayTimezone?.timezone;return SHOW_ZONE_RULES[t]||SHOW_ZONES.find(z=>z===t)||(!gatewayTimezone||gatewayTimezone.unsupported?haData?.time_zone:null)}
+function haMinute(date){const tz=showZone();if(tz){try{const p={};for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23'}).formatToParts(date))p[x.type]=x.value;return Number(p.hour)%24*60+Number(p.minute)+Number(p.second)/60}catch{}}return date.getHours()*60+date.getMinutes()+date.getSeconds()/60}
 const nowMinute=()=>haMinute(new Date());
 function sunMinutes(){const r=new Date(haData?.sun?.next_rising||''),s=new Date(haData?.sun?.next_setting||'');return Number.isFinite(r.getTime())&&Number.isFinite(s.getTime())?{rise:haMinute(r),set:haMinute(s)}:null}
 function haLightText(l){if(l.state==='unavailable'||l.state==='unknown')return ['Unavailable','warn'];if(l.state!=='on')return [l.state==='off'?'Off':val(l.state),'idle'];return [['On',l.brightness===null?null:Math.round(l.brightness/255*100)+'%',l.color_temp_kelvin?Math.round(l.color_temp_kelvin)+' K':null].filter(Boolean).join(' · '),'good']}
@@ -496,6 +512,9 @@ function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error
   const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial,l.zone_id]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);renderEvents();renderSerialOptions();editorChanged(false)}
   const sunSig=JSON.stringify([haData?.sun,haData?.time_zone]);if(sunSig!==haSunSig){haSunSig=sunSig;if(lastProgram)renderProgram(lastProgram)}}
 async function loadHA(){try{applyHA(await req('ha'))}catch(e){applyHA({available:false,error:e.message})}}
+async function loadTimezone(){try{const data=await req('timezone');gatewayTimezone=data;const supported=!data.unsupported;const zone=showZone();$('show-timezone').disabled=!supported;$('save-timezone').disabled=!supported;if(supported&&zone&&document.activeElement!==$('show-timezone'))$('show-timezone').value=zone;const ha=haData?.time_zone;const mismatch=ha&&zone&&ha!==zone?` Home Assistant uses ${ha}.`:'';$('timezone-note').textContent=supported?`Gateway: ${data.timezone}.${mismatch}`:'This gateway firmware does not expose a time-zone setting.';if(lastProgram)renderProgram(lastProgram)}catch(e){$('timezone-note').textContent='Gateway time zone unavailable: '+e.message}}
+$('save-timezone').onclick=async()=>{const value=$('show-timezone').value;if(!SHOW_ZONES.includes(value))return;if(!await confirmSheet('Change show time zone?',`Daily show timing will use ${value}. Show-driven lighting can change within seconds.`,'Apply time zone'))return;$('save-timezone').disabled=true;try{await req('timezone',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:value})});$('timezone-note').textContent='Saved. Waiting for the gateway to confirm…';setTimeout(loadTimezone,2500)}catch(e){$('timezone-note').textContent='Time zone was not changed: '+e.message;$('save-timezone').disabled=false}};
+
 function renderSerialOptions(){const list=$('ha-serials');list.replaceChildren(...(haData?.lights||[]).filter(l=>l.serial).map(l=>Object.assign(document.createElement('option'),{value:l.serial,label:[l.name,l.area].filter(Boolean).join(' — ')})))}
 function haGroup(){const rows=[['Status',haData?'Connected':'Not available',haData?'':'warn']];if(!haData){if(haError)rows.push(['Reason',haError]);return group('Home Assistant',rows)}const zones=(lastDevices?.zones||[]).filter(d=>zoneOf(d)!==undefined&&zoneOf(d)!==null);const matched=zones.filter(d=>haFor(zoneById(zoneOf(d)))).length;
   rows.push(['Lutron lights found',num(haData.lights.length)],['Zones matched',zones.length?`${matched} of ${zones.length}`:'—',zones.length&&matched<zones.length?'warn':''],['Integrations searched',haData.integrations.join(', ')||'—'],['Time zone',val(haData.time_zone)]);return group('Home Assistant',rows)}
@@ -541,7 +560,7 @@ function showChart(show){const knots=show.knots.map(k=>({...k,minute:Math.max(0,
   const brightest=knots.reduce((a,b)=>b.level>a.level?b:a),colored=knots.filter(k=>Number.isFinite(toKelvin(k.cct)));let summary=knots.length>1?`Runs from ${timeOfDay(first.minute)} to ${timeOfDay(last.minute)} and is brightest at ${timeOfDay(brightest.minute)} (${fmt(brightest.level)}).`:`A single point at ${timeOfDay(first.minute)} (${fmt(first.level)}).`;
   if(colored.length>1){const lo=colored.reduce((a,b)=>toKelvin(b.cct)<toKelvin(a.cct)?b:a),hi=colored.reduce((a,b)=>toKelvin(b.cct)>toKelvin(a.cct)?b:a);if(toKelvin(lo.cct)!==toKelvin(hi.cct))summary+=` Warmest at ${timeOfDay(lo.minute)} (${Math.round(toKelvin(lo.cct))} K), coolest at ${timeOfDay(hi.minute)} (${Math.round(toKelvin(hi.cct))} K).`}
   const list=el('div','list');for(const k of knots){const r=el('div','row kf'),lvl=el('span','kf-level'),bar=el('span','bar'),fill=el('i'),t=el('span','temp'),d=el('span','dotc');fill.style.width=Math.min(100,k.level/top*100)+'%';fill.style.setProperty('--c',cctColor(k.cct));bar.append(fill);lvl.append(bar,el('span','',fmt(k.level)));d.style.setProperty('--c',cctColor(k.cct));t.append(d,el('span','',cctLabel(k.cct)));r.append(el('span','kf-time',timeOfDay(k.minute)),lvl,t);list.append(r)}
-  return [el('p','sched-summary',summary),head,svg,el('p','muted small',`Height shows brightness; color shows color temperature. Drag across the chart, or focus it and use ← →, to read any time of day. ${haData?.time_zone?`“Now”, sunrise and sunset use Home Assistant's time zone (${haData.time_zone}); shaded areas are night.`:'“Now” uses this device\'s clock.'}`),el('h3','',`Schedule points · ${knots.length}`),list]}
+  return [el('p','sched-summary',summary),head,svg,el('p','muted small',`Height shows brightness; color shows color temperature. Drag across the chart, or focus it and use ← →, to read any time of day. ${showZone()?`“Now”, sunrise and sunset use the show time zone (${showZone()}); shaded areas are night.`:'Show time zone unavailable; “Now” uses this device\'s clock.'}`),el('h3','',`Schedule points · ${knots.length}`),list]}
 function renderProgram(data){lastProgram=data;const viz=$('program-viz');const shows=(Array.isArray(data.shows)?data.shows:[]).filter(s=>Array.isArray(s.knots)&&s.knots.length);const presets=Array.isArray(data.presets)?data.presets:[];const out=[];
   const facts=el('div','metrics');const fact=(k,v,sub)=>{const b=el('div','metric');b.append(el('span','',k),el('strong','',v));if(sub)b.append(el('span','',sub));facts.append(b)};
   const zi=zoneInfo(data.zone??$('program-zone').value);fact('Zone',zi.title,[zi.area,'Zone '+val(data.zone??$('program-zone').value)].filter(Boolean).join(' · '));fact('Shows',String(shows.length),shows.length?'daily level schedules':'none programmed');fact('Presets',String(presets.length),presets.length?'stored scenes':'none programmed');
@@ -718,5 +737,5 @@ $('upload').onclick=async()=>{const f=firmwareFile;if(!f)return uploadNote('Choo
   fw('uploading','Uploading…','info');$('upload').disabled=true;let sent=false;try{if(!await ensureMaintenance())return;const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sent=true;firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=Number(latestStatus?.endpoint_uptime_s);firmwareStartedAt=Date.now();firmwareReconnectAt=0;fw('waiting',`Upload ${val(r.status||'accepted')}. Waiting for the endpoint to restart…`,'info')}catch(e){fw('failed','Upload failed: '+e.message,'bad')}finally{if(!sent)$('upload').disabled=false}};
 for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
-loadHA();setInterval(loadHA,15000);refresh();$('reload-config').click();setInterval(refresh,1000);
+loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);refresh();$('reload-config').click();setInterval(refresh,1000);
 </script></body></html>

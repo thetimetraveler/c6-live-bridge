@@ -39,9 +39,10 @@ const requests=[],failKeys=new Set(),waits=new Map();
 const context={document,status,replies,requests,failKeys,waits,location:{href:'http://ha.local/api/hassio_ingress/token/'},URL,
   Date,Math,Number,String,Object,Array,Set,JSON,Promise,console,
   setInterval(){return 0;},setTimeout(){return 0;},confirm(){return true;},
-  async fetch(url,opts){const path=new URL(url).pathname.split('/').slice(-2).join('/');const key=path.split('?')[0].split('/').pop();requests.push({key,opts});if(failKeys.has(key))throw Error('test request failed');const value=replies[key]??{};if(waits.has(key))await waits.get(key);return {ok:true,headers:{get:()=> 'application/json'},async json(){return value;}};},
+  async fetch(url,opts){const path=new URL(url).pathname.split('/').slice(-2).join('/');const key=path.split('?')[0].split('/').pop();requests.push({key,opts});if(failKeys.has(key))throw Error('test request failed');const value=key in replies?replies[key]:{};if(waits.has(key))await waits.get(key);return {ok:true,headers:{get:()=> 'application/json'},async json(){return value;}};},
 };
 const html=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
+if(!html.includes('Online again after 30 s')||!html.includes('Uptime decrease observed')||html.includes('Stays online 30 s'))throw Error('the firmware steps must describe sampled uptime observations');
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
@@ -50,6 +51,7 @@ const assertNotSafe=(s,why)=>{health(s);if(view('hero').className.includes('good
 health(status);
 if(!view('node-thread').className.includes('good')||!view('summary').children[1].className.includes('good'))throw Error('a fresh child with complete safety telemetry should show ready');
 if(!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('does not confirm current command delivery'))throw Error('good status must explain the hardware and snapshot limits');
+if(firmwareBaseline(latestStatus)!==30||Number.isFinite(firmwareBaseline({...status,monitoring:{age_s:9,delayed:true}})))throw Error('firmware restart comparison requires a fresh pre-upload baseline');
 for(const role of [3,4]){assertNotSafe({...status,thread_role:role},'router or leader');if(!view('node-thread').className.includes('bad'))throw Error('router or leader must be shown as a fault');}
 for(const test of [
   {...status,endpoint_safety:undefined},safetyPatch({present:false}),safetyPatch({may_send:'true'}),
@@ -106,6 +108,10 @@ deviceView(deviceSnapshot);zonesView({...zoneSnapshot,config_hash:2});health(lat
 if(view('hero').className.includes('good')||zoneCard().className.includes('good'))throw Error('same zone IDs with a different mapping hash must be unavailable');
 zonesView({...zoneSnapshot,config_hash:undefined});
 if(zoneCard().className.includes('good'))throw Error('a missing mapping hash must not enable comparisons');
+zonesView({...zoneSnapshot,zones:[null]});
+if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('malformed zone records must replace any previous green card');
+zonesView({...zoneSnapshot,zones:[{...matchZone,checks:{bad:'not an array'}}]});
+if(zoneCard().className.includes('good'))throw Error('malformed checks must render unavailable without throwing');
 deviceView({...deviceSnapshot,zones:[{zone:1},{zone:1}]});zonesView({...zoneSnapshot,zones:[matchZone,matchZone]});
 if(zoneCard().className.includes('good'))throw Error('duplicate zone IDs must not enable comparisons');
 deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
@@ -276,6 +282,22 @@ const mappingChecks=`
       health({...status});deviceView(devices,now);zonesView(zoneSnapshot,now);health(latestStatus);failKeys.add(failed);await refresh();failKeys.delete(failed);
       if(view('hero').className.includes('good')||zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('a failed '+failed+' request must invalidate the existing comparison');
     }
+    for(const malformed of ['status','devices','zones']){
+      health({...status});deviceView(devices,now);zonesView(zoneSnapshot,now);health(latestStatus);
+      const saved=replies[malformed];replies[malformed]=null;await refresh();replies[malformed]=saved;
+      if(view('hero').className.includes('good')||zoneCard().className.includes('good'))throw Error('a malformed '+malformed+' response must invalidate prior green status');
+    }
+    firmwarePending=true;firmwareBaselineUptime=30;firmwareStartedAt=now;firmwareOfflineSeen=true;firmwareReconnectAt=now-31000;
+    replies.status={...status,monitoring:{age_s:9,delayed:true}};await refresh();
+    if(!firmwarePending)throw Error('stale status must not complete a firmware stability watch');
+    replies.status={...status,endpoint_online:false};await refresh();
+    if(!firmwarePending||firmwareReconnectAt!==0)throw Error('an offline endpoint must reset the firmware stability watch');
+    replies.status={...status,endpoint_uptime_s:31};await refresh();
+    if(!firmwarePending||firmwareReconnectAt!==0||view('fw-step-restart').getAttribute('data-state')==='done'||!view('upload-note').textContent.includes('does not establish a restart'))throw Error('offline then online with increasing uptime must not establish a restart');
+    replies.status={...status,endpoint_uptime_s:5};await refresh();
+    if(view('fw-step-restart').getAttribute('data-state')!=='done')throw Error('a fresh uptime decrease should be shown as observed');
+    now+=31000;await refresh();
+    if(firmwarePending||!view('upload-note').textContent.includes('does not verify continuous connection'))throw Error('firmware observation must remain qualified');
   }finally{Date.now=realNow;failKeys.clear();waits.clear()}
   const initial={generation:4,hash:44,editable:true,apply_status:'active',zones:[{zone_id:1,name:'Office'}]};
   const changed={generation:5,hash:55,editable:true,apply_status:'active',zones:[{zone_id:1,name:'Other edit'}]};

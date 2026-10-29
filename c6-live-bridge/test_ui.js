@@ -31,7 +31,8 @@ const status={wifi_up:true,endpoint_online:true,config_match:true,thread_role:2,
     state:'uncontrolled',boot_hold_remaining_s:0,timer_error:false,storage_error:false,hardware_error:false,watchdog_error:false,
     link_lost:false,persistence_pending:false,violation:'none',recovering:false,recovery_state:'idle'}};
 const replies={
-  status, devices:{zones:[]}, events:{boot_id:'boot-a',next:1,next_sequence:1,oldest:1,lost:0,events:[]},
+  status, devices:{config_hash:1,zones:[],monitoring:{age_s:0,delayed:false}}, events:{boot_id:'boot-a',next:1,next_sequence:1,oldest:1,lost:0,events:[]},
+  zones:{config_hash:1,zones:[],monitoring:{age_s:0,delayed:false}},
   config:{generation:1,hash:1,editable:true,apply_status:'active',zones:[]},
 };
 const requests=[],failKeys=new Set(),waits=new Map();
@@ -47,7 +48,7 @@ const view=id=>document.getElementById(id);
 const safetyPatch=(safety={},power={})=>({...status,endpoint_safety:{...status.endpoint_safety,...safety},endpoint_power:{...status.endpoint_power,...power}});
 const assertNotSafe=(s,why)=>{health(s);if(view('hero').className.includes('good')||view('node-thread').className.includes('good')||view('summary').children[1].className.includes('good'))throw Error(why+' must not be shown as safe');};
 health(status);
-if(!view('hero').className.includes('good')||!view('node-thread').className.includes('good'))throw Error('only a fresh child with complete safety telemetry should show ready');
+if(!view('node-thread').className.includes('good')||!view('summary').children[1].className.includes('good'))throw Error('a fresh child with complete safety telemetry should show ready');
 if(!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('does not confirm current command delivery'))throw Error('good status must explain the hardware and snapshot limits');
 for(const role of [3,4]){assertNotSafe({...status,thread_role:role},'router or leader');if(!view('node-thread').className.includes('bad'))throw Error('router or leader must be shown as a fault');}
 for(const test of [
@@ -62,35 +63,52 @@ for(const test of [
   {...status,monitoring:{age_s:9,delayed:false}}, {...status,monitoring:{age_s:0,delayed:true}}
 ])assertNotSafe(test,'unsafe or unavailable telemetry');
 health(safetyPatch({phase:'listening',may_send:false,prefix_status:255,ext_pan_ok:false,active_timestamp_valid:false,mesh_local_prefix:'0000:0000:0000:0000::/64'},{ }));
-if(!view('headline').textContent.includes('waiting'))throw Error('startup should be shown as waiting');
+if(!view('headline-detail').textContent.includes('waiting'))throw Error('startup should be shown as waiting');
 health(safetyPatch({phase:'operator-stopped',may_send:false,prefix_status:255,ext_pan_ok:false,active_timestamp_valid:false,mesh_local_prefix:'0000:0000:0000:0000::/64'},{enabled:false,hold_requested:true}));
 if(!view('headline-detail').textContent.includes('reports operator stop')||!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('power state is not verified'))throw Error('operator stop must be reported as telemetry, without promising physical power off');
 health(safetyPatch({}, {enabled:false,hold_requested:true}));
 if(!view('headline-detail').textContent.includes('has not reported operator stop'))throw Error('a gateway disable is not proof that the endpoint stopped');
 health({...safetyPatch({}, {hold_requested:true,boot_hold_remaining_s:30}),endpoint_online:false});
-if(!view('headline').textContent.includes('startup hold'))throw Error('a held endpoint can be offline during startup');
+if(!view('headline-detail').textContent.includes('startup hold'))throw Error('a held endpoint can be offline during startup');
 health({...status,monitoring:{age_s:0,delayed:false}});statusReceivedAt-=6000;health(latestStatus);
 if(!view('headline').textContent.includes('Monitoring delayed')||view('node-thread').className.includes('good')||view('summary').children.some(c=>c.className.includes('good')))throw Error('a snapshot must age out even while a refresh is pending');
-const deviceSnapshot={monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};
-const confirmation=()=>view('devices').children[0].children.at(-1).children[0];
-health({...status});deviceView(deviceSnapshot);
-if(!confirmation().className.includes('good')||!confirmation().textContent.includes('Fresh'))throw Error('a recent confirmation with fresh snapshots should show fresh');
-deviceView({...deviceSnapshot,zones:[{zone:1,confirmed:null,last_confirmed_ms:0}]});
-if(confirmation().className.includes('good')||confirmation().textContent!=='Never confirmed')throw Error('the gateway zero sentinel must not create a confirmation');
-deviceView({...deviceSnapshot,zones:[{zone:1,confirmed:{at_ms:0,level_x100:5000},last_confirmed_ms:0}]});
-if(!confirmation().className.includes('good'))throw Error('an explicit confirmation object may report a real observation at uptime zero');
-deviceView({...deviceSnapshot,zones:[{zone:1,last_confirmed_ms:5000}]});
-if(!confirmation().className.includes('good'))throw Error('a positive timestamp in a legacy response should remain usable');
-deviceView({...deviceSnapshot,zones:[{zone:1,confirmed:null,last_confirmed_ms:5000}]});
-if(confirmation().className.includes('good'))throw Error('a null confirmation and nonzero timestamp are contradictory, not fresh');
+const deviceSnapshot={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};
+const matchZone={zone:1,name:'Office',lutron:{on:true,state:'on',level_x100:5000,cct:2800},sent:null,
+  lamp:{level_x100:5000,source:'observed',age_ms:1,cct:2800,seq:1},show:{status:'not_selected'},
+  checks:[{key:'lutron',status:'good',title:'Lamp matches Lutron'}],verdict:{tone:'good',title:'In sync'}};
+const zoneSnapshot={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[matchZone],home_assistant:true};
+const zoneCard=()=>view('zones').children[0];
+const cardVerdict=()=>zoneCard().children[0].children[1];
+health({...status});deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
+if(!view('hero').className.includes('good')||!zoneCard().className.includes('good'))throw Error('fresh readback with complete comparisons should show in sync');
+health({...status,endpoint_safety:undefined,endpoint_power:undefined});
+if(view('hero').className.includes('good')||view('node-thread').className.includes('good'))throw Error('green lamp comparisons must not hide unavailable endpoint safety');
 health({...status,monitoring:{age_s:9,delayed:true}});
-if(confirmation().className.includes('good')||!confirmation().textContent.includes('unavailable'))throw Error('stale status must invalidate the displayed confirmation without a new device response');
+if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('stale status must invalidate the displayed lamp comparison');
 health({...status});deviceView({...deviceSnapshot,monitoring:{age_s:9,delayed:false}});
-if(confirmation().className.includes('good')||!confirmation().textContent.includes('unavailable'))throw Error('a stale device snapshot must not show a fresh confirmation');
+if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('a stale device snapshot must not show a current comparison');
 deviceView({...deviceSnapshot,monitoring:undefined});
-if(confirmation().className.includes('good'))throw Error('device freshness without snapshot age must be unavailable');
-health({...status});deviceView({...deviceSnapshot,zones:[{zone:1,confirmed:{at_ms:12000,level_x100:5000}}]});
-if(confirmation().className.includes('good')||!confirmation().textContent.includes('Age unavailable'))throw Error('a future gateway confirmation time must not show as fresh');
+if(zoneCard().className.includes('good'))throw Error('device freshness without snapshot age must be unavailable');
+deviceView(deviceSnapshot);zonesView({...zoneSnapshot,monitoring:{age_s:9,delayed:false}});
+if(zoneCard().className.includes('good'))throw Error('a stale zone response must not show a current comparison');
+zonesView({...zoneSnapshot,zones:[{...matchZone,lamp:{...matchZone.lamp,source:'applied'}}]});
+if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('hub reading'))throw Error('accepted commands must not masquerade as lamp readback');
+zonesView({...zoneSnapshot,zones:[{...matchZone,lamp:{...matchZone.lamp,age_ms:120001}}]});
+if(zoneCard().className.includes('good'))throw Error('an old hub reading must not be displayed as a current comparison');
+zonesView({...zoneSnapshot,zones:[{...matchZone,checks:[{status:'unknown',title:'Colour unavailable'}]}]});
+if(zoneCard().className.includes('good'))throw Error('incomplete checks must not be counted as in sync');
+deviceView({...deviceSnapshot,zones:[{zone:1},{zone:2},{zone:3}]});
+zonesView({...zoneSnapshot,zones:[matchZone,{...matchZone,zone:2}]});health(latestStatus);
+if(view('hero').className.includes('good')||zoneCard().className.includes('good'))throw Error('two of three zone summaries must be unavailable');
+zonesView({...zoneSnapshot,zones:[]});health(latestStatus);
+if(view('hero').className.includes('good')||view('summary').children.at(-1).className.includes('good'))throw Error('empty zone summaries must be unavailable');
+deviceView(deviceSnapshot);zonesView({...zoneSnapshot,config_hash:2});health(latestStatus);
+if(view('hero').className.includes('good')||zoneCard().className.includes('good'))throw Error('same zone IDs with a different mapping hash must be unavailable');
+zonesView({...zoneSnapshot,config_hash:undefined});
+if(zoneCard().className.includes('good'))throw Error('a missing mapping hash must not enable comparisons');
+deviceView({...deviceSnapshot,zones:[{zone:1},{zone:1}]});zonesView({...zoneSnapshot,zones:[matchZone,matchZone]});
+if(zoneCard().className.includes('good'))throw Error('duplicate zone IDs must not enable comparisons');
+deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
 health({...status,monitoring:{age_s:9,delayed:true},diagnostics:{maintenance:false,wifi_disconnects:0}});
 if(!document.getElementById('node-gateway').className.includes('warn')) throw Error('stale monitoring must not establish a Wi-Fi outage');
 if(!document.getElementById('maintenance-toggle').textContent.includes('Enter')) throw Error('maintenance must be explicit');
@@ -160,7 +178,7 @@ eventView({boot_id:'boot-c',next:7,oldest:1,lost:0,boot_epoch_ms:boot,events:[
   {id:3,ts_ms:3000,stage:'confirmed',zone:3,requested:5000,confirmed:5000},{id:4,ts_ms:3100,stage:'report-sent',zone:3,requested:5000,confirmed:5000},
   {id:5,ts_ms:4000,stage:'observed',zone:4,requested:-1,confirmed:2500},{id:6,ts_ms:5000,stage:'requested',zone:4,requested:0,confirmed:'??'}]});
 if(rows().length!==3) throw Error('a command and its steps should collapse into one row, got '+rows().length);
-const done=text(rows()[2]);if(!done.includes('Set to 50%')||!done.includes('Done')) throw Error('finished command should read as done: '+done);
+const done=text(rows()[2]);if(!done.includes('Set to 50%')||!done.includes('Reported to Lutron')) throw Error('finished command should show its reported outcome: '+done);
 if(!text(rows()[0]).includes('Turn off')) throw Error('level 0 should read as turning off');
 const pacific=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',hour:'numeric',minute:'2-digit',second:'2-digit'}).format(new Date(boot+1000));
 if(!text(rows()[2]).includes(pacific)) throw Error('time should default to Pacific: '+pacific);
@@ -180,10 +198,11 @@ if(rows().length!==2) throw Error('later reports must not join the finished comm
 const updates=text(rows()[0]),cmd=text(rows()[1]);
 if(!updates.includes('Status updates')||!updates.includes('3 reports')||!updates.includes('Bridge → Lutron')) throw Error('later reports should merge into one status-update row: '+updates);
 if(updates.includes('Asked')||updates.includes('0.4%')) throw Error('a report row must not present its requested field as an asked level: '+updates);
-if(!cmd.includes('Set to 100%')||!cmd.includes('Done')||!cmd.includes('From Lutron')) throw Error('the command should read as done: '+cmd);
+if(!cmd.includes('Set to 100%')||!cmd.includes('Reported to Lutron')||!cmd.includes('From Lutron')) throw Error('the command should show its reported outcome: '+cmd);
 const marked=n=>typeof n!=='string'&&(n.className==='unknown'||(n.children||[]).some(marked));
 rows()[1].onclick();const stepRow=document.getElementById('events').children.find(r=>r.className==='detail'),steps=text(stepRow);
-for(const want of ['Lutron → Bridge','Bridge → Ketra hub','Ketra hub → Bridge','Bridge → Lutron','✓ as asked','raw requested 0']) if(!steps.includes(want)) throw Error('steps should include '+want+': '+steps);
+for(const want of ['Lutron → Bridge','Bridge → Ketra hub','At Bridge','Bridge → Lutron','Bridge reported the level','raw requested 0']) if(!steps.includes(want)) throw Error('steps should include '+want+': '+steps);
+if(steps.includes('Hub confirmed the level')||steps.includes('✓ as asked'))throw Error('command-result telemetry must not be presented as hub readback');
 if(steps.includes('Event #22')||marked(stepRow)) throw Error('steps should hold only this command and no -1 placeholders: '+steps);
 if(marked(rows()[1])) throw Error('the summary should hide -1 placeholders');
 eventView({boot_id:'boot-e',next:3,oldest:1,lost:0,events:[at(1,1000,'requested',5000,-1),at(2,1100,'applied',5000,-1),at(3,1200,'correction',5000,4000)]});
@@ -205,11 +224,38 @@ gatewayTimezone={timezone:'unknown-rule'};if(showZone())throw Error('unknown gat
 gatewayTimezone={unsupported:true};if(showZone()!=='America/Los_Angeles')throw Error('old gateways should fall back to HA time');
 haData={time_zone:'Europe/London',lights:[]};renderEvents();
 if(!document.getElementById('events-tz').textContent.includes('Europe/London')) throw Error('Home Assistant time zone should win');
-deviceView({zones:[{zone:1,requested:7500},{zone:2,requested:-1},{zone:3,requested:null}]});
-const requestedCells=[...document.getElementById('devices').children].map(r=>text(r.children[2]));
-if(!requestedCells[0].includes('75%')||requestedCells[0].includes('7500')) throw Error('requested level should read as a percent: '+requestedCells[0]);
-if(!document.getElementById('devices').children[1].children[2].children.some(c=>c.className==='unknown')) throw Error('unrecognised requested level must be marked unknown');
-if(!requestedCells[2].includes('—')) throw Error('missing requested level should read as a dash');
+health({...status});deviceView({config_hash:1,zones:[{zone:0},{zone:1,requested:7500}],monitoring:{age_s:0,delayed:false}});
+if(document.getElementById('device-count').textContent!=='2 zones') throw Error('device view should still count zones');
+const office={zone:0,zone_id:30861,name:'Office A20',n4_group:'office',
+  lutron:{name:'office lamp',area:'Office',on:false,state:'off',level_x100:0,cct:null},sent:null,
+  lamp:{level_x100:10000,seq:0,source:'observed',age_ms:3000,cct:null,xy:null,vibrancy:null},
+  show:{status:'not_selected',installed:[31779],override_x100:null},
+  checks:[{key:'lutron',status:'bad',title:'Lamp is on at 100%, Lutron shows off',detail:'Changed outside Lutron.'},{key:'show',status:'info',title:'No Natural Show selected'}],
+  verdict:{tone:'bad',title:'Lamp is on at 100%, Lutron shows off'}};
+const curve=[0,360,720,1080,1440].map((minute,i)=>({minute,level_x100:[3000,3000,10000,10000,3000][i],cct:1800}));
+const sitting={zone:1,zone_id:31467,name:'Sitting Room A20',n4_group:'Sitting Room',
+  lutron:{on:true,state:'on',level_x100:10000,cct:3000,area:'Sitting Room'},
+  sent:{level_x100:8840,cct:2803,xy:null,vibrancy:27,fade_ms:0,delay_ms:0,seq:16,age_ms:2000},
+  lamp:{level_x100:8840,seq:16,source:'observed',age_ms:1000,cct:2803,xy:null,vibrancy:27},
+  show:{status:'running',id:31779,override_x100:null,now_ms:33412000,curve,target:{level_x100:8840,show_level_x100:8840,cct:2803,vibrancy:27},next:{minute:600,level_x100:10000,cct:3000}},
+  checks:[{key:'lutron',status:'info',title:"Lutron shows the show's next keyframe"},{key:'show',status:'good',title:'Following Natural Show 31779'},{key:'hub',status:'good',title:'Hub reading matches the last command'}],
+  verdict:{tone:'good',title:'In sync · following Natural Show'}};
+zonesView({config_hash:1,zones:[office,sitting],time_zone:'America/Los_Angeles',home_assistant:true,monitoring:{age_s:0,delayed:false}});
+const cards=document.getElementById('zones').children;
+if(cards.length!==2||!cards[0].className.includes('bad')||!cards[1].className.includes('good')) throw Error('zone cards should carry their verdict tone');
+const all=cards.map(text).join(' | ');
+for(const want of ['Lamp is on at 100%, Lutron shows off','Off','100%','Hub reading','Nothing yet','No Natural Show selected','88.4%','2803 K','vibrancy 27','Hub reading matches the last command','Calls for now: 88.4%','Following Natural Show 31779'])
+  if(!all.includes(want)) throw Error('zone cards should show '+want+': '+all);
+if(text(cards[0]).split('No Natural Show selected').length!==2) throw Error('show status should appear once per card');
+if(all.includes('[object Object]')||all.includes('??')) throw Error('typed commands must render as values, not as unknown markers');
+if(!document.getElementById('device-note').textContent.startsWith('1 of 2 lamps need attention')) throw Error('note should count lamps needing attention');
+const savedHA=haData;haData=null;health(status);haData=savedHA;
+if(!text(document.getElementById('summary')).includes('1 of 2 in sync')) throw Error('overview should summarise lamp sync');
+if(!document.getElementById('headline').textContent.includes('Office A20')) throw Error('headline should name the lamp out of sync');
+deviceView(deviceSnapshot);zonesView({...zoneSnapshot,zones:[{...sitting,lamp:{...sitting.lamp,age_ms:120001}}]});
+const descendants=n=>[n,...(n.children||[]).flatMap(descendants)];
+if(descendants(zoneCard()).some(n=>n.tag==='circle'&&(n.getAttribute('class')||'').startsWith('lamp ')))throw Error('a stale hub reading must not be plotted at the current show time');
+zonesView({zones:[]});if(!text(document.getElementById('zones')).includes('No bridged zones')) throw Error('empty zone list needs a message');
 applyHA({available:true,time_zone:'Europe/London',lights:[{entity_id:'light.k',name:'First Floor Kitchen kitchen',zone_id:'1379',serial:null}]});
 if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should match by Lutron zone ID');
 `;
@@ -220,15 +266,16 @@ const mappingChecks=`
   if(refreshing)throw Error('initial refresh did not settle');
   const realNow=Date.now;let now=realNow();Date.now=()=>now;
   try{
-    const devices={monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};
-    replies.status={...status};replies.devices=devices;health({...status});deviceView(devices);
+    const devices={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};
+    replies.status={...status};replies.devices=devices;replies.zones=zoneSnapshot;health({...status});deviceView(devices);zonesView(zoneSnapshot);health(latestStatus);
+    if(!zoneCard().className.includes('good'))throw Error('test setup must start with a fresh lamp comparison');
     let release;waits.set('devices',new Promise(resolve=>{release=resolve}));
     const delayed=refresh();for(let i=0;i<10;i++)await Promise.resolve();now+=30000;waits.delete('devices');release();await delayed;
-    if(view('hero').className.includes('good')||confirmation().className.includes('good')||!view('headline').textContent.includes('Monitoring delayed'))throw Error('a fast status response must age while a parallel device request is pending');
-    health({...status});deviceView(devices,now);failKeys.add('devices');await refresh();failKeys.delete('devices');
-    if(confirmation().className.includes('good')||!confirmation().textContent.includes('unavailable'))throw Error('a failed device request must invalidate the existing confirmation');
-    health({...status});deviceView(devices,now);failKeys.add('status');await refresh();failKeys.delete('status');
-    if(view('hero').className.includes('good')||confirmation().className.includes('good'))throw Error('a failed status request must invalidate the existing confirmation');
+    if(view('hero').className.includes('good')||zoneCard().className.includes('good')||!view('headline').textContent.includes('Monitoring delayed'))throw Error('a fast status response must age while a parallel device request is pending');
+    for(const failed of ['devices','status','zones']){
+      health({...status});deviceView(devices,now);zonesView(zoneSnapshot,now);health(latestStatus);failKeys.add(failed);await refresh();failKeys.delete(failed);
+      if(view('hero').className.includes('good')||zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('a failed '+failed+' request must invalidate the existing comparison');
+    }
   }finally{Date.now=realNow;failKeys.clear();waits.clear()}
   const initial={generation:4,hash:44,editable:true,apply_status:'active',zones:[{zone_id:1,name:'Office'}]};
   const changed={generation:5,hash:55,editable:true,apply_status:'active',zones:[{zone_id:1,name:'Other edit'}]};

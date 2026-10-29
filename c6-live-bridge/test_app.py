@@ -669,4 +669,160 @@ class ShowCollectorTests(unittest.TestCase):
         self.assertFalse(self.panel.track_programs)
 
 
+# Sitting Room's show as transferred on 2026-10-28 (30% overnight, 100% / 3000 K by day).
+SITTING_SHOW=[{"minute":240,"level":19123,"cct":1800,"field2":25},{"minute":377,"level":25717,"cct":1980,"field2":25},
+              {"minute":600,"level":65279,"cct":3000,"field2":27},{"minute":1020,"level":65279,"cct":3000,"field2":27},
+              {"minute":1206,"level":25717,"cct":1980,"field2":25},{"minute":1320,"level":19123,"cct":1800,"field2":25}]
+
+
+def light(state,brightness=None,kelvin=None,zone_id="31467"):
+    return {"entity_id":"light.lamp","name":"sitting room lamp","state":state,"brightness":brightness,
+            "color_temp_kelvin":kelvin,"zone_id":zone_id,"serial":None,"area":"Sitting Room"}
+
+
+def bridged(level,source="observed",seq=1,requested=None,at_ms=99_000,color=None,last_command_ms=50_000):
+    confirmed={"level_x100":level,"source":source,"seq":seq,"at_ms":at_ms}
+    if color: confirmed["color"]=color
+    return {"zone":1,"zone_id":31467,"serial":90131467,"name":"Sitting Room A20","n4_group":"Sitting Room",
+            "requested":requested,"confirmed":confirmed,"last_command_ms":last_command_ms,"last_confirmed_ms":at_ms}
+
+
+class ZoneSummaryTests(unittest.TestCase):
+    def program(self,selected=True,override=None):
+        return app.show_program({"selected":selected,"show":31779 if selected else 0,"programmed":True,
+                                 "brightness_override_x100":override,"shows":[{"id":31779,"knots":SITTING_SHOW}]})
+
+    def statuses(self,summary):
+        return {c["key"]:c["status"] for c in summary["checks"]}
+
+    def test_lamp_on_while_lutron_off_is_out_of_sync(self):
+        # Office after the 12:32 power cut: N4 at 100%, Lutron off, no command since boot.
+        s=app.zone_summary(bridged(10000),self.program(False),10,at(14,28),light("off"),100_000)
+        self.assertEqual(s["verdict"]["tone"],"bad")
+        self.assertEqual(s["verdict"]["title"],"Lamp is on at 100%, Lutron shows off")
+        self.assertEqual(self.statuses(s)["show"],"info")
+        self.assertIsNone(s["sent"])
+        both_off=app.zone_summary(bridged(0),self.program(False),10,at(14,28),light("off"),100_000)
+        self.assertEqual((both_off["verdict"]["tone"],self.statuses(both_off)["lutron"]),("good","good"))
+        lamp_off=app.zone_summary(bridged(0),self.program(False),10,at(14,28),light("on",255),100_000)
+        self.assertEqual(lamp_off["verdict"]["title"],"Lutron shows on, lamp is off")
+
+    def test_show_running_compares_lamp_with_the_show_not_lutrons_keyframe(self):
+        # 09:16:52: the show calls for 88.40% / 2803 K; Lutron reports the 10:00 keyframe (100%, 3000 K).
+        local=at(9,16)+52_000
+        sent={"flags":0x0b,"level_x100":8840,"cct":2803,"vibrancy":27,"seq":16,"transition_ms":0,"delay_ms":0}
+        zone=bridged(8840,"observed",16,sent,color={"power":True,"cct":2803,"x":0,"y":0,"vibrancy":27})
+        s=app.zone_summary(zone,self.program(),10,local,light("on",255,3000),100_000)
+        self.assertEqual(s["verdict"],{"tone":"good","title":"In sync · following Natural Show"})
+        self.assertEqual(self.statuses(s),{"lutron":"info","hub":"good","show":"good"})
+        self.assertEqual((s["show"]["target"]["level_x100"],s["show"]["target"]["cct"]),(8840,2803))
+        self.assertEqual(s["show"]["next"],{"minute":600,"level_x100":10000,"cct":3000})
+        self.assertEqual((s["show"]["curve"][0]["minute"],s["show"]["curve"][-1]["minute"],len(s["show"]["curve"])),(0,1440,97))
+        self.assertEqual(s["show"]["curve"][16]["level_x100"],3000)  # 04:00, still the overnight level
+        self.assertEqual(s["lamp"]["cct"],2803)
+        drift=app.zone_summary(bridged(7000,"observed",16,sent),self.program(),10,local,light("on",255,3000),100_000)
+        self.assertEqual(drift["verdict"]["title"],"Show calls for 88.4%, lamp at 70%")
+        warm=app.zone_summary(bridged(8840,"observed",16,sent,color={"cct":2700}),self.program(),10,local,light("on",255),100_000)
+        self.assertEqual(warm["verdict"]["title"],"Show calls for 2803 K, lamp at 2700 K")
+        override=app.zone_summary(bridged(10000,"observed",16,dict(sent,level_x100=10000),color={"cct":2803}),self.program(override=10000),10,local,light("on",255),100_000)
+        self.assertEqual(self.statuses(override)["show"],"good")
+        self.assertEqual(override["show"]["target"]["show_level_x100"],8840)
+
+    def test_fixed_level_needs_lamp_and_lutron_to_agree(self):
+        sent={"flags":0x05,"level_x100":7000,"x":3457,"y":3585,"seq":240,"transition_ms":0,"delay_ms":0}
+        ok=app.zone_summary(bridged(7000,"observed",240,sent,color={"cct":2800}),self.program(False),10,at(9,20),light("on",179,2800),100_000)
+        self.assertEqual(ok["verdict"]["title"],"In sync")  # 179/255 is 70.2%
+        self.assertEqual(ok["sent"]["xy"],[0.3457,0.3585])
+        off_by=app.zone_summary(bridged(7000,"observed",240,sent),self.program(False),10,at(9,20),light("on",128),100_000)
+        self.assertEqual(off_by["verdict"],{"tone":"warn","title":"Lamp at 70%, Lutron shows 50.2%"})
+        moving=bridged(3000,"observed",240,dict(sent,transition_ms=10_000),last_command_ms=95_000)
+        self.assertEqual(self.statuses(app.zone_summary(moving,self.program(False),10,at(9,20),light("on",179),100_000))["hub"],"wait")
+
+    def test_unknowns_never_claim_sync(self):
+        legacy=bridged(5000,requested=5000);legacy.pop("last_command_ms")
+        s=app.zone_summary(legacy,None,None,at(12),None,100_000)
+        self.assertEqual(s["sent"]["level_x100"],5000)
+        self.assertEqual(self.statuses(s)["lutron"],"unknown")
+        self.assertEqual(self.statuses(s)["show"],"unknown")
+        self.assertEqual(s["verdict"]["tone"],"info")
+        stale=app.zone_summary(bridged(5000,at_ms=1000),None,None,at(12),light("on",128),300_000)
+        self.assertEqual(stale["verdict"],{"tone":"warn","title":"No recent reading from the hub"})
+        empty=app.zone_summary({"zone":3,"confirmed":None},None,None,None,light("unavailable"),1)
+        self.assertEqual(empty["verdict"]["tone"],"wait")
+
+    def test_lights_match_by_zone_then_serial_then_name(self):
+        lights=[light("on",1,zone_id="1"),dict(light("on",2,zone_id=None),serial="90131467",name="other"),
+                dict(light("on",3,zone_id=None),name="Sitting Room A20")]
+        self.assertEqual(app.match_light({"zone_id":1,"serial":90131467},lights)["brightness"],1)
+        self.assertEqual(app.match_light({"zone_id":5,"serial":90131467},lights)["brightness"],2)
+        self.assertEqual(app.match_light({"zone_id":5,"name":"sitting room a20"},lights)["brightness"],3)
+        self.assertIsNone(app.match_light({"zone_id":5},lights))
+
+    def test_unavailable_evidence_is_never_counted_as_a_match(self):
+        sent={"flags":0x03,"level_x100":8840,"cct":2803,"seq":16,"transition_ms":0,"delay_ms":0}
+        local=at(9,16)+52_000
+        applied=app.zone_summary(bridged(8840,"applied",16,sent),self.program(),10,local,light("on",255),100_000)
+        self.assertEqual(applied["verdict"]["tone"],"wait")
+        self.assertNotIn("good",self.statuses(applied).values())
+        no_lamp=bridged(8840,requested=sent);no_lamp["confirmed"]=None;no_lamp["last_confirmed_ms"]=0
+        result=app.zone_summary(no_lamp,self.program(),10,local,light("on",255),100_000)
+        self.assertIsNone(result["lamp"])
+        self.assertEqual(self.statuses(result)["show"],"wait")
+        no_color=app.zone_summary(bridged(8840,"observed",16,sent),self.program(),10,local,light("on",255),100_000)
+        self.assertEqual(self.statuses(no_color)["show"],"unknown")
+        self.assertNotEqual(no_color["verdict"]["tone"],"good")
+        fixed_no_color=app.zone_summary(bridged(5000),self.program(False),10,local,light("on",128,2800),100_000)
+        self.assertEqual(self.statuses(fixed_no_color)["lutron"],"unknown")
+        self.assertNotEqual(fixed_no_color["verdict"]["tone"],"good")
+        no_brightness=app.zone_summary(bridged(8840,"observed",16,sent,color={"cct":2803}),self.program(),10,local,light("on"),100_000)
+        self.assertEqual(self.statuses(no_brightness)["lutron"],"unknown")
+        self.assertNotEqual(no_brightness["verdict"]["tone"],"good")
+        no_seq=bridged(5000,"observed",None,{"flags":1,"level_x100":5000},at_ms=0)
+        summary=app.zone_summary(no_seq,self.program(False),10,local,light("on",128),1000)
+        self.assertFalse(any("confirmed command #None" in c["title"] for c in summary["checks"]))
+        self.assertEqual(summary["lamp"]["age_ms"],1000)
+
+    def test_ambiguous_identifiers_never_select_an_arbitrary_light(self):
+        a=light("on",128);b=dict(a,entity_id="light.other")
+        self.assertIsNone(app.match_light({"zone_id":31467},[a,b]))
+        a=dict(a,zone_id=None,serial="90131467");b=dict(b,zone_id=None,serial="90131467")
+        self.assertIsNone(app.match_light({"serial":90131467},[a,b]))
+        self.assertIsNone(app.match_light({"name":"sitting room lamp"},[a,b]))
+
+    def test_zone_route_uses_cache_only_and_asks_for_programming(self):
+        gateway=StubGateway();panel=app.Panel(gateway,app.EventArchive(tempfile.mkdtemp()))
+        panel.cache["devices"]=({"config_hash":7,"zones":[bridged(10000)]},app.time.monotonic())
+        panel.cache["status"]=({"config_hash":7,"gateway_uptime_ms":100_000},app.time.monotonic())
+        result=panel.zone_summaries({"available":True,"lights":[light("off")]},lambda tz:(at(14,28),"America/Los_Angeles"))
+        self.assertEqual(gateway.calls,[])
+        self.assertGreater(panel.programs_wanted_until,app.time.monotonic())
+        self.assertEqual((result["home_assistant"],result["time_zone"]),(True,"America/Los_Angeles"))
+        self.assertEqual(result["zones"][0]["verdict"]["tone"],"bad")
+        self.assertIsNone(panel.zone_summaries({"available":False},lambda tz:(None,None))["zones"][0]["lutron"])
+
+    def test_zone_route_ages_cached_readings_and_invalidates_stale_sources(self):
+        panel=app.Panel(StubGateway(),app.EventArchive(tempfile.mkdtemp()))
+        with patch.object(app.time,"monotonic",return_value=1000):
+            panel.cache["devices"]=({"config_hash":7,"zones":[bridged(5000,at_ms=99_000)]},990)
+            panel.cache["status"]=({"config_hash":7,"gateway_uptime_ms":100_000},990)
+            result=panel.zone_summaries({"available":True,"lights":[light("on",128)]},lambda tz:(at(12),"UTC"))
+            self.assertEqual(result["zones"][0]["lamp"]["age_ms"],11_000)
+            self.assertEqual(result["zones"][0]["verdict"]["tone"],"wait")
+            self.assertTrue(result["monitoring"]["delayed"])
+            panel.cache["devices"]=({"config_hash":7,"zones":[bridged(5000)]},1000)
+            panel.cache["status"]=({"config_hash":7,"gateway_uptime_ms":100_000},1000)
+            panel.last_error="offline"
+            delayed=panel.zone_summaries({"available":True,"lights":[light("on",128)]},lambda tz:(at(12),"UTC"))
+            self.assertEqual(delayed["zones"][0]["verdict"]["tone"],"wait")
+            self.assertTrue(delayed["monitoring"]["delayed"])
+            panel.last_error=None
+            panel.cache["status"]=({"config_hash":8,"gateway_uptime_ms":100_000},1000)
+            mismatch=panel.zone_summaries({"available":True,"lights":[light("on",128)]},lambda tz:(at(12),"UTC"))
+            self.assertEqual(mismatch["config_hash"],7)
+            self.assertEqual(mismatch["zones"][0]["verdict"]["tone"],"wait")
+            panel.cache["status"]=({"gateway_uptime_ms":100_000},1000)
+            missing=panel.zone_summaries({"available":True,"lights":[light("on",128)]},lambda tz:(at(12),"UTC"))
+            self.assertEqual(missing["zones"][0]["verdict"]["tone"],"wait")
+
+
 if __name__=="__main__": unittest.main()

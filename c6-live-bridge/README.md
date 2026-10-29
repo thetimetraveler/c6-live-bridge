@@ -34,6 +34,9 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/timezone`, `PUT /api/timezone` (gateway show time zone, when supported)
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
+- `GET /api/zones` (per-zone sync summary served by the add-on: Lutron state, the bridge's last command,
+  the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
+  from cached data and never adds gateway requests)
 
 Only these methods and paths are accepted. Gateway responses are capped at 1 MiB; ordinary connections have finite timeouts, while firmware and programming transfers use a five-minute timeout. Firmware is forwarded byte-for-byte with a SHA-256 digest computed by the proxy and sent in `X-SHA256`. Query values are parsed as bounded integers. A gateway timeout or disconnect is shown as unavailable and retried by the dashboard. Event polling resumes from the latest delivered event ID, rewinds on a gateway boot ID change, and surfaces reported cursor gaps.
 

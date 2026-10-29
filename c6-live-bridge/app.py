@@ -26,6 +26,9 @@ MAX_FIRMWARE = 786_432
 # Show sensors: one programming read per collector slot, each zone at most every two minutes.
 PROGRAM_SLOT_S, PROGRAM_REFRESH_S, PROGRAM_STALE_S, PROGRAM_TIMEOUT_S = 30, 120, 600, 20
 SNAPSHOT_STALE_S = 120
+# Safety and dashboard comparisons require current gateway snapshots, even
+# though longer-lived snapshots can still be useful to the show sensors.
+MONITORING_FRESH_S = 5
 LEVEL_FULL_ON = 0xFEFF
 DAY_MS = 86_400_000
 DEFAULT_TIME_ZONE = "America/Los_Angeles"
@@ -359,6 +362,241 @@ def zone_show_state(zone, program, program_age_s, local_ms):
     return state
 
 
+# Zone sync check tolerances. Lutron/HA brightness is 0-255 or whole percent, so allow 1%.
+SYNC_LEVEL_TOL, SHOW_LEVEL_TOL, SHOW_CCT_TOL, SYNC_CCT_TOL = 100, 50, 15, 60
+CONFIRM_STALE_MS = 120_000
+CHECK_ORDER = {"bad": 0, "warn": 1, "wait": 2, "unknown": 3, "info": 4, "good": 5}
+
+
+def _level(value):
+    return value if type(value) is int and 0 <= value <= 10000 else None
+
+
+def _cct(value):
+    return value if type(value) is int and 1000 <= value <= 20000 else None
+
+
+def _pct_text(level):
+    return "off" if level == 0 else f"{level / 100:g}%"
+
+
+def _age(uptime_ms, at_ms):
+    if type(uptime_ms) not in (int, float) or type(at_ms) not in (int, float) or not math.isfinite(uptime_ms) or not math.isfinite(at_ms) or at_ms < 0 or uptime_ms < at_ms:
+        return None
+    return int(uptime_ms - at_ms)
+
+
+def _sent(zone, uptime_ms):
+    """The last command the bridge sent to the N4, in display units; None before the first one."""
+    requested = zone.get("requested")
+    if type(requested) is int:  # gateways before the typed command record
+        requested = {"flags": 1, "level_x100": requested} if _level(requested) is not None else None
+    if not isinstance(requested, dict):
+        return None
+    flags = requested.get("flags") if type(requested.get("flags")) is int else 0
+    xy = (requested.get("x"), requested.get("y"))
+    vibrancy = requested.get("vibrancy")
+    return {"level_x100": _level(requested.get("level_x100")) if flags & 0x01 else None,
+            "cct": _cct(requested.get("cct")) if flags & 0x02 else None,
+            "xy": [v / 10000 for v in xy] if flags & 0x04 and all(type(v) is int and 0 <= v <= 10000 for v in xy) else None,
+            "vibrancy": vibrancy if flags & 0x08 and type(vibrancy) is int and 0 <= vibrancy <= 100 else None,
+            "fade_ms": requested.get("transition_ms") if type(requested.get("transition_ms")) is int else 0,
+            "delay_ms": requested.get("delay_ms") if type(requested.get("delay_ms")) is int else 0,
+            "seq": requested.get("seq") if type(requested.get("seq")) is int else None,
+            "age_ms": _age(uptime_ms, zone.get("last_command_ms"))}
+
+
+def _lamp(zone, uptime_ms):
+    """What the N4 last reported for the lamp; colour only from firmware that reports it."""
+    confirmed = zone.get("confirmed")
+    if not isinstance(confirmed, dict) or _level(confirmed.get("level_x100")) is None:
+        return None
+    lamp = {"level_x100": confirmed["level_x100"], "seq": confirmed.get("seq") if type(confirmed.get("seq")) is int else None,
+            "source": confirmed.get("source") if confirmed.get("source") in ("applied", "observed", "correction") else None,
+            "age_ms": _age(uptime_ms, confirmed.get("at_ms")), "cct": None, "xy": None, "vibrancy": None}
+    color = confirmed.get("color")
+    if isinstance(color, dict):
+        xy = (color.get("x"), color.get("y"))
+        lamp.update(cct=_cct(color.get("cct")),
+                    xy=[v / 10000 for v in xy] if all(type(v) is int and 0 < v <= 10000 for v in xy) else None,
+                    vibrancy=color.get("vibrancy") if type(color.get("vibrancy")) is int and 0 <= color["vibrancy"] <= 100 else None)
+    return lamp
+
+
+def match_light(zone, lights):
+    """The Home Assistant Lutron light for a bridged zone: by zone ID, then serial, then name."""
+    lights = [l for l in lights or [] if isinstance(l, dict)]
+    zone_id, serial = zone.get("zone_id"), zone.get("serial")
+    for key, value in (("zone_id", zone_id), ("serial", serial)):
+        if type(value) is int and value > 0:
+            hits = [l for l in lights if l.get(key) == str(value)]
+            if hits:
+                return hits[0] if len(hits) == 1 else None
+    name = re.sub(r"[^a-z0-9]+", "", str(zone.get("name") or "").lower())
+    hits = [l for l in lights if name and re.sub(r"[^a-z0-9]+", "", str(l.get("name") or "").lower()) == name]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _lutron(light):
+    if not light:
+        return None
+    state = light.get("state")
+    on = True if state == "on" else False if state == "off" else None
+    brightness = light.get("brightness")
+    level = 0 if on is False else round(brightness * 10000 / 255) if on and type(brightness) is int else None
+    return {"entity_id": light.get("entity_id"), "name": light.get("name"), "area": light.get("area"),
+            "on": on, "state": state, "level_x100": level, "cct": _cct(light.get("color_temp_kelvin"))}
+
+
+def _show(program, program_age_s, local_ms):
+    if program is None or program_age_s is None or program_age_s > PROGRAM_STALE_S:
+        return {"status": "unknown"}
+    base = {"installed": sorted(program["shows"]), "override_x100": program["override_x100"]}
+    if not (program["selected"] and program["show"]):
+        return dict(base, status="not_selected")
+    knots = program["shows"].get(program["show"])
+    show = dict(base, status="running", id=program["show"])
+    if not knots or local_ms is None:
+        return dict(show, status="no_clock" if knots else "missing")
+    sample = show_state(knots, local_ms)
+    if not sample:
+        return dict(show, status="missing")
+    following = sorted(knots, key=lambda k: k["minute"])
+    upcoming = next((k for k in following if k["minute"] * 60000 > local_ms), following[0])
+    # Every 15 minutes plus the end of the day, for the dashboard's curve.
+    curve = []
+    for minute, ms in [(m, m * 60000) for m in range(0, 1440, 15)] + [(1440, DAY_MS - 1)]:
+        point = show_state(knots, ms)
+        if point:
+            curve.append({"minute": minute, "level_x100": point["level_x100"], "cct": point["cct"]})
+    show.update(now_ms=local_ms, curve=curve,
+                target={"level_x100": program["override_x100"] if program["override_x100"] is not None else sample["level_x100"],
+                        "show_level_x100": sample["level_x100"], "cct": sample["cct"], "vibrancy": sample["vibrancy"]},
+                next={"minute": upcoming["minute"], "level_x100": level16_to_x100(upcoming["level"]), "cct": upcoming["cct"]})
+    return show
+
+
+def _check(key, status, title, detail=""):
+    return {"key": key, "status": status, "title": title, "detail": detail}
+
+
+def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
+    """One bridged zone: what Lutron shows, what the bridge sent, what the lamp reports, and whether they agree."""
+    sent, reported_lamp, lutron = _sent(zone, uptime_ms), _lamp(zone, uptime_ms), _lutron(light)
+    # APPLIED may be REST acceptance of the requested state, not a readback.
+    # Retain it for display, but compare only fresh observed/corrected readings.
+    lamp = (reported_lamp if reported_lamp and reported_lamp["source"] in ("observed", "correction")
+            and reported_lamp["age_ms"] is not None and reported_lamp["age_ms"] <= CONFIRM_STALE_MS else None)
+    show = _show(program, program_age_s, local_ms)
+    running = show["status"] == "running" and "target" in show
+    checks = []
+
+    # 1. Lamp against Lutron: the question "is the light where Lutron thinks it is?"
+    if lutron is None:
+        checks.append(_check("lutron", "unknown", "No matching Lutron light in Home Assistant"))
+    elif lamp is None:
+        checks.append(_check("lutron", "wait", "Waiting for the lamp's first reading"))
+    elif lutron["on"] is None:
+        checks.append(_check("lutron", "unknown", f"Lutron state is {lutron['state'] or 'unknown'}"))
+    elif not lutron["on"] and lamp["level_x100"] > 0:
+        checks.append(_check("lutron", "bad", f"Lamp is on at {_pct_text(lamp['level_x100'])}, Lutron shows off",
+                             "Changed outside Lutron, for example after a power cut or from the Ketra app."))
+    elif lutron["on"] and lamp["level_x100"] == 0:
+        checks.append(_check("lutron", "bad", "Lutron shows on, lamp is off"))
+    elif not lutron["on"]:
+        checks.append(_check("lutron", "good", "Lamp and Lutron are both off"))
+    elif lutron["level_x100"] is None:
+        checks.append(_check("lutron", "unknown", "Lutron brightness unavailable"))
+    elif running:
+        checks.append(_check("lutron", "info", "Lutron shows the show's next keyframe",
+                             f"Lutron reports {_pct_text(lutron['level_x100'])} while the show fades the lamp there; see the show check."))
+    elif lutron["level_x100"] is not None and abs(lutron["level_x100"] - lamp["level_x100"]) > SYNC_LEVEL_TOL:
+        checks.append(_check("lutron", "warn", f"Lamp at {_pct_text(lamp['level_x100'])}, Lutron shows {_pct_text(lutron['level_x100'])}"))
+    elif lutron["cct"] and lamp["cct"] and abs(lutron["cct"] - lamp["cct"]) > SYNC_CCT_TOL:
+        checks.append(_check("lutron", "warn", f"Lamp colour {lamp['cct']} K, Lutron shows {lutron['cct']} K"))
+    elif lutron["cct"] is None or lamp["cct"] is None:
+        checks.append(_check("lutron", "unknown", "Brightness matches; colour unavailable"))
+    else:
+        checks.append(_check("lutron", "good", "Lamp matches Lutron", f"Both on at {_pct_text(lamp['level_x100'])}."))
+
+    # 2. Natural Show.
+    if show["status"] == "unknown":
+        checks.append(_check("show", "unknown", "Waiting for the zone's programming"))
+    elif show["status"] == "not_selected":
+        checks.append(_check("show", "info", "No Natural Show selected", "A scene, colour or off command cancels the show; selecting it again resumes it."))
+    elif not running:
+        checks.append(_check("show", "warn", "Show selected but it can't be evaluated", show["status"].replace("_", " ")))
+    else:
+        target = show["target"]
+        level = lamp["level_x100"] if lamp else None
+        cct = lamp["cct"] if lamp else None
+        if level is None:
+            checks.append(_check("show", "wait", "Waiting for the lamp to report"))
+        elif abs(level - target["level_x100"]) > SHOW_LEVEL_TOL:
+            checks.append(_check("show", "warn", f"Show calls for {_pct_text(target['level_x100'])}, lamp at {_pct_text(level)}"))
+        elif level and (cct is None or target["cct"] is None):
+            checks.append(_check("show", "unknown", "Show brightness matches; colour unavailable"))
+        elif level and abs(cct - target["cct"]) > SHOW_CCT_TOL:
+            checks.append(_check("show", "warn", f"Show calls for {target['cct']} K, lamp at {cct} K"))
+        else:
+            what = "manual brightness override" if show["override_x100"] is not None else "the show's brightness"
+            checks.append(_check("show", "good", f"Following Natural Show {show['id']}",
+                                 f"Hub reading matches {what}{' and colour' if level else ''} for this minute."))
+
+    # 3. Lamp against the bridge's last command.
+    if sent is None or sent["level_x100"] is None:
+        checks.append(_check("hub", "info", "No brightness command since the gateway started"))
+    elif lamp is None:
+        checks.append(_check("hub", "wait", "Waiting for the hub to confirm"))
+    elif abs(lamp["level_x100"] - sent["level_x100"]) <= SHOW_LEVEL_TOL:
+        checks.append(_check("hub", "good", "Hub reading matches the last command"))
+    elif sent["age_ms"] is not None and sent["age_ms"] < sent["fade_ms"] + sent["delay_ms"] + 5000:
+        checks.append(_check("hub", "wait", f"Fading to {_pct_text(sent['level_x100'])}"))
+    else:
+        checks.append(_check("hub", "warn", f"Hub reads {_pct_text(lamp['level_x100'])}; last command was {_pct_text(sent['level_x100'])}",
+                             "The lamp changed after the bridge's last command."))
+
+    # 4. Freshness of the lamp reading.
+    if reported_lamp and reported_lamp["source"] in ("observed", "correction") and (reported_lamp["age_ms"] is None or reported_lamp["age_ms"] > CONFIRM_STALE_MS):
+        checks.append(_check("fresh", "warn", "No recent reading from the hub",
+                             "" if reported_lamp["age_ms"] is None else f"Last reading {reported_lamp['age_ms'] // 60000} min ago."))
+
+    worst = min(checks, key=lambda c: CHECK_ORDER[c["status"]])
+    if worst["status"] in ("bad", "warn"):
+        verdict = {"tone": worst["status"], "title": worst["title"]}
+    elif lamp is None:
+        verdict = {"tone": "wait", "title": "Waiting for a hub reading"}
+    elif lutron is None or lutron["on"] is None:
+        verdict = {"tone": "info", "title": "Lamp reporting; Lutron state unknown"}
+    elif worst["status"] in ("wait", "unknown"):
+        verdict = {"tone": "wait", "title": worst["title"]}
+    else:
+        verdict = {"tone": "good", "title": "In sync · following Natural Show" if running else "In sync"}
+    return {"zone": zone.get("zone"), "zone_id": zone.get("zone_id"), "name": zone.get("name"),
+            "n4_group": zone.get("n4_group"), "serial": zone.get("serial"),
+            "lutron": lutron, "sent": sent, "lamp": reported_lamp, "show": show, "checks": checks, "verdict": verdict}
+
+
+def show_clock(gateway_zone, ha_time_zone, now):
+    """Milliseconds since local midnight in the gateway's show time zone, and that zone's name."""
+    # A known gateway rule is authoritative. Unknown rules must not silently
+    # produce a target in HA's potentially different timezone.
+    if isinstance(gateway_zone, dict) and not gateway_zone.get("unsupported"):
+        name = show_timezone(gateway_zone.get("timezone"))
+        candidates = (name,) if name else ()
+    else:
+        candidates = (ha_time_zone(), DEFAULT_TIME_ZONE)
+    for name in candidates:
+        try:
+            tz = ZoneInfo(name) if name else None
+        except (ZoneInfoNotFoundError, ValueError):
+            continue
+        if tz:
+            t = now(tz)
+            return ((t.hour * 60 + t.minute) * 60 + t.second) * 1000 + t.microsecond // 1000, name
+    return None, None
+
+
 class Panel:
     """One upstream owner; browser reads never create gateway traffic."""
     def __init__(self, gateway, archive):
@@ -383,6 +621,8 @@ class Panel:
         self.legacy_index = 0
         # Programming reads for show sensors; off unless sensors are publishing.
         self.track_programs = False
+        # The dashboard's zone view also needs programming; reads continue briefly after it stops asking.
+        self.programs_wanted_until = 0.0
         self.program_due = 0
         self.zone_programs = {}
         self.program_attempts = {}
@@ -441,11 +681,47 @@ class Panel:
         now = time.monotonic()
         with self.lock:
             entry = self.cache.get("devices")
+            status = self.cache.get("status")
             zones = entry[0].get("zones") if entry and isinstance(entry[0], dict) else None
             return {"age_s": now - entry[1] if entry else None,
+                    "config_hash": entry[0].get("config_hash") if entry and isinstance(entry[0], dict) else None,
+                    "status_age_s": now - status[1] if status else None,
+                    "status": dict(status[0]) if status and isinstance(status[0], dict) else None,
+                    "delayed": bool(self.last_error),
                     "timezone": self.cache.get("timezone", (None, 0))[0],
                     "zones": [dict(z) for z in zones if isinstance(z, dict)] if isinstance(zones, list) else [],
                     "programs": {zone: (program, now - at) for zone, (program, at) in self.zone_programs.items()}}
+
+    def zone_summaries(self, ha_snapshot, clock):
+        """Per-zone sync summaries for the dashboard, from cached data only (never gateway traffic)."""
+        self.programs_wanted_until = time.monotonic() + PROGRAM_REFRESH_S
+        inputs = self.show_inputs()
+        uptime = self._millis((inputs["status"] or {}).get("gateway_uptime_ms"))
+        device_hash, status_hash = inputs["config_hash"], (inputs["status"] or {}).get("config_hash")
+        status_age = inputs["status_age_s"]
+        local_ms, tz_name = clock(inputs.get("timezone"))
+        # Estimate current uptime rather than freezing ages at a cached snapshot.
+        if uptime is not None and status_age is not None:
+            uptime += max(0.0, status_age) * 1000
+        current = (uptime is not None and status_age is not None and inputs["age_s"] is not None
+                   and 0 <= status_age <= MONITORING_FRESH_S and 0 <= inputs["age_s"] <= MONITORING_FRESH_S
+                   and inputs["age_s"] * 1000 <= uptime
+                   and type(device_hash) is int and 0 <= device_hash <= 0xffffffff
+                   and type(status_hash) is int and status_hash == device_hash and not inputs["delayed"])
+        lights = ha_snapshot.get("lights") if isinstance(ha_snapshot, dict) and ha_snapshot.get("available") else None
+        zones = []
+        for zone in inputs["zones"]:
+            program, age = inputs["programs"].get(zone.get("zone"), (None, None))
+            summary = zone_summary(zone, program, age, local_ms, match_light(zone, lights) if lights else None, uptime)
+            if not current:
+                summary["checks"] = [_check("monitoring", "unknown", "Current comparison unavailable", "Gateway monitoring is delayed or unavailable.")]
+                summary["verdict"] = {"tone": "wait", "title": "Current comparison unavailable"}
+            zones.append(summary)
+        return {"zones": zones, "config_hash": device_hash, "time_zone": tz_name, "local_ms": local_ms,
+                "home_assistant": lights is not None, "age_s": inputs["age_s"],
+                "monitoring": {"age_s": max(status_age, inputs["age_s"]) if status_age is not None and inputs["age_s"] is not None else None,
+                               "status_age_s": status_age, "device_age_s": inputs["age_s"],
+                               "delayed": inputs["delayed"] or not current}}
 
     def archive_poll_once(self):
         """Single collector step, also used during mixed-version rollout."""
@@ -454,7 +730,8 @@ class Panel:
         try:
             now = time.monotonic()
             self.next_poll = now + 1
-            program_zone = self._program_zone(now) if self.track_programs and now >= self.program_due else None
+            wanted = self.track_programs or now < self.programs_wanted_until
+            program_zone = self._program_zone(now) if wanted and now >= self.program_due else None
             if self.cache and now >= self.config_due:
                 route, path = "config", "/api/config"
             elif self.cache and now >= self.timezone_due:
@@ -769,22 +1046,7 @@ class ShowSensors:
         self.stop = threading.Event()
 
     def local_ms(self, gateway_zone=None):
-        # A known gateway rule is authoritative. Unknown rules must not silently
-        # produce a target in HA's potentially different timezone.
-        if isinstance(gateway_zone, dict) and not gateway_zone.get("unsupported"):
-            name = show_timezone(gateway_zone.get("timezone"))
-            candidates = (name,) if name else ()
-        else:
-            candidates = (self.ha.time_zone(), DEFAULT_TIME_ZONE)
-        for name in candidates:
-            try:
-                tz = ZoneInfo(name) if name else None
-            except (ZoneInfoNotFoundError, ValueError):
-                continue
-            if tz:
-                t = self.now(tz)
-                return ((t.hour * 60 + t.minute) * 60 + t.second) * 1000 + t.microsecond // 1000, name
-        return None, None
+        return show_clock(gateway_zone, self.ha.time_zone, self.now)
 
     def discovery(self, zone_id, zone):
         state_topic = f"{self.PREFIX}/zone/{zone_id}/state"
@@ -922,6 +1184,10 @@ class Handler(BaseHTTPRequestHandler):
         if parts.path == "/api/ha":
             if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
             return self.reply(200, self.server.ha.snapshot())
+        if parts.path == "/api/zones":
+            if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
+            ha = self.server.ha
+            return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"

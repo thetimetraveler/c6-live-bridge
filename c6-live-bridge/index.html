@@ -512,9 +512,21 @@ function lampAssessment(z,current=lampInputsCurrent()){
 function lampSummary(){const lamps=Array.isArray(lastZones?.zones)?lastZones.zones:[],current=lampInputsCurrent(),assessed=lamps.map(z=>lampAssessment(z,current));
   return {lamps,current,assessed,good:assessed.filter(v=>v.tone==='good').length,issues:assessed.filter(v=>['bad','warn'].includes(v.tone)),pending:assessed.filter(v=>!['good','bad','warn'].includes(v.tone)).length}}
 // Startup sequence as the gateway and endpoint report it. The endpoint reports
-// only its minimum start delay as a countdown; the stability window that follows
-// (at least 300 s of agreeing router Advertisements) is shown by its advert count.
-const STARTUP_ADVERTS=3,STARTUP_ORDER=['boot','start-delay','listening','attaching','attached-quiet','attached'];
+// only its minimum start delay as a countdown. The stability window that follows
+// (at least 300 s of agreeing router Advertisements) is estimated here from the
+// endpoint's uptime: it starts when listening is first seen and restarts on a
+// reboot or a drop in the advert count, which is when the firmware restarts it.
+const STARTUP_ADVERTS=3,STABILITY_S=300,STARTUP_ORDER=['boot','start-delay','listening','attaching','attached-quiet','attached'];
+let stability={anchor:null,exact:false,uptime:null,adverts:0,phase:null};
+function stabilityEstimate(q,uptime){
+  const prev=stability,listening=q.phase==='listening',up=Number.isFinite(uptime)?uptime:null,adverts=Number.isInteger(q.gate_adverts)?q.gate_adverts:0;
+  const rebooted=up===null||(prev.uptime!==null&&up<prev.uptime),reset=!rebooted&&listening&&prev.phase==='listening'&&adverts<prev.adverts;
+  let {anchor,exact}=prev;
+  if(!listening||rebooted||reset)anchor=null;
+  if(listening&&up!==null&&anchor===null){anchor=up;exact=reset||(!rebooted&&prev.phase==='start-delay')}
+  stability={anchor,exact,uptime:up,adverts,phase:q.phase};
+  return anchor===null?null:{left:Math.max(0,anchor+STABILITY_S-up),exact};
+}
 function startupSteps(s){
   const p=s?.endpoint_power||{},q=s?.endpoint_safety,current=!!s&&snapshotFresh(s),online=current&&s.endpoint_online===true&&q?.present===true;
   const secs=v=>Number.isInteger(v)?v+' s':'—',hold=Number(p.boot_hold_remaining_s);
@@ -526,7 +538,9 @@ function startupSteps(s){
   steps.push(step(1,'Minimum start delay',Number.isInteger(q.gate_remaining_s)&&q.gate_remaining_s>0?secs(q.gate_remaining_s)+' remaining':'Finishing','Done'));
   if(at===1&&s.endpoint_uptime_s!==undefined)steps.push(['Endpoint uptime',secs(Number(s.endpoint_uptime_s)),'']);
   const adverts=Number.isInteger(q.gate_adverts)?`${q.gate_adverts} of ${STARTUP_ADVERTS}+ router adverts`:'Advert count not reported';
-  steps.push(step(2,'Stability window (≥ 300 s, receive-only)',adverts+' · window time not reported','Done'));
+  const est=stabilityEstimate(q,Number(s.endpoint_uptime_s));
+  const timer=!est?'Estimate unavailable':est.left>0?`${est.exact?'About':'Up to'} ${est.left} s remaining (estimate)`:'5 min elapsed; waiting for agreeing evidence';
+  steps.push(step(2,'Stability window (≥ 300 s, receive-only)',timer+' · '+adverts,'Done'));
   steps.push(step(3,'Attaching as a child','In progress','Done'));
   steps.push(['Command admission',at>=4&&!special?(phase==='attached-quiet'?'Quiet (update hold)':q.may_send===true?'Open':'Blocked'):'Closed',at>=4&&!special&&q.may_send===true&&phase==='attached'?'':'warn']);
   return steps;

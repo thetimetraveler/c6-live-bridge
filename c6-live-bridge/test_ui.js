@@ -364,6 +364,16 @@ const mappingChecks=`
   if(!rows['Endpoint phase'].textContent.includes('Regating')||rows['Command admission'].textContent!=='Closed')throw Error('regating must be explicit and keep admission closed');
   health({...status,monitoring:{age_s:30,delayed:true}});rows=startup();
   if(rows['Endpoint'].textContent!=='Current state unknown'||'Command admission' in rows)throw Error('stale snapshots must not show endpoint startup progress');
+  // Stability window estimate, from endpoint uptime.
+  const at=(phase,uptime,adverts)=>{health({...safetyPatch({phase,gate_remaining_s:0,gate_adverts:adverts}),endpoint_uptime_s:uptime});return startup()[windowRow].textContent};
+  at('start-delay',290,0);
+  if(!at('listening',300,0).startsWith('About 300 s remaining'))throw Error('the window must start exactly when listening follows the start delay');
+  if(!at('listening',420,2).startsWith('About 180 s remaining'))throw Error('the window must count down with endpoint uptime');
+  if(!at('listening',450,1).startsWith('About 300 s remaining'))throw Error('a drop in router adverts must restart the window');
+  if(!at('listening',760,3).startsWith('5 min elapsed'))throw Error('an elapsed window must say it is waiting for evidence');
+  if(!at('listening',20,0).startsWith('Up to 300 s remaining'))throw Error('a reboot seen mid-listening must give only an upper bound');
+  at('attached',400,3);
+  if(!at('listening',410,0).startsWith('Up to 300 s remaining'))throw Error('listening not preceded by the start delay is an upper bound');
 })()
 `;
 await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

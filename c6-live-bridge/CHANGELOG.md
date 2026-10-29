@@ -1,3 +1,7 @@
+## 0.8.1
+
+- Estimate the 5-minute stability window in the startup sequence from the endpoint's uptime, restarting it when the endpoint reboots or its router-advert count drops. A window already under way when the dashboard opens is shown as an upper bound.
+
 ## 0.8.0
 
 - Add an Endpoint control card in Setup: disable or enable the endpoint through the gateway's operator choice, and clear a verified fault latch behind a confirmation. Disable works while monitoring is stale and states that, without a power switch, it is a software radio stop rather than a power cut.

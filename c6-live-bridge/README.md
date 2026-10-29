@@ -76,7 +76,7 @@ responses add a `monitoring` object containing `age_s`, `delayed` and `error`.
 `POST /api/maintenance` forwards exactly an `enabled` boolean. Programming reads
 accept `refresh=1`. The private gateway bearer token remains server-side.
 
-## Endpoint control and startup (0.8.0)
+## Endpoint control and startup (0.8.0–0.8.1)
 
 Setup has an **Endpoint control** card for the gateway's endpoint protection
 (S3 gateway firmware with `/api/endpoint/power`; older firmware shows the card
@@ -96,8 +96,13 @@ as unavailable).
 
 The Overview's **Startup sequence** group shows the gateway startup hold, the
 endpoint's minimum start delay (both as countdowns), the receive-only stability
-window (by router-advert count; the endpoint does not report the window's
-elapsed time), the child attach and whether command admission is open. Regating,
+window, the child attach and whether command admission is open. The endpoint
+does not report the window's progress, so the panel shows a generic 5-minute
+estimate from the endpoint's uptime next to the router-advert count. It starts
+when listening is first seen and restarts when the endpoint reboots or its
+advert count drops. Opened mid-window, it shows "Up to" because the true start
+is unknown. Other restarts (partition or leader change, lost frames) are not
+visible, so the endpoint can take longer than the estimate. Regating,
 operator stop and fault latch are named explicitly. A stale snapshot shows no
 endpoint progress. The endpoint-safety group also lists the R1/R3/interrupted
 fault bits, partition, leader, routers heard and blocked transmissions.

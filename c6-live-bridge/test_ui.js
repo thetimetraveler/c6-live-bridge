@@ -320,6 +320,50 @@ const mappingChecks=`
   await loadConfig(true);view('config-json').value='{unfinished';view('config-json').oninput();
   replies.config={...changed,generation:6,hash:66};await loadConfig();
   if(view('config-json').value!=='{unfinished'||!isDirty()||!view('save-config').disabled)throw Error('an invalid JSON draft must survive refresh and remain unsaved');
+  // Endpoint control: disable is always reachable; enable and clear need current evidence.
+  const sent=key=>requests.filter(r=>r.key===key&&r.opts?.method);
+  health(status);
+  if(view('endpoint-toggle').disabled||!view('endpoint-toggle').textContent.includes('Disable')||!view('endpoint-clear').hidden)throw Error('an enabled endpoint should offer disable only');
+  if(!view('endpoint-control-note').textContent.includes('Enabled'))throw Error('the control card must state the operator choice');
+  health({...status,monitoring:{age_s:30,delayed:true}});
+  if(view('endpoint-toggle').disabled)throw Error('disable must stay available while monitoring is stale');
+  requests.length=0;replies.power={...status.endpoint_power,enabled:false};await view('endpoint-toggle').onclick();
+  const off=sent('power')[0];
+  if(!off||off.opts.method!=='PUT'||JSON.parse(off.opts.body).enabled!==false)throw Error('disable must PUT enabled:false');
+  if(latestStatus.endpoint_power.enabled!==false||!view('endpoint-toggle').textContent.includes('Enable'))throw Error('the gateway reply must update the control at once');
+  const disabled=safetyPatch({phase:'operator-stopped'},{enabled:false});
+  health({...disabled,monitoring:{age_s:30,delayed:true}});
+  if(!view('endpoint-toggle').disabled)throw Error('enable must need a current snapshot');
+  health(disabled);
+  if(view('endpoint-toggle').disabled||!view('endpoint-control-note').textContent.includes('reports its radio stopped'))throw Error('a fresh disabled snapshot should allow enable and report the radio stop');
+  const latched=safetyPatch({phase:'fault-latched',faults:1,r1_role_fault:true},{enabled:false,violation:'role'});
+  health(latched);
+  if(view('endpoint-clear').hidden||view('endpoint-clear').disabled)throw Error('a disabled, latched endpoint should offer the clear');
+  requests.length=0;await view('endpoint-clear').onclick();
+  const clear=sent('clear')[0];
+  if(!clear||clear.opts.method!=='POST'||JSON.parse(clear.opts.body).confirm!=='clear-r1-latch')throw Error('the clear must send the exact confirmation');
+  for(const s of [safetyPatch({phase:'fault-latched',faults:1,r1_role_fault:true},{enabled:true}),{...latched,monitoring:{age_s:30,delayed:true}},safetyPatch({phase:'fault-latched',faults:1,r1_role_fault:true},{enabled:false,recovering:true,recovery_state:'waiting-ack'})]){
+    health(s);if(!view('endpoint-clear').hidden)throw Error('the clear must not be offered while enabled, stale or already recovering');
+    requests.length=0;await view('endpoint-clear').onclick();if(sent('clear').length)throw Error('the clear handler must re-check eligibility');
+  }
+  health(safetyPatch({},{recovery_state:'timeout'}));
+  if(!view('endpoint-control-note').textContent.includes('did not complete'))throw Error('a failed clear must be reported');
+  health({...status,endpoint_power:undefined});
+  if(!view('endpoint-toggle').disabled||!view('endpoint-control-note').textContent.includes('does not report endpoint control'))throw Error('old firmware must not show controls');
+  // Startup sequence on the overview.
+  const startup=()=>{const g=view('health').children.find(c=>c.children[0]?.textContent==='Startup sequence');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
+  const windowRow='Stability window (≥ 300 s, receive-only)';
+  health(safetyPatch({phase:'start-delay',gate_remaining_s:120,gate_adverts:0},{boot_hold_remaining_s:40}));
+  let rows=startup();
+  if(rows['Gateway startup hold'].textContent!=='40 s remaining'||rows['Minimum start delay'].textContent!=='120 s remaining'||rows[windowRow].textContent!=='Pending'||rows['Command admission'].textContent!=='Closed')throw Error('start delay must show both countdowns and later steps pending');
+  health(safetyPatch({phase:'listening',gate_remaining_s:0,gate_adverts:2}));rows=startup();
+  if(rows['Minimum start delay'].textContent!=='Done'||!rows[windowRow].textContent.includes('2 of 3+ router adverts')||!rows[windowRow].className.includes('warn'))throw Error('the stability window must show the advert count');
+  health(status);rows=startup();
+  if(rows['Attaching as a child'].textContent!=='Done'||rows['Command admission'].textContent!=='Open')throw Error('an attached endpoint should show every step done');
+  health(safetyPatch({phase:'regating'}));rows=startup();
+  if(!rows['Endpoint phase'].textContent.includes('Regating')||rows['Command admission'].textContent!=='Closed')throw Error('regating must be explicit and keep admission closed');
+  health({...status,monitoring:{age_s:30,delayed:true}});rows=startup();
+  if(rows['Endpoint'].textContent!=='Current state unknown'||'Command admission' in rows)throw Error('stale snapshots must not show endpoint startup progress');
 })()
 `;
 await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

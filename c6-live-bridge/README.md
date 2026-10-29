@@ -76,6 +76,36 @@ responses add a `monitoring` object containing `age_s`, `delayed` and `error`.
 `POST /api/maintenance` forwards exactly an `enabled` boolean. Programming reads
 accept `refresh=1`. The private gateway bearer token remains server-side.
 
+## Endpoint control and startup (0.8.0)
+
+Setup has an **Endpoint control** card for the gateway's endpoint protection
+(S3 gateway firmware with `/api/endpoint/power`; older firmware shows the card
+as unavailable).
+
+- **Disable endpoint** sets the gateway's operator choice to disabled. Without a
+  physical power switch (the default wiring), this is a software kill switch: the
+  gateway stops admitting commands and answers every endpoint HELLO with a radio
+  stop. It does not cut power and relies on the endpoint firmware honouring the
+  stop. Disable is offered even while monitoring is stale or backing off.
+- **Enable endpoint** needs a current snapshot. The endpoint then runs its full
+  startup sequence before it carries commands.
+- **Clear fault latch** appears only when a current snapshot shows the endpoint
+  disabled and reporting `fault-latched`, with no recovery already running. The
+  gateway waits for a fresh fault report, sends one clear and leaves the endpoint
+  disabled until it is enabled again. Failed clears are reported on the card.
+
+The Overview's **Startup sequence** group shows the gateway startup hold, the
+endpoint's minimum start delay (both as countdowns), the receive-only stability
+window (by router-advert count; the endpoint does not report the window's
+elapsed time), the child attach and whether command admission is open. Regating,
+operator stop and fault latch are named explicitly. A stale snapshot shows no
+endpoint progress. The endpoint-safety group also lists the R1/R3/interrupted
+fault bits, partition, leader, routers heard and blocked transmissions.
+
+`PUT /api/endpoint/power` forwards exactly an `enabled` boolean and
+`POST /api/endpoint/safety/clear` exactly `{"confirm":"clear-r1-latch"}`; both
+need `application/json` and, like maintenance, bypass the monitoring backoff.
+
 ## Activity (0.5.2)
 
 Gateway availability/configuration events have readable labels. Endpoint

@@ -435,6 +435,12 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
     <div class="actions"><button id="save-timezone" disabled>Apply time zone</button></div>
     <p id="timezone-note" class="muted small" role="status">Loading gateway time zone…</p>
   </section>
+  <section class="card">
+    <div class="card-head"><h2>Endpoint control</h2><span id="endpoint-control-pill" class="pill wait">Loading</span></div>
+    <p id="endpoint-control-note" role="status">Waiting for gateway status…</p>
+    <div class="actions"><button id="endpoint-toggle" class="secondary" disabled>Disable endpoint</button><button id="endpoint-clear" hidden disabled>Clear fault latch</button></div>
+    <p class="muted small">Enable and disable set the gateway's operator choice. Without a physical power switch, disable stops the endpoint's radio in software; it does not cut power and relies on the endpoint firmware honouring the stop.</p>
+  </section>
   <section class="card"><h2>Maintenance</h2><p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.</p><button id="maintenance-toggle" class="secondary">Enter maintenance</button></section>
   <section class="card">
     <div class="card-head"><h2>Zone mapping</h2><span id="config-pill" class="pill wait">Loading</span></div>
@@ -505,6 +511,26 @@ function lampAssessment(z,current=lampInputsCurrent()){
 }
 function lampSummary(){const lamps=Array.isArray(lastZones?.zones)?lastZones.zones:[],current=lampInputsCurrent(),assessed=lamps.map(z=>lampAssessment(z,current));
   return {lamps,current,assessed,good:assessed.filter(v=>v.tone==='good').length,issues:assessed.filter(v=>['bad','warn'].includes(v.tone)),pending:assessed.filter(v=>!['good','bad','warn'].includes(v.tone)).length}}
+// Startup sequence as the gateway and endpoint report it. The endpoint reports
+// only its minimum start delay as a countdown; the stability window that follows
+// (at least 300 s of agreeing router Advertisements) is shown by its advert count.
+const STARTUP_ADVERTS=3,STARTUP_ORDER=['boot','start-delay','listening','attaching','attached-quiet','attached'];
+function startupSteps(s){
+  const p=s?.endpoint_power||{},q=s?.endpoint_safety,current=!!s&&snapshotFresh(s),online=current&&s.endpoint_online===true&&q?.present===true;
+  const secs=v=>Number.isInteger(v)?v+' s':'—',hold=Number(p.boot_hold_remaining_s);
+  const steps=[['Gateway startup hold',Number.isFinite(hold)?(hold>0?secs(hold)+' remaining':'Done'):'Not reported',hold>0?'warn':'']];
+  if(!online){steps.push(['Endpoint',!current?'Current state unknown':s?.endpoint_online===false?'Offline':q?.present===false?'No safety telemetry':'Not reported','warn']);return steps}
+  const phase=q.phase,at=STARTUP_ORDER.indexOf(phase),special={regating:['Regating: restarting the full startup sequence','warn'],'fault-latched':['Fault latched; startup stopped','bad'],'operator-stopped':['Stopped by the operator','warn']}[phase];
+  if(special)steps.push(['Endpoint phase',special[0],special[1]]);
+  const step=(i,label,active,done)=>[label,at<0?'—':at>i?done:at===i?active:'Pending',at===i?'warn':''];
+  steps.push(step(1,'Minimum start delay',Number.isInteger(q.gate_remaining_s)&&q.gate_remaining_s>0?secs(q.gate_remaining_s)+' remaining':'Finishing','Done'));
+  if(at===1&&s.endpoint_uptime_s!==undefined)steps.push(['Endpoint uptime',secs(Number(s.endpoint_uptime_s)),'']);
+  const adverts=Number.isInteger(q.gate_adverts)?`${q.gate_adverts} of ${STARTUP_ADVERTS}+ router adverts`:'Advert count not reported';
+  steps.push(step(2,'Stability window (≥ 300 s, receive-only)',adverts+' · window time not reported','Done'));
+  steps.push(step(3,'Attaching as a child','In progress','Done'));
+  steps.push(['Command admission',at>=4&&!special?(phase==='attached-quiet'?'Quiet (update hold)':q.may_send===true?'Open':'Blocked'):'Closed',at>=4&&!special&&q.may_send===true&&phase==='attached'?'':'warn']);
+  return steps;
+}
 function endpointHealth(s){
   if(!snapshotFresh(s))return {tone:'warn',label:'Unavailable',title:'Endpoint safety unavailable',detail:'Current endpoint safety cannot be established from this gateway snapshot.'};
   const role=roleName(s.thread_role),p=s.endpoint_power,q=s.endpoint_safety;
@@ -565,14 +591,16 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   $('health').replaceChildren(
     group('Gateway',[['Network link',net==='Network'?'Not reported':net],['Network connected',yn(netOk),netOk===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'—':clock(s.gateway_uptime_ms)],['N4 writes succeeded',num(s.puts_ok)],['Unconfirmed attempts (includes retries)',num(s.puts_failed)],['Exhausted deliveries',num(s.diagnostics?.delivery_failed),errTone(s.diagnostics?.delivery_failed)],['Superseded commands',num(s.diagnostics?.superseded)],['Configuration match',yn(s.config_match),s.config_match===false?'warn':''],['Configuration hash',val(s.config_hash)]]),
     group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
-    group('Endpoint safety (reported)',[['Available',yn(q.present),q.present===false?'warn':''],['Phase',val(q.phase)],['Fault bits',num(q.faults),errTone(q.faults)],['May send',yn(q.may_send),q.may_send===false?'warn':''],['Mesh-local prefix',val(q.mesh_local_prefix)],['Prefix status',val(q.prefix_status),q.prefix_status!==undefined&&q.prefix_status!==0?'warn':''],['Extended PAN verified',yn(q.ext_pan_ok),q.ext_pan_ok===false?'warn':''],['Active timestamp valid',yn(q.active_timestamp_valid),q.active_timestamp_valid===false?'warn':''],['Startup gate remaining',q.gate_remaining_s===undefined?'—':q.gate_remaining_s+' s']]),
-    group('Gateway endpoint protection (reported)',[['Enabled',yn(p.enabled),p.enabled===false?'warn':''],['Physical hold available',yn(p.physical_hold_available),p.physical_hold_available===false?'warn':''],['Hold requested',yn(p.hold_requested),p.hold_requested===true?'warn':''],['Hold asserted',yn(p.held),p.held===true?'warn':''],['State',val(p.state)],['Link lost',yn(p.link_lost),p.link_lost===true?'bad':''],['Timer error',yn(p.timer_error),p.timer_error===true?'bad':''],['Storage error',yn(p.storage_error),p.storage_error===true?'bad':''],['Hardware error',yn(p.hardware_error),p.hardware_error===true?'bad':''],['Watchdog error',yn(p.watchdog_error),p.watchdog_error===true?'bad':''],['Persistence pending',yn(p.persistence_pending),p.persistence_pending===true?'warn':''],['Violation',val(p.violation),p.violation&&p.violation!=='none'?'bad':''],['Recovering',yn(p.recovering),p.recovering===true?'warn':''],['Recovery state',val(p.recovery_state)]]),
+    group('Startup sequence',startupSteps(s)),
+    group('Endpoint safety (reported)',[['Available',yn(q.present),q.present===false?'warn':''],['Phase',val(q.phase)],['Fault bits',num(q.faults),errTone(q.faults)],['May send',yn(q.may_send),q.may_send===false?'warn':''],['Mesh-local prefix',val(q.mesh_local_prefix)],['Prefix status',val(q.prefix_status),q.prefix_status!==undefined&&q.prefix_status!==0?'warn':''],['Extended PAN verified',yn(q.ext_pan_ok),q.ext_pan_ok===false?'warn':''],['Active timestamp valid',yn(q.active_timestamp_valid),q.active_timestamp_valid===false?'warn':''],['Startup gate remaining',q.gate_remaining_s===undefined?'—':q.gate_remaining_s+' s'],['Router adverts in window',num(q.gate_adverts)],['Role fault (R1)',yn(q.r1_role_fault),q.r1_role_fault===true?'bad':''],['Prefix fault (R3)',yn(q.r3_prefix_fault),q.r3_prefix_fault===true?'bad':''],['Interrupted session',yn(q.interrupted_session),q.interrupted_session===true?'bad':''],['Partition ID',val(q.partition_id)],['Leader router ID',val(q.leader_router_id)],['Routers heard',num(q.router_count)],['Transmissions blocked',num(q.tx_blocked)]]),
+    group('Gateway endpoint protection (reported)',[['Enabled',yn(p.enabled),p.enabled===false?'warn':''],['Physical hold available',yn(p.physical_hold_available),p.physical_hold_available===false?'warn':''],['Hold requested',yn(p.hold_requested),p.hold_requested===true?'warn':''],['Hold asserted',yn(p.held),p.held===true?'warn':''],['State',val(p.state)],['Startup hold remaining',p.boot_hold_remaining_s===undefined?'—':p.boot_hold_remaining_s+' s',Number(p.boot_hold_remaining_s)>0?'warn':''],['Link lost',yn(p.link_lost),p.link_lost===true?'bad':''],['Timer error',yn(p.timer_error),p.timer_error===true?'bad':''],['Storage error',yn(p.storage_error),p.storage_error===true?'bad':''],['Hardware error',yn(p.hardware_error),p.hardware_error===true?'bad':''],['Watchdog error',yn(p.watchdog_error),p.watchdog_error===true?'bad':''],['Persistence pending',yn(p.persistence_pending),p.persistence_pending===true?'warn':''],['Violation',val(p.violation),p.violation&&p.violation!=='none'?'bad':''],['Recovering',yn(p.recovering),p.recovering===true?'warn':''],['Recovery state',val(p.recovery_state)]]),
     group('UART link',[['Bytes',num(s.uart_bytes)],['Frames OK',num(s.uart_frames_ok)],['CRC errors',num(s.uart_crc_errors),errTone(s.uart_crc_errors)]]),haGroup());
   $('health-note').textContent=`${age===null?'Snapshot age unavailable':`Snapshot ${age.toFixed(1)} seconds old`}${current?' · endpoint online means a recent HELLO':' · current endpoint state is unknown'}. ${netName(s)} disconnects: ${val(s.diagnostics?.link_disconnects??s.diagnostics?.wifi_disconnects)}${net==='Ethernet'?'':` · last Wi-Fi reason: ${val(s.diagnostics?.link_reason??s.diagnostics?.wifi_reason)}`} · sockets: ${val(s.diagnostics?.sockets_used)}/${val(s.diagnostics?.socket_limit)} · free heap: ${val(s.diagnostics?.heap_free)} bytes.`;
   if(!current)setHero('warn',age===null?'Monitoring unavailable':'Monitoring delayed','Showing the last gateway snapshot; current endpoint safety and network state are unknown.',false);
   const maintenance=!!s.diagnostics?.maintenance;
   $('maintenance-note').textContent=maintenance?`Maintenance active · lighting output is paused; latest commands are retained. Idle session expires in ${Math.ceil((s.diagnostics?.maintenance_remaining_ms||0)/1000)} seconds.`:'Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.';
   $('maintenance-toggle').textContent=maintenance?'End maintenance':'Enter maintenance';
+  renderEndpointControl(s);
   renderFlow(s);if(lastZones)zonesView(lastZones)}
 function deviceView(data,receivedAt){if(data!==lastDevices||receivedAt!==undefined){lastDevices=data;devicesReceivedAt=receivedAt??Date.now()}const rows=data.zones||[];renderProgramZones(rows);
   $('device-count').textContent=rows.length?`${rows.length} zone${rows.length===1?'':'s'}`:'';if(lastZones)zonesView(lastZones)}
@@ -848,6 +876,47 @@ async function ensureMaintenance(){
   return setMaintenance(true);
 }
 $('maintenance-toggle').onclick=async()=>{try{await setMaintenance(!latestStatus?.diagnostics?.maintenance)}catch(e){$('maintenance-note').textContent=e.message}};
+// Endpoint control. Disabling is always offered: it is the software kill switch and
+// must not wait for fresh monitoring. Enabling and the fault-latch clear need a
+// current snapshot, and the gateway re-checks both before acting.
+let endpointBusy=false,endpointMessage='',endpointMessageAt=0;
+const RECOVERY_ENDED={refused:'the endpoint refused the clear',timeout:'no acknowledgment arrived in time',aborted:'it was aborted',
+  'link-error':'the UART link failed',cleared:'the latch was cleared'};
+function endpointControl(s){
+  const p=s?.endpoint_power,q=s?.endpoint_safety,current=!!s&&snapshotFresh(s);
+  if(!p||typeof p.enabled!=='boolean')return {supported:false,tone:'warn',label:'Unavailable',note:'This gateway firmware does not report endpoint control.'};
+  const physical=p.physical_hold_available===true,recovering=p.recovering===true||['waiting-hello','waiting-ack'].includes(p.recovery_state);
+  const latched=current&&s.endpoint_online===true&&q?.present===true&&q.phase==='fault-latched';
+  const parts=[];
+  if(recovering)parts.push(`Fault-latch clear in progress (${val(p.recovery_state)}). Command admission stays closed until it finishes.`);
+  else if(p.enabled){parts.push('Enabled.');if(Number(p.boot_hold_remaining_s)>0)parts.push(`Gateway startup hold: ${p.boot_hold_remaining_s} s remaining.`)}
+  else{parts.push(typeof p.violation==='string'&&p.violation!=='none'?`Disabled by the gateway after violation ${p.violation}.`:'Disabled.');
+    parts.push(physical?'The gateway holds the endpoint off.':current&&q?.present===true&&q.phase==='operator-stopped'?'The endpoint reports its radio stopped.':'The gateway asks the endpoint to stop its radio at each HELLO; no power is cut.')}
+  if(!recovering&&RECOVERY_ENDED[p.recovery_state])parts.push(p.recovery_state==='cleared'?'The fault latch was cleared; the endpoint stays disabled until you enable it.':`The last fault-latch clear did not complete: ${RECOVERY_ENDED[p.recovery_state]}.`);
+  if(latched)parts.push(p.enabled?'The endpoint reports a latched fault. The gateway disables it when it sees that report; clear the latch after that.':'The endpoint reports a latched fault. Find out why before clearing it.');
+  if(!current)parts.push('Current state is unknown; only disabling is available.');
+  return {supported:true,enabled:p.enabled,physical,recovering,tone:recovering?'warn':p.enabled?'good':'warn',
+    label:recovering?'Recovering':p.enabled?'Enabled':'Disabled',note:parts.join(' '),
+    canToggle:p.enabled||(current&&!recovering),canClear:latched&&!p.enabled&&!recovering};
+}
+function renderEndpointControl(s){
+  const c=endpointControl(s),t=$('endpoint-toggle'),k=$('endpoint-clear');
+  $('endpoint-control-pill').className='pill '+c.tone;$('endpoint-control-pill').textContent=c.label;
+  $('endpoint-control-note').textContent=endpointMessage&&Date.now()-endpointMessageAt<15000?endpointMessage+' '+c.note:c.note;
+  t.textContent=c.supported&&!c.enabled?'Enable endpoint':'Disable endpoint';t.disabled=endpointBusy||!c.supported||!c.canToggle;
+  k.hidden=!c.canClear;k.disabled=endpointBusy||!c.canClear;
+}
+async function endpointAction(run){endpointBusy=true;endpointMessage='';if(latestStatus)renderEndpointControl(latestStatus);
+  try{await run()}catch(e){endpointMessage='The gateway did not accept the request: '+e.message+'.'}finally{endpointMessageAt=Date.now();endpointBusy=false;if(latestStatus)renderEndpointControl(latestStatus)}}
+$('endpoint-toggle').onclick=async()=>{const c=endpointControl(latestStatus);if(endpointBusy||!c.supported||!c.canToggle)return;const enable=!c.enabled;
+  const ok=enable?await confirmSheet('Enable the endpoint?','The gateway releases the endpoint. It then waits through its startup delay and a stability window of about five minutes each before it carries lighting commands.','Enable')
+    :await confirmSheet('Disable the endpoint?',c.physical?'The gateway holds the endpoint off and stops sending it lighting commands. Lighting through this bridge stops until you enable it again.':'The gateway stops sending lighting commands and tells the endpoint to stop its Thread radio. No power switch is fitted, so this relies on the endpoint firmware honouring the stop. Lighting through this bridge stops until you enable it again.','Disable');
+  if(!ok)return;
+  await endpointAction(async()=>{const power=await req('endpoint/power',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:enable})});
+    endpointMessage=enable?'Enable sent.':'Disable sent.';if(latestStatus&&power&&typeof power.enabled==='boolean'){latestStatus.endpoint_power=power;health(latestStatus)}})};
+$('endpoint-clear').onclick=async()=>{if(endpointBusy||!endpointControl(latestStatus).canClear)return;
+  if(!await confirmSheet('Clear the endpoint fault latch?','Only clear a latch once you know why it tripped, for example a router or leader role or a wrong mesh prefix. The gateway waits for a fresh fault report, then sends one clear. The endpoint stays disabled afterwards; enable it separately.','Clear latch'))return;
+  await endpointAction(async()=>{await req('endpoint/safety/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:'clear-r1-latch'})});endpointMessage='Clear requested; waiting for the endpoint.'})};
 function firmwareBaseline(s){return s&&snapshotFresh(s)&&s.endpoint_online===true&&typeof s.endpoint_uptime_s==='number'&&Number.isFinite(s.endpoint_uptime_s)&&s.endpoint_uptime_s>0?s.endpoint_uptime_s:NaN}
 function trackFirmwareStatus(s){
   if(!firmwarePending)return;const now=Date.now();

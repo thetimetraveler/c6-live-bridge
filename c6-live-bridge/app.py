@@ -51,7 +51,12 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
           "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
           "update": ("POST", "/api/endpoint/update"),
-          "maintenance": ("POST", "/api/maintenance")}
+          "maintenance": ("POST", "/api/maintenance"),
+          "power_put": ("PUT", "/api/endpoint/power"),
+          "safety_clear": ("POST", "/api/endpoint/safety/clear")}
+# Operator safety actions reach the gateway even while monitoring is backing off.
+SAFETY_ROUTES = ("maintenance", "power_put", "safety_clear")
+SAFETY_CLEAR_CONFIRM = "clear-r1-latch"
 
 
 INTEGRATION = re.compile(r"[a-z0-9_]{1,64}\Z")
@@ -898,7 +903,7 @@ class Panel:
                 if refresh != "1" and base in self.programs:
                     return self.programs[base]
         # Never accumulate a queue of browser work behind a slow operation.
-        if route != "maintenance" and time.monotonic() < self.next_poll and self.last_error:
+        if route not in SAFETY_ROUTES and time.monotonic() < self.next_poll and self.last_error:
             return self.result({"error": "Monitoring backoff active; try again later"}, 503)
         if not self.upstream.acquire(blocking=False):
             return self.result({"error": "Gateway collector busy; try again later"}, 503)
@@ -914,6 +919,9 @@ class Panel:
                 if route in ("config_put", "update") and result[0] == 202:
                     self.programs.clear()
                     self.config_due = 0
+                if (route, result[0]) in (("power_put", 200), ("safety_clear", 202)):
+                    # Show the gateway's new protection state on the next collector step.
+                    self.next_poll = 0
             return result
         finally:
             self.upstream.release()
@@ -1216,14 +1224,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         if not self.authorized(): return
-        if self.path not in ("/api/config", "/api/timezone"): return self.reply(404, {"error": "unknown endpoint"})
+        route = {"/api/config": "config_put", "/api/timezone": "timezone_put", "/api/endpoint/power": "power_put"}.get(self.path)
+        if route is None: return self.reply(404, {"error": "unknown endpoint"})
         try:
             if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
-            body = self.read_body(128 if self.path == "/api/timezone" else 65536)
+            body = self.read_body(65536 if route == "config_put" else 128)
             payload = json.loads(body)
-            if self.path == "/api/timezone":
+            if route == "timezone_put":
                 if not isinstance(payload, dict) or set(payload) != {"timezone"} or payload["timezone"] not in SHOW_TIME_ZONES:
                     raise ValueError("expected a supported time zone")
+            elif route == "power_put":
+                if not isinstance(payload, dict) or set(payload) != {"enabled"} or type(payload["enabled"]) is not bool:
+                    raise ValueError("expected enabled boolean")
             elif not isinstance(payload, dict) or set(payload) != {"generation", "hash", "zones"} or not isinstance(payload["zones"], list):
                 raise ValueError("expected generation, hash, and zones")
             packed = json.dumps(payload, separators=(",", ":")).encode()
@@ -1231,7 +1243,7 @@ class Handler(BaseHTTPRequestHandler):
         except EOFError as exc: return self.reply(400, {"error": str(exc)})
         except (ValueError, UnicodeDecodeError) as exc: return self.reply(400, {"error": str(exc)})
         try:
-            code, ctype, raw = self.server.panel.proxy("timezone_put" if self.path == "/api/timezone" else "config_put", body=packed, content_type="application/json")
+            code, ctype, raw = self.server.panel.proxy(route, body=packed, content_type="application/json")
             return self.send(code, raw, ctype)
         except (OSError, http.client.HTTPException, ValueError) as exc: return self.reply(502, {"error": str(exc)})
 
@@ -1243,6 +1255,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(value, dict) or set(value) != {"enabled"} or type(value["enabled"]) is not bool:
                     raise ValueError("expected enabled boolean")
                 code, ctype, raw = self.server.panel.proxy("maintenance", body=json.dumps(value).encode(), content_type="application/json")
+                return self.send(code, raw, ctype)
+            except (ValueError, EOFError, OverflowError) as exc:
+                return self.reply(400, {"error": str(exc)})
+            except (OSError, http.client.HTTPException) as exc:
+                return self.reply(502, {"error": str(exc)})
+        if self.path == "/api/endpoint/safety/clear":
+            try:
+                if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
+                value = json.loads(self.read_body(128))
+                if not isinstance(value, dict) or value != {"confirm": SAFETY_CLEAR_CONFIRM}:
+                    raise ValueError(f"expected confirm {SAFETY_CLEAR_CONFIRM}")
+                code, ctype, raw = self.server.panel.proxy("safety_clear", body=json.dumps(value).encode(), content_type="application/json")
                 return self.send(code, raw, ctype)
             except (ValueError, EOFError, OverflowError) as exc:
                 return self.reply(400, {"error": str(exc)})

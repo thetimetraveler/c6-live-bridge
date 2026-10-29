@@ -1,3 +1,10 @@
+## 0.8.0
+
+- Add an Endpoint control card in Setup: disable or enable the endpoint through the gateway's operator choice, and clear a verified fault latch behind a confirmation. Disable works while monitoring is stale and states that, without a power switch, it is a software radio stop rather than a power cut.
+- Show the startup sequence on the Overview: gateway startup hold, endpoint minimum start delay, stability-window router adverts, child attach and command admission, with regating, operator stop and fault latch called out.
+- List the remaining reported endpoint safety fields (R1/R3/interrupted fault bits, partition, leader, routers heard, blocked transmissions) and the gateway startup hold.
+- Require fresh endpoint safety evidence before showing the endpoint as safe, keep safety evidence across snapshots, reject malformed monitoring data, and keep the original baseline of an unsaved mapping draft.
+
 ## 0.7.0
 
 - Replace the Lights table with one card per bridged lamp. Each card shows what Lutron shows, what the bridge last sent to the Ketra hub, and what the hub reports the lamp is doing, side by side with brightness bars and colour swatches.

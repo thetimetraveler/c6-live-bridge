@@ -391,6 +391,37 @@ class AddonTests(unittest.TestCase):
         self.assertEqual(self.panel.proxy("maintenance",body=b'{"enabled":false}',content_type="application/json")[0],200)
         self.assertEqual(self.gateway.calls[-1][0:2],("POST","/api/maintenance"))
 
+    def json_request(self, method, path, value, peer="172.30.32.2", content_type="application/json"):
+        body=value if isinstance(value,bytes) else json.dumps(value).encode()
+        h=self.handler(peer,path)
+        h.headers["Content-Type"]=content_type;h.headers["Content-Length"]=str(len(body));h.rfile=io.BytesIO(body)
+        getattr(h,"do_"+method)()
+        return h.results[0]
+
+    def test_endpoint_power_choice_is_exact_and_bypasses_monitoring_backoff(self):
+        for value, peer, ctype, expected in [({"enabled":"no"},"172.30.32.2","application/json",400),
+                                             ({"enabled":False,"extra":1},"172.30.32.2","application/json",400),
+                                             ({"enabled":1},"172.30.32.2","application/json",400),
+                                             ({"enabled":False},"172.30.32.2","text/plain",400),
+                                             ({"enabled":False},"10.0.0.8","application/json",403)]:
+            self.assertEqual(self.json_request("PUT","/api/endpoint/power",value,peer,ctype)[0],expected)
+        self.assertEqual(self.gateway.calls,[])
+        self.panel.last_error="offline";self.panel.next_poll=float("inf")
+        self.assertEqual(self.json_request("PUT","/api/endpoint/power",{"enabled":False})[0],200)
+        method,path,forwarded,ctype=self.gateway.calls[-1]
+        self.assertEqual((method,path,json.loads(forwarded),ctype),("PUT","/api/endpoint/power",{"enabled":False},"application/json"))
+        self.assertEqual(self.panel.next_poll,0)
+
+    def test_safety_clear_requires_the_exact_confirmation(self):
+        for value in [{},{"confirm":"yes"},{"confirm":"clear-r1-latch","force":True},b"clear-r1-latch"]:
+            self.assertEqual(self.json_request("POST","/api/endpoint/safety/clear",value)[0],400)
+        self.assertEqual(self.json_request("POST","/api/endpoint/safety/clear",{"confirm":"clear-r1-latch"},"10.0.0.8")[0],403)
+        self.assertEqual(self.gateway.calls,[])
+        self.panel.last_error="offline";self.panel.next_poll=float("inf")
+        self.json_request("POST","/api/endpoint/safety/clear",{"confirm":"clear-r1-latch"})
+        method,path,forwarded,_=self.gateway.calls[-1]
+        self.assertEqual((method,path,json.loads(forwarded)),("POST","/api/endpoint/safety/clear",{"confirm":"clear-r1-latch"}))
+
     def test_gateway_response_size_limit(self):
         class Response:
             status=200

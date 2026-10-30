@@ -40,7 +40,9 @@ Natural Show sensors in Home Assistant: its active show, what the show calls
 for now, what the bridge sent, and what N4 confirmed. On gateways with the direct Zigbee
 output option, the dashboard shows which output the gateway drives, flags
 commands held while that output is not admitted, and reports the read-only
-Zigbee member link. See the [app documentation](c6-live-bridge/README.md) for API details.
+Zigbee member link. A hybrid gateway prefers direct Zigbee and falls back to N4 on its own;
+the dashboard shows **N4 fallback** while N4 carries lighting, and Setup's **Ketra lamps**
+card edits the gateway's lamp inventory. See the [app documentation](c6-live-bridge/README.md) for API details.
 
 ## Development
 

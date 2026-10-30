@@ -309,6 +309,41 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   if(!view('device-note').textContent.startsWith('Lighting output is held'))throw Error('the lights note must explain the held output');
   health(status);deviceView(deviceSnapshot);zonesView(zoneSnapshot);
 }
+// Hybrid build: N4 carrying output while direct Zigbee is unavailable is a fallback.
+{
+  const fallback={...status,output_backend:'n4',backend:{mode:'hybrid',phase:'n4',switches:2},direct_zigbee:{output_admitted:false,reason:'node_unavailable'},
+    direct_routing:{session_ready:false,admitted:false,reason:'node_unavailable',lamps:3,resolved:0,uncertain:1,unreachable:0,external_changes:0,counter_next:'10',counter_upper:'4106'}};
+  health(fallback);
+  const tileText=text(view('summary').children.find(c=>text(c).includes('Lighting output')));
+  if(!tileText.includes('N4 fallback'))throw Error('a hybrid gateway on N4 must show the fallback');
+  if(!(view('headline').textContent+view('headline-detail').textContent).includes('N4 is carrying lighting'))throw Error('the fallback must be named in the overview');
+  if(!text(view('health')).includes('Direct Zigbee routing (reported)')||!text(view('health')).includes('node unavailable'))throw Error('routing diagnostics must be shown');
+  health({...fallback,output_backend:'direct_zigbee',backend:{mode:'hybrid',phase:'direct',switches:3},direct_zigbee:{output_admitted:true,reason:'admitted'}});
+  if(text(view('summary')).includes('N4 fallback')||!text(view('summary')).includes('Direct Zigbee'))throw Error('a hybrid gateway on direct shows Direct Zigbee');
+  health(status);
+  if(text(view('summary')).includes('N4 fallback'))throw Error('an N4-only gateway is not a fallback');
+  // Lab inventory import maps zone names to the mapping's zone IDs.
+  const lab={schema:'ketra-lab-inventory-v1',captured_at:1,source_sha256:'0'.repeat(64),zones:{
+    Office:{group:22,members:[{eui_wire:'0102030405060708',logical:{pan:5,logical:40,interface:0,channel:0,subchannel:0}}]},
+    Nursery:{group:23,members:[{eui_wire:'1112131415161718',logical:{pan:5,logical:41,interface:0,channel:0,subchannel:0}}]}}};
+  const converted=labInventoryToKetra(lab,[{zone_id:30861,name:'office'}]);
+  if(converted.zones.length!==1||converted.zones[0].zone_id!==30861||converted.zones[0].group.logical!==22||converted.zones[0].group.pan!==5||
+     converted.unmatched.join()!=='Nursery'||converted.zones[0].lamps[0].logical.logical!==40)throw Error('lab inventory conversion: '+JSON.stringify(converted));
+  let threw=false;try{labInventoryToKetra({schema:'other'},[])}catch(e){threw=true}
+  if(!threw)throw Error('only lab inventory files convert');
+  // The Ketra card shows each lamp's live state.
+  ketraData={generation:4,hash:9,source:{pan:5,logical:17,interface:0,channel:0,subchannel:0},unmatched_zones:0,zones:[
+    {zone_id:30861,group:{pan:5,logical:22},lamps:[{eui_wire:'0102030405060708',logical:{pan:5,logical:40,interface:0,channel:0,subchannel:0}},
+                                              {eui_wire:'1112131415161718',logical:{pan:5,logical:41,interface:0,channel:0,subchannel:0}}]}],
+    lamps_live:[{eui_wire:'0102030405060708',resolved:true,short_address:4660,uncertain:false,unreachable:false,external_change:false,power:true,level_x100:4500},
+                {eui_wire:'1112131415161718',resolved:true,short_address:4661,uncertain:true,unreachable:false,external_change:false}]};
+  renderKetra();
+  const card=text(view('ketra-zones'));
+  if(!card.includes('On 45%')||!card.includes('0x1234')||!card.includes('Uncertain')||view('ketra-pill').textContent!=='2 lamps')throw Error('Ketra card: '+card);
+  if(!view('ketra-json').value.includes('"zone_id": 30861'))throw Error('the editor shows the inventory');
+  ketraData={unsupported:true};renderKetra();
+  if(view('ketra-pill').textContent!=='Not supported'||!view('ketra-apply').disabled)throw Error('old gateways have no Ketra inventory');
+}
 `;
 const mappingChecks=`
 (async()=>{

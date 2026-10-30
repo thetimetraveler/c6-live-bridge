@@ -33,6 +33,7 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/config`, `PUT /api/config` (transactional mapping configuration)
 - `GET /api/timezone`, `PUT /api/timezone` (gateway show time zone, when supported)
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
+- `GET /api/ketra`, `PUT /api/ketra` (Ketra lamp inventory for direct Zigbee output, when supported)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 - `GET /api/zones` (per-zone sync summary served by the add-on: Lutron state, the bridge's last command,
   the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
@@ -271,7 +272,7 @@ diagnostic sensors:
 
 | Sensor | States |
 |---|---|
-| Lighting output | `n4`, `direct_zigbee_held`, `direct_zigbee` |
+| Lighting output | `n4`, `n4_fallback`, `direct_zigbee_held`, `direct_zigbee` |
 | Zigbee member link | `online`, `offline`, `not_enabled`, `unknown` (gateway does not report the link) |
 
 Their attributes hold admission, its reason, the direct Zigbee readiness flags
@@ -280,3 +281,32 @@ Active show sensor adds `output_backend` and `output_held`. While output is
 held, a zone's **Requested** sensors show what Lutron asked the bridge for,
 which was not sent. To be told when lighting output is held, trigger an
 automation on **Lighting output** changing to `direct_zigbee_held`.
+
+
+## Direct Zigbee routing and N4 fallback (0.10.0)
+
+Gateways built for direct Zigbee routing report two more objects in
+`/api/status`: `backend` (`mode` n4, direct or hybrid; the owning `phase`;
+`switches`) and `direct_routing` (session readiness and its reason, node,
+lease and lamp-table state, lamp counts and the reserved frame-counter range).
+A **hybrid** gateway prefers direct Zigbee and falls back to N4 by itself.
+While N4 carries output for it, the Lighting output tile reads **N4 fallback**
+and the Overview names the direct path's reason; with direct Zigbee in
+control the tile reads **Direct Zigbee**. Diagnostics shows the details under
+**Direct Zigbee routing**.
+
+**Ketra lamps** (Setup) edits the gateway's lamp inventory: for each Lutron
+zone, its Ketra group (pan and logical address, or none for per-lamp sends
+only) and its lamps (16-hex `eui_wire` and Ketra logical address), plus the
+gateway's own Ketra address as `source`. Each lamp shows its live state from
+the gateway: on/off and level, whether its Zigbee address is resolved, and
+whether it is uncertain (being read back after an unconfirmed send),
+unreachable, or was changed outside the bridge. **Import a lab inventory**
+converts a `ketra-lab-inventory-v1` file, matching its zone names to the
+mapping; unmatched zones are listed. **Apply lamps** needs maintenance mode
+and sends the current generation and hash, so a concurrent edit is refused.
+Gateways without the inventory show the card as not supported.
+
+The MQTT **Lighting output** sensor reports `n4_fallback` while a hybrid
+gateway is on N4, so an automation can notify you when direct Zigbee drops
+out.

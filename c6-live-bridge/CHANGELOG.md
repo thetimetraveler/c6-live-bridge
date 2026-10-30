@@ -1,3 +1,10 @@
+## 0.10.0
+
+- Support the gateway's direct Zigbee routing and automatic N4 fallback. A hybrid gateway (direct Zigbee preferred) carrying output on N4 shows **N4 fallback** on the Lighting output tile and names it in the Overview with the direct path's reason. Diagnostics adds **Direct Zigbee routing**: owning path, path switches, session readiness and its reason, node, lease and lamp-table state, lamp counts (resolved, uncertain, unreachable, changed outside the bridge), the reserved frame-counter range and send counters.
+- Add a **Ketra lamps** card in Setup for the gateway's lamp inventory (`/api/ketra`): each zone's Ketra group and lamps with their live state (on/off and level, resolved address, uncertain, unreachable, changed outside the bridge), a JSON editor, and an importer that converts a `ketra-lab-inventory-v1` file by matching zone names to the mapping. Applying needs maintenance mode and the current generation and hash.
+- Proxy `GET /api/ketra` (collected every 30 seconds; older gateways are marked unsupported and rechecked every five minutes) and `PUT /api/ketra` (exactly `generation`, `hash`, `source`, `zones`; at most 16 KiB).
+- The **Lighting output** MQTT sensor adds `n4_fallback`, and its attributes add the backend mode, owning path, switch count and direct routing summary.
+
 ## 0.9.0
 
 - Support gateways built with the direct Zigbee output option. The topology, Overview and Diagnostics show which output the gateway drives (`output_backend`). While the direct Zigbee output is not admitted, every Lutron command is held at the gateway: the Overview names this as the problem, the output node shows "held · not admitted", lamp cards show **Bridge holding** with "Not sent", and readings left over from N4 are never shown as the lamp's state.

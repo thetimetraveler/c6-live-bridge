@@ -68,7 +68,7 @@ class AddonTests(unittest.TestCase):
 
     def collect(self, panel=None):
         panel=panel or self.panel
-        panel.next_poll=0;panel.config_due=float("inf");panel.timezone_due=float("inf")
+        panel.next_poll=0;panel.config_due=float("inf");panel.timezone_due=float("inf");panel.ketra_due=float("inf")
         return panel.archive_poll_once()
 
     def test_events_get_wall_clock_time_from_gateway_uptime(self):
@@ -230,13 +230,48 @@ class AddonTests(unittest.TestCase):
         def respond(path, *args):
             if path == "/api/timezone": return 404,"application/json",b'{}'
             return original(path,*args)
-        self.gateway.request=respond;self.panel.next_poll=0;self.panel.timezone_due=0;self.panel.config_due=float("inf")
+        self.gateway.request=respond;self.panel.next_poll=0;self.panel.timezone_due=0;self.panel.config_due=float("inf");self.panel.ketra_due=float("inf")
         self.panel.archive_poll_once()
         self.assertTrue(json.loads(self.panel.proxy("timezone")[2])["unsupported"])
         self.assertTrue(self.panel.online)
         self.assertGreater(self.panel.timezone_due,app.time.monotonic())
         self.panel.next_poll=0;self.panel.archive_poll_once()
         self.assertTrue(self.gateway.calls[-1][1].startswith("/api/snapshot"))
+
+    def test_ketra_inventory_is_collected_proxied_and_written_through(self):
+        self.collect()
+        inventory={"generation":3,"hash":77,"source":{"pan":0,"logical":17,"interface":0,"channel":0,"subchannel":0},
+                   "zones":[],"lamps_live":[]}
+        original=self.gateway.request
+        def respond(path, *args):
+            if path == "/api/ketra":
+                self.gateway.calls.append((args[0] if args else "GET",path))
+                return 200,"application/json",json.dumps(inventory).encode()
+            return original(path,*args)
+        self.gateway.request=respond;self.panel.next_poll=0;self.panel.ketra_due=0
+        self.panel.config_due=self.panel.timezone_due=float("inf")
+        self.panel.archive_poll_once()
+        self.assertEqual(self.gateway.calls[-1][1],"/api/ketra")
+        self.assertGreater(self.panel.ketra_due,app.time.monotonic())
+        h=self.handler(path="/api/ketra");h.do_GET()
+        self.assertEqual(json.loads(h.results[0][1])["generation"],3)
+        good={"generation":3,"hash":77,"source":None,"zones":[]}
+        for body, expected in [(good,200),({"generation":3,"hash":77,"zones":[]},400),
+                               (dict(good,source=5),400),(dict(good,extra=1),400)]:
+            raw=json.dumps(body).encode();h=self.handler(path="/api/ketra")
+            h.headers["Content-Type"]="application/json";h.headers["Content-Length"]=str(len(raw));h.rfile=io.BytesIO(raw);h.do_PUT()
+            self.assertEqual(h.results[0][0],expected)
+        self.assertEqual([c[1] for c in self.gateway.calls].count("/api/ketra"),2)  # one collect, one write
+        self.assertEqual(self.panel.ketra_due,0)  # re-read after a write
+        # Old gateways: marked unsupported, retried after five minutes, monitoring unaffected.
+        def old(path, *args):
+            if path == "/api/ketra": return 404,"application/json",b'{}'
+            return original(path,*args)
+        self.gateway.request=old;self.panel.next_poll=0;self.panel.ketra_due=0
+        self.panel.archive_poll_once()
+        self.assertTrue(json.loads(self.panel.proxy("ketra")[2])["unsupported"])
+        self.assertTrue(self.panel.online)
+        self.assertGreater(self.panel.ketra_due,app.time.monotonic()+200)
 
     def test_gateway_adds_computed_firmware_digest_and_long_timeout(self):
         binary=b"abc\x00"
@@ -608,7 +643,7 @@ class ShowCollectorTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def collect(self):
-        self.panel.next_poll=0;self.panel.config_due=float("inf");self.panel.timezone_due=float("inf")
+        self.panel.next_poll=0;self.panel.config_due=float("inf");self.panel.timezone_due=float("inf");self.panel.ketra_due=float("inf")
         return self.panel.archive_poll_once()
 
     def test_programming_reads_take_bounded_slots_and_feed_the_dashboard_cache(self):
@@ -855,19 +890,34 @@ class ZoneSummaryTests(unittest.TestCase):
         self.assertIsNone(app.match_light({"name":"sitting room lamp"},[a,b]))
 
     def test_output_backend_parsing(self):
-        self.assertEqual(app.output_state({}),{"backend":"n4","admitted":True,"reason":None})
+        self.assertEqual(app.output_state({}),{"backend":"n4","admitted":True,"reason":None,"fallback":False})
         self.assertEqual(app.output_state({"output_backend":"n4","direct_zigbee":{"output_admitted":False}})["admitted"],True)
         held=app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":False,"reason":"production_contract_unavailable"}})
-        self.assertEqual(held,{"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable"})
+        self.assertEqual(held,{"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable","fallback":False})
         self.assertFalse(app.output_state({"output_backend":"direct_zigbee"})["admitted"])
         self.assertFalse(app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":"true"}})["admitted"])
         self.assertTrue(app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":True}})["admitted"])
-        self.assertEqual(app.output_state({"output_backend":"mystery"}),{"backend":"unknown","admitted":False,"reason":"mystery"})
+        self.assertEqual(app.output_state({"output_backend":"mystery"}),{"backend":"unknown","admitted":False,"reason":"mystery","fallback":False})
         self.assertEqual(app.output_state(None)["backend"],"unknown")
         self.assertEqual([app.zigbee_link_state(s) for s in ({},{"zigbee_uart":{"enabled":False}},
                           {"zigbee_uart":{"enabled":True,"online":True,"bidirectional":True}},
                           {"zigbee_uart":{"enabled":True,"online":True,"bidirectional":False}},{"zigbee_uart":{"enabled":"yes"}})],
                          ["unknown","not_enabled","online","offline","unknown"])
+
+    def test_hybrid_fallback_is_reported(self):
+        status={"output_backend":"n4","backend":{"mode":"hybrid","phase":"n4","switches":2},
+                "direct_zigbee":{"output_admitted":False,"reason":"node_unavailable"},
+                "direct_routing":{"session_ready":False,"admitted":False,"reason":"node_unavailable","lamps":4,"uncertain":1}}
+        out=app.output_state(status)
+        self.assertEqual(out,{"backend":"n4","admitted":True,"reason":"node_unavailable","fallback":True})
+        g=app.gateway_state(status)
+        self.assertEqual(g["lighting_output"],"n4_fallback")
+        self.assertEqual((g["attributes"]["backend_phase"],g["attributes"]["backend_switches"]),("n4",2))
+        self.assertEqual(g["attributes"]["direct_routing"]["uncertain"],1)
+        direct=dict(status,output_backend="direct_zigbee",backend={"mode":"hybrid","phase":"direct","switches":3},
+                    direct_zigbee={"output_admitted":True,"reason":"admitted"})
+        self.assertEqual(app.gateway_state(direct)["lighting_output"],"direct_zigbee")
+        self.assertFalse(app.output_state({"output_backend":"n4","backend":{"mode":"n4"}})["fallback"])
 
     def test_held_direct_output_never_claims_delivery_or_a_lamp_reading(self):
         held={"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable"}

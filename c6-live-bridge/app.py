@@ -50,6 +50,7 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "events": ("GET", "/api/events"), "program": ("GET", "/api/program"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
           "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
+          "ketra": ("GET", "/api/ketra"), "ketra_put": ("PUT", "/api/ketra"),
           "update": ("POST", "/api/endpoint/update"),
           "maintenance": ("POST", "/api/maintenance"),
           "power_put": ("PUT", "/api/endpoint/power"),
@@ -485,7 +486,10 @@ def _check(key, status, title, detail=""):
     return {"key": key, "status": status, "title": title, "detail": detail}
 
 
-N4_OUTPUT = {"backend": "n4", "admitted": True, "reason": None}
+N4_OUTPUT = {"backend": "n4", "admitted": True, "reason": None, "fallback": False}
+
+BACKEND_ATTRIBUTES = ("session_ready", "admitted", "reason", "node_known", "joined", "lease_ok", "table_committed",
+                      "lamps", "routed_zones", "resolved", "uncertain", "unreachable", "external_changes")
 
 
 def output_state(status):
@@ -496,15 +500,20 @@ def output_state(status):
     flags are reported for display and never open admission here.
     """
     if not isinstance(status, dict):
-        return {"backend": "unknown", "admitted": False, "reason": None}
+        return {"backend": "unknown", "admitted": False, "reason": None, "fallback": False}
     backend = status.get("output_backend", "n4")
-    if backend == "n4":
-        return dict(N4_OUTPUT)
+    selector = status.get("backend") if isinstance(status.get("backend"), dict) else {}
     direct = status.get("direct_zigbee") if isinstance(status.get("direct_zigbee"), dict) else {}
+    if backend == "n4":
+        # A hybrid gateway on N4 is falling back from direct Zigbee.
+        out = dict(N4_OUTPUT)
+        if selector.get("mode") == "hybrid":
+            out.update(fallback=True, reason=clean_text(direct.get("reason"), 64))
+        return out
     if backend == "direct_zigbee":
         return {"backend": backend, "admitted": direct.get("output_admitted") is True,
-                "reason": clean_text(direct.get("reason"), 64)}
-    return {"backend": "unknown", "admitted": False, "reason": clean_text(backend, 32)}
+                "reason": clean_text(direct.get("reason"), 64), "fallback": False}
+    return {"backend": "unknown", "admitted": False, "reason": clean_text(backend, 32), "fallback": False}
 
 
 def zigbee_link_state(status):
@@ -679,6 +688,7 @@ class Panel:
         self.next_poll = 0
         self.config_due = 0
         self.timezone_due = 0
+        self.ketra_due = 0
         self.legacy_index = 0
         # Programming reads for show sensors; off unless sensors are publishing.
         self.track_programs = False
@@ -716,7 +726,9 @@ class Panel:
             self.program_attempts.clear()
             self.config_due = 0
             self.timezone_due = time.monotonic() + 5
+            self.ketra_due = time.monotonic() + 10
             self.cache.pop("timezone", None)
+            self.cache.pop("ketra", None)
         if status is not None:
             self._anchor(status)
         for event in data["events"]:
@@ -798,6 +810,8 @@ class Panel:
                 route, path = "config", "/api/config"
             elif self.cache and now >= self.timezone_due:
                 route, path = "timezone", "/api/timezone"
+            elif self.cache and now >= self.ketra_due:
+                route, path = "ketra", "/api/ketra"
             elif program_zone is not None:
                 route, path = "program", "/api/program?" + urlencode({"zone": program_zone, "page": 0})
                 with self.lock:
@@ -831,6 +845,13 @@ class Panel:
                     self.timezone_due = now + (300 if code in (404, 405) else max(30, getattr(self.gateway, "retry_after", 0)))
                     self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
                 return None
+            if route == "ketra" and code != 200:
+                with self.lock:
+                    if code in (404, 405):
+                        self.cache["ketra"] = ({"unsupported": True}, now)
+                    self.ketra_due = now + (300 if code in (404, 405) else max(30, getattr(self.gateway, "retry_after", 0)))
+                    self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
+                return None
             if route == "program" and code != 200:
                 self.program_due = now + max(PROGRAM_SLOT_S, getattr(self.gateway, "retry_after", 0))
                 self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
@@ -842,6 +863,8 @@ class Panel:
                 raise ValueError("invalid gateway response")
             if route == "timezone" and not isinstance(data.get("timezone"), str):
                 raise ValueError("invalid gateway time zone")
+            if route == "ketra" and not isinstance(data.get("zones"), list):
+                raise ValueError("invalid gateway Ketra inventory")
             program = show_program(data) if route == "program" else None
             if route == "program" and program is None:
                 raise ValueError("invalid gateway programming snapshot")
@@ -870,6 +893,8 @@ class Panel:
                     self.cache[route] = (data, now)
                 if route == "timezone":
                     self.timezone_due = now + 30
+                if route == "ketra":
+                    self.ketra_due = now + 30
                 if route == "config":
                     previous = self.program_generation if hasattr(self, "program_generation") else None
                     generation = (data.get("generation"), data.get("hash"))
@@ -892,6 +917,11 @@ class Panel:
                 self.timezone_due = time.monotonic() + 30
                 self.next_poll = time.monotonic() + 1
                 LOG.warning("Optional time-zone snapshot deferred: %s", exc)
+                return None
+            if route == "ketra":
+                self.ketra_due = time.monotonic() + 30
+                self.next_poll = time.monotonic() + 1
+                LOG.warning("Optional Ketra inventory snapshot deferred: %s", exc)
                 return None
             if route == "config":
                 self.config_due = time.monotonic() + 30
@@ -939,7 +969,7 @@ class Panel:
                 return self.result({"boot_id": self.boot_id, "reset": reset, "after": after, "next": self.cursor + 1,
                                     "oldest": oldest, "lost": lost, "boot_epoch_ms": self.boot_epoch_ms,
                                     "events": selected})
-        if route in ("status", "devices", "config", "timezone"):
+        if route in ("status", "devices", "config", "timezone", "ketra"):
             with self.lock:
                 entry = self.cache.get(route)
                 if entry is None:
@@ -973,6 +1003,8 @@ class Panel:
                         self.programs.popitem(last=False)
                 if route == "timezone_put" and result[0] == 200:
                     self.timezone_due = 0
+                if route == "ketra_put" and result[0] == 200:
+                    self.ketra_due = 0
                 if route in ("config_put", "update") and result[0] == 202:
                     self.programs.clear()
                     self.config_due = 0
@@ -1112,10 +1144,14 @@ def gateway_state(status):
         lighting = None
     elif output["backend"] == "direct_zigbee":
         lighting = "direct_zigbee" if output["admitted"] else "direct_zigbee_held"
+    elif output["fallback"]:
+        lighting = "n4_fallback"
     else:
         lighting = output["backend"]
     link = status.get("zigbee_uart") if isinstance(status, dict) and isinstance(status.get("zigbee_uart"), dict) else {}
     direct = status.get("direct_zigbee") if isinstance(status, dict) and isinstance(status.get("direct_zigbee"), dict) else {}
+    selector = status.get("backend") if isinstance(status, dict) and isinstance(status.get("backend"), dict) else {}
+    routing = status.get("direct_routing") if isinstance(status, dict) and isinstance(status.get("direct_routing"), dict) else {}
     return {"lighting_output": lighting,
             "zigbee_member_link": zigbee_link_state(status) if isinstance(status, dict) else None,
             "attributes": {"output_admitted": output["admitted"] if output else None,
@@ -1124,7 +1160,12 @@ def gateway_state(status):
                                                                     "authenticated_readback_ready", "endpoint_cache_epoch_ready",
                                                                     "hello_online") if type(direct.get(k)) is bool},
                            "zigbee_member": {k: link[k] for k in ZIGBEE_LINK_ATTRIBUTES
-                                             if type(link.get(k)) in (bool, int) or isinstance(link.get(k), str) and len(link[k]) <= 64}}}
+                                             if type(link.get(k)) in (bool, int) or isinstance(link.get(k), str) and len(link[k]) <= 64},
+                           "backend_mode": clean_text(selector.get("mode"), 16),
+                           "backend_phase": clean_text(selector.get("phase"), 16),
+                           "backend_switches": selector.get("switches") if type(selector.get("switches")) is int else None,
+                           "direct_routing": {k: routing[k] for k in BACKEND_ATTRIBUTES
+                                              if type(routing.get(k)) in (bool, int) or isinstance(routing.get(k), str) and len(routing[k]) <= 32}}}
 
 
 class ShowSensors:
@@ -1309,7 +1350,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
             ha = self.server.ha
             return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
-        route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone"}.get(parts.path)
+        route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone",
+                 "/api/ketra": "ketra"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
         allowed = {"events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
@@ -1337,11 +1379,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         if not self.authorized(): return
-        route = {"/api/config": "config_put", "/api/timezone": "timezone_put", "/api/endpoint/power": "power_put"}.get(self.path)
+        route = {"/api/config": "config_put", "/api/timezone": "timezone_put", "/api/endpoint/power": "power_put",
+                 "/api/ketra": "ketra_put"}.get(self.path)
         if route is None: return self.reply(404, {"error": "unknown endpoint"})
         try:
             if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
-            body = self.read_body(65536 if route == "config_put" else 128)
+            body = self.read_body(65536 if route == "config_put" else 16384 if route == "ketra_put" else 128)
             payload = json.loads(body)
             if route == "timezone_put":
                 if not isinstance(payload, dict) or set(payload) != {"timezone"} or payload["timezone"] not in SHOW_TIME_ZONES:
@@ -1349,6 +1392,12 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "power_put":
                 if not isinstance(payload, dict) or set(payload) != {"enabled"} or type(payload["enabled"]) is not bool:
                     raise ValueError("expected enabled boolean")
+            elif route == "ketra_put":
+                # The gateway validates addresses, uniqueness and the baseline.
+                if (not isinstance(payload, dict) or set(payload) != {"generation", "hash", "source", "zones"}
+                        or not isinstance(payload["zones"], list)
+                        or not (payload["source"] is None or isinstance(payload["source"], dict))):
+                    raise ValueError("expected generation, hash, source and zones")
             elif not isinstance(payload, dict) or set(payload) != {"generation", "hash", "zones"} or not isinstance(payload["zones"], list):
                 raise ValueError("expected generation, hash, and zones")
             packed = json.dumps(payload, separators=(",", ":")).encode()

@@ -453,6 +453,15 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
     <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
   </section>
   <section class="card">
+    <div class="card-head"><h2>Ketra lamps</h2><span id="ketra-pill" class="pill wait">Loading</span></div>
+    <p class="lede">Direct Zigbee output drives these lamps. Each Lutron zone lists its Ketra group and its lamps (Zigbee address and Ketra logical address). Changes need maintenance mode and take effect without a restart.</p>
+    <div id="ketra-zones" class="groups"></div>
+    <details class="raw json-editor"><summary>Edit as JSON</summary><textarea id="ketra-json" spellcheck="false" aria-label="Ketra lamp inventory JSON"></textarea><p class="small muted">The gateway's own Ketra address as <code>source</code>, and per zone <code>zone_id</code>, <code>group</code> (pan, logical or null) and <code>lamps</code> (16-hex <code>eui_wire</code> and <code>logical</code> pan, logical, interface, channel, subchannel).</p></details>
+    <details class="raw"><summary>Import a lab inventory</summary><textarea id="ketra-import" spellcheck="false" aria-label="Lab inventory JSON"></textarea><div class="actions"><button id="ketra-import-go" class="plain">Convert into the editor</button></div><p id="ketra-import-note" class="small muted">Paste a ketra-lab-inventory-v1 file. Zones are matched to the mapping by name; the source address is kept from the editor.</p></details>
+    <div class="actions"><button id="ketra-apply" disabled>Apply lamps</button><button id="ketra-reload" class="secondary">Reload</button></div>
+    <p id="ketra-note" class="muted small" role="status"></p>
+  </section>
+  <section class="card">
     <div class="card-head"><h2>Endpoint firmware</h2></div>
     <p class="lede">Install a new firmware image on the endpoint board. The image goes through the gateway, then this page watches the endpoint restart and come back online.</p>
     <label id="dropzone" class="dropzone"><input id="firmware" type="file" aria-label="Firmware image"><span id="dz-icon" class="dz-icon" aria-hidden="true">↑</span><strong id="firmware-name">Choose a firmware image</strong><span id="firmware-meta" class="muted small">or drag a .bin file here · up to 768 KB (786,432 bytes)</span><span class="meter"><i id="firmware-size" style="width:0"></i></span></label>
@@ -485,7 +494,8 @@ function netUp(s){return s.network_up??s.wifi_up}
 /* Gateways before the direct Zigbee option omit output_backend and always write to N4.
    Direct output counts only when the gateway itself reports it admitted. */
 function outputBackend(s){const b=s?.output_backend??'n4',d=s?.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{};
-  if(b==='n4')return {kind:'n4',admitted:true,name:'N4 hub',reason:null};
+  /* A hybrid gateway (direct preferred) on N4 is falling back. */
+  if(b==='n4'){const fallback=s?.backend?.mode==='hybrid';return {kind:'n4',admitted:true,fallback,name:fallback?'N4 fallback':'N4 hub',reason:fallback&&typeof d.reason==='string'?d.reason:null}}
   if(b==='direct_zigbee')return {kind:'direct',admitted:d.output_admitted===true,name:'Direct Zigbee',reason:typeof d.reason==='string'?d.reason:null};
   return {kind:'unknown',admitted:false,name:'Unrecognised',reason:typeof b==='string'?b:null}}
 const outputHeld=o=>o.kind!=='n4'&&!o.admitted;
@@ -493,6 +503,18 @@ const outputHeld=o=>o.kind!=='n4'&&!o.admitted;
 function zigbeeLink(s){const z=s?.zigbee_uart;if(!z||typeof z!=='object'||typeof z.enabled!=='boolean')return null;
   if(!z.enabled)return {enabled:false,tone:'',label:'Not enabled'};const ok=z.online===true&&z.bidirectional===true;
   return {enabled:true,tone:ok?'good':'warn',label:ok?'Responding':'Not responding'}}
+/* The gateway's direct routing engine (/api/status direct_routing) and backend selector. */
+function routingGroup(s){const r=s.direct_routing,b=s.backend&&typeof s.backend==='object'?s.backend:{},yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
+  const counters=r.counter_upper&&r.counter_next?`${num(r.counter_next)} of ${num(r.counter_upper)}`:'—';
+  return group('Direct Zigbee routing (reported)',[['Backend mode',val(b.mode)],['Owning path',val(b.phase)],['Path switches',num(b.switches)],
+    ['Session ready',yn(r.session_ready),r.session_ready===false?'warn':''],['Admitted',yn(r.admitted),r.admitted===false?'warn':''],
+    ['Reason',typeof r.reason==='string'?r.reason.replace(/_/g,' '):'—'],['Node identity checked',yn(r.node_known)],['Joined',yn(r.joined)],
+    ['Lease current',yn(r.lease_ok)],['Lamp table synced',yn(r.table_committed)],['Inventory generation',val(r.inventory_generation)],
+    ['Lamps (resolved)',`${num(r.lamps)} (${num(r.resolved)})`],['Zones with lamps',num(r.routed_zones)],
+    ['Uncertain lamps',num(r.uncertain),Number(r.uncertain)>0?'warn':''],['Unreachable lamps',num(r.unreachable),Number(r.unreachable)>0?'bad':''],
+    ['Changed outside the bridge',num(r.external_changes),Number(r.external_changes)>0?'warn':''],['Frame counter used',counters],
+    ['Frames sent',num(r.sends)],['Zone commands applied',num(r.applied)],['Readings reported',num(r.observed)],
+    ['Commands without lamps',num(r.unrouted),Number(r.unrouted)>0?'warn':''],['UART overflows',num(r.overflows),Number(r.overflows)>0?'warn':'']])}
 function zigbeeRole(r){return ({0:'unknown',1:'detached',2:'end device',3:'router',4:'coordinator'})[Number(r)]||val(r)}
 // A cached "online" HELLO is not current safety evidence. Age it again in the
 // browser, including while a refresh is pending or the collector is delayed.
@@ -611,6 +633,7 @@ const errTone=v=>Number(v)>0?'warn':'';
 function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){latestStatus=s;statusReceivedAt=receivedAt??Date.now()}const age=snapshotAge(s),current=snapshotFresh(s),up=s.gateway_uptime_ms;statusAnchor=typeof up==='number'&&Number.isFinite(up)&&age!==null?Date.now()-age*1000-up:null;const role=roleName(s.thread_role),state=endpointHealth(s),q=s.endpoint_safety||{},p=s.endpoint_power||{};
   const net=netName(s),netOk=netUp(s),issues=[],lampStats=lampSummary();if(netOk!==true)issues.push([netOk===false?'bad':'warn',`Gateway ${net==='Network'?'network':net} is ${netOk===false?'down':'unavailable'}`]);if(state.tone!=='good')issues.push([state.tone,state.title]);if(s.config_match!==true)issues.push(['warn',s.config_match===false?'Zone mapping is not yet in sync on both boards':'Zone mapping status is unavailable']);
   const out=outputBackend(s),held=outputHeld(out),zl=zigbeeLink(s),dz=s.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{},zu=s.zigbee_uart&&typeof s.zigbee_uart==='object'?s.zigbee_uart:{};
+  if(out.fallback)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`]);
   if(out.kind==='direct'&&held)issues.push(['bad','Lighting output held: direct Zigbee output is not admitted']);else if(out.kind==='unknown')issues.push(['warn','Lighting output backend not recognised']);
   if(zl?.enabled&&zl.tone!=='good')issues.push(['warn','Zigbee member link not responding']);
   // A held output already explains every lamp; repeating it per lamp adds nothing.
@@ -622,7 +645,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
     tile('Thread safety',state.label,state.tone,current?'Role '+role+' · RLOC16 '+hex16(s.rloc16):'Current safety status unknown'),
     tile('Endpoint board',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Last reported uptime '+duration(Number(s.endpoint_uptime_s)*1000)),
     tile('Zone mapping',current?(s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown'):'Unavailable',current&&s.config_match===true?'good':'warn','Hash '+val(s.config_hash)),
-    tile('Lighting output',!current?'Unavailable':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Direct Zigbee output'):'Backend '+val(out.reason)),
+    tile('Lighting output',!current?'Unavailable':out.fallback?'N4 fallback':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; N4 carrying output':out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Direct Zigbee output'):'Backend '+val(out.reason)),
     ...(zl?.enabled?[tile('Zigbee member',current?zl.label:'Unavailable',current?zl.tone:'warn','Serial link only; not RF membership')]:[]),
     tile('Bridged lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length||lampStats.pending?'warn':'good',held?'Commands are held at the gateway':lampStats.current?'Recent hub reports compared with Lutron':'Current comparisons unavailable'));
   const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
@@ -633,6 +656,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
     group('Endpoint safety (reported)',[['Available',yn(q.present),q.present===false?'warn':''],['Phase',val(q.phase)],['Fault bits',num(q.faults),errTone(q.faults)],['May send',yn(q.may_send),q.may_send===false?'warn':''],['Mesh-local prefix',val(q.mesh_local_prefix)],['Prefix status',val(q.prefix_status),q.prefix_status!==undefined&&q.prefix_status!==0?'warn':''],['Extended PAN verified',yn(q.ext_pan_ok),q.ext_pan_ok===false?'warn':''],['Active timestamp valid',yn(q.active_timestamp_valid),q.active_timestamp_valid===false?'warn':''],['Startup gate remaining',q.gate_remaining_s===undefined?'—':q.gate_remaining_s+' s'],['Router adverts in window',num(q.gate_adverts)],['Role fault (R1)',yn(q.r1_role_fault),q.r1_role_fault===true?'bad':''],['Prefix fault (R3)',yn(q.r3_prefix_fault),q.r3_prefix_fault===true?'bad':''],['Interrupted session',yn(q.interrupted_session),q.interrupted_session===true?'bad':''],['Partition ID',val(q.partition_id)],['Leader router ID',val(q.leader_router_id)],['Routers heard',num(q.router_count)],['Transmissions blocked',num(q.tx_blocked)]]),
     group('Gateway endpoint protection (reported)',[['Enabled',yn(p.enabled),p.enabled===false?'warn':''],['Physical hold available',yn(p.physical_hold_available),p.physical_hold_available===false?'warn':''],['Hold requested',yn(p.hold_requested),p.hold_requested===true?'warn':''],['Hold asserted',yn(p.held),p.held===true?'warn':''],['State',val(p.state)],['Startup hold remaining',p.boot_hold_remaining_s===undefined?'—':p.boot_hold_remaining_s+' s',Number(p.boot_hold_remaining_s)>0?'warn':''],['Link lost',yn(p.link_lost),p.link_lost===true?'bad':''],['Timer error',yn(p.timer_error),p.timer_error===true?'bad':''],['Storage error',yn(p.storage_error),p.storage_error===true?'bad':''],['Hardware error',yn(p.hardware_error),p.hardware_error===true?'bad':''],['Watchdog error',yn(p.watchdog_error),p.watchdog_error===true?'bad':''],['Persistence pending',yn(p.persistence_pending),p.persistence_pending===true?'warn':''],['Violation',val(p.violation),p.violation&&p.violation!=='none'?'bad':''],['Recovering',yn(p.recovering),p.recovering===true?'warn':''],['Recovery state',val(p.recovery_state)]]),
     group('UART link',[['Bytes',num(s.uart_bytes)],['Frames OK',num(s.uart_frames_ok)],['CRC errors',num(s.uart_crc_errors),errTone(s.uart_crc_errors)]]),
+    ...(s.direct_routing&&typeof s.direct_routing==='object'?[routingGroup(s)]:[]),
     ...(out.kind!=='n4'?[group('Direct Zigbee output (reported)',[['Backend',out.kind==='direct'?'Direct Zigbee':val(out.reason)],['Output admitted',yn(dz.output_admitted),dz.output_admitted===true?'':'bad'],['Reason',val(dz.reason)],['Qualified for deployment',yn(dz.qualified_for_deployment),dz.qualified_for_deployment===true?'':'warn'],['Security continuity ready',yn(dz.security_continuity_ready)],['Authenticated readback ready',yn(dz.authenticated_readback_ready)],['Endpoint cache epoch ready',yn(dz.endpoint_cache_epoch_ready)],['Radio UART pins configured',yn(dz.pins_configured)],['Receiver started',yn(dz.receiver_started)],['Diagnostic HELLO in last 15 s',yn(dz.hello_online)],['Role (unverified claim)',dz.unverified_role===undefined?'—':zigbeeRole(dz.unverified_role)],['Bytes',num(dz.uart_bytes)],['Frames OK',num(dz.frames_ok)],['CRC errors',num(dz.crc_errors),errTone(dz.crc_errors)],['Valid HELLOs',num(dz.valid_hellos)],['Rejected HELLOs',num(dz.rejected_hellos),errTone(dz.rejected_hellos)]])]:[]),
     ...(zl?.enabled?[group('Zigbee member link (reported)',[['Responding',yn(zu.online===true&&zu.bidirectional===true),zl.tone==='good'?'':'warn'],['Last response',Number.isFinite(zu.last_response_age_ms)&&zu.last_response_age_ms>0?duration(zu.last_response_age_ms)+' ago':'—'],['UART2 TX / RX GPIO',`${val(zu.tx_gpio)} / ${val(zu.rx_gpio)}`],['Baud',num(zu.baud)],['Receiver started',yn(zu.receiver_started),zu.receiver_started===false?'warn':''],['Requests',num(zu.requests)],['Valid responses',num(zu.valid_responses)],['Rejected responses',num(zu.rejected_responses),errTone(zu.rejected_responses)],['Timeouts',num(zu.timeouts),errTone(zu.timeouts)],['Partial-line timeouts',num(zu.partial_timeouts),errTone(zu.partial_timeouts)],['Overflows',num(zu.overflows),errTone(zu.overflows)],['Send failures',num(zu.tx_failures),errTone(zu.tx_failures)],['Receiver errors',num(zu.receiver_errors),errTone(zu.receiver_errors)],['Device (claimed)',val(zu.device||null)],['Board (claimed)',val(zu.board||null)],['Base MAC (claimed)',val(zu.base_mac||null)],['IEEE address (claimed)',val(zu.ieee_address||null)],['Build SHA-256 (claimed)',typeof zu.build_elf_sha256==='string'&&zu.build_elf_sha256?zu.build_elf_sha256.slice(0,12)+'…':'—'],['Boot ID (claimed)',val(zu.boot_id||null)],['Role (claimed)',val(zu.role||null)],['Role verified (claim)',yn(zu.role_verified_claim)],['Member state (claimed)',val(zu.state||null)],['Radio (claimed)',val(zu.radio||null)],['Identity authenticated',yn(zu.identity_authenticated)],['RF membership verified',yn(zu.rf_membership_verified)]])]:[]),
     haGroup());
@@ -914,6 +938,50 @@ async function setMaintenance(enabled){
   if(latestStatus){latestStatus.diagnostics={...latestStatus.diagnostics,maintenance:result.maintenance,maintenance_remaining_ms:300000};health(latestStatus)}
   return true;
 }
+/* Ketra lamp inventory (/api/ketra): what direct Zigbee output drives. */
+let ketraData=null,ketraDirty=false;
+const ketraAddr=a=>a&&typeof a==='object'?`${a.pan}/${a.logical}`+(a.interface||a.channel||a.subchannel?`/${a.interface}/${a.channel}/${a.subchannel}`:''):'—';
+function ketraLampLine(live){if(!live)return ['Not routed',''];if(live.unreachable)return ['Unreachable','bad'];if(live.uncertain)return ['Uncertain; reading back','warn'];
+  const where=live.resolved?` · 0x${Number(live.short_address).toString(16).padStart(4,'0')}`:' · not resolved';
+  if(!('power' in live))return ['No reading'+where,live.resolved?'':'warn'];
+  return [(live.power?'On '+pct(live.level_x100):'Off')+(live.external_change?' · changed outside the bridge':'')+where,live.external_change?'warn':'good']}
+function renderKetra(){const d=ketraData,zones=Array.isArray(d?.zones)?d.zones:[],live=new Map((Array.isArray(d?.lamps_live)?d.lamps_live:[]).map(l=>[l.eui_wire,l]));
+  const groups=zones.map(z=>{const name=zoneInfo(z.zone_id)?.title||'Zone '+z.zone_id;const rows=[['Ketra group',z.group?`${z.group.pan}/${z.group.logical}`:'None (per-lamp only)']];
+    for(const l of Array.isArray(z.lamps)?z.lamps:[]){const [text,tone]=ketraLampLine(live.get(l.eui_wire));rows.push([`${l.eui_wire} · ${ketraAddr(l.logical)}`,text,tone])}
+    return group(name,rows)});
+  $('ketra-zones').replaceChildren(...groups);
+  const lamps=zones.reduce((n,z)=>n+(Array.isArray(z.lamps)?z.lamps.length:0),0);
+  $('ketra-pill').className='pill '+(d?.unsupported?'wait':d?.storage_error?'bad':lamps?'info':'wait');
+  $('ketra-pill').textContent=d?.unsupported?'Not supported':d?.storage_error?'Storage error':lamps?`${lamps} lamp${lamps===1?'':'s'}`:'No lamps';
+  $('ketra-apply').disabled=!d||d.unsupported;
+  if(!ketraDirty&&d&&!d.unsupported)$('ketra-json').value=JSON.stringify({source:d.source??null,zones},null,2);
+  $('ketra-note').textContent=d?.unsupported?'This gateway firmware has no Ketra inventory.':d?`Generation ${val(d.generation)} · ${zones.length} zone${zones.length===1?'':'s'}`+(d.unmatched_zones?` · ${d.unmatched_zones} not in the mapping`:'')+(d.source?` · gateway address ${ketraAddr(d.source)}`:' · no gateway address set'):''}
+async function loadKetra(){try{ketraData=await req('ketra');renderKetra()}catch(e){$('ketra-note').textContent='Ketra inventory unavailable: '+e.message}}
+/* Convert a lab inventory (zones keyed by name) to zone IDs using the mapping's names. */
+function labInventoryToKetra(lab,mapping){
+  if(!lab||lab.schema!=='ketra-lab-inventory-v1'||!lab.zones||typeof lab.zones!=='object')throw Error('expected a ketra-lab-inventory-v1 file');
+  const byName=new Map((mapping||[]).map(z=>[normName(z.name),z.zone_id])),zones=[],unmatched=[];
+  for(const [name,entry] of Object.entries(lab.zones)){const id=byName.get(normName(name));if(!id){unmatched.push(name);continue}
+    const members=Array.isArray(entry?.members)?entry.members:[];
+    const pan=members[0]?.logical?.pan??0;
+    zones.push({zone_id:id,group:Number.isInteger(entry.group)&&entry.group>0?{pan,logical:entry.group}:null,
+      lamps:members.map(m=>({eui_wire:String(m.eui_wire).toLowerCase(),logical:{pan:m.logical.pan,logical:m.logical.logical,interface:m.logical.interface,channel:m.logical.channel,subchannel:m.logical.subchannel}}))})}
+  return {zones,unmatched}}
+$('ketra-json').oninput=()=>{ketraDirty=true};
+$('ketra-reload').onclick=()=>{ketraDirty=false;loadKetra()};
+$('ketra-import-go').onclick=()=>{try{const lab=JSON.parse($('ketra-import').value),{zones,unmatched}=labInventoryToKetra(lab,configBase?.zones);
+  let current={};try{current=JSON.parse($('ketra-json').value)}catch(e){}
+  $('ketra-json').value=JSON.stringify({source:current.source??ketraData?.source??null,zones},null,2);ketraDirty=true;
+  $('ketra-import-note').textContent=`Converted ${zones.length} zone${zones.length===1?'':'s'}`+(unmatched.length?`; not in the mapping: ${unmatched.join(', ')}`:'')+'. Review, then Apply lamps.'}
+  catch(e){$('ketra-import-note').textContent='Import failed: '+e.message}};
+$('ketra-apply').onclick=async()=>{let doc;try{doc=JSON.parse($('ketra-json').value);if(!doc||typeof doc!=='object'||!('source' in doc)||!Array.isArray(doc.zones))throw Error('expected source and zones')}catch(e){$('ketra-note').textContent='Not applied: '+e.message;return}
+  if(!await confirmSheet('Apply Ketra lamps?','Direct Zigbee output will re-sync the lamp table with the Zigbee node and re-read every lamp. Lighting output pauses while maintenance is active.','Apply lamps'))return;
+  $('ketra-apply').disabled=true;
+  try{if(!await ensureMaintenance())throw Error('maintenance is required');
+    const r=await req('ketra',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({generation:ketraData.generation,hash:ketraData.hash,source:doc.source,zones:doc.zones})});
+    ketraDirty=false;$('ketra-note').textContent=`Saved generation ${val(r.generation)}. End maintenance when finished.`;setTimeout(loadKetra,1500)}
+  catch(e){$('ketra-note').textContent='Not applied: '+e.message}finally{$('ketra-apply').disabled=false}};
+
 async function ensureMaintenance(){
   if(latestStatus?.diagnostics?.maintenance)return true;
   return setMaintenance(true);
@@ -1022,5 +1090,5 @@ $('upload').onclick=async()=>{const f=firmwareFile;if(!f)return uploadNote('Choo
 for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}
-loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);refresh();$('reload-config').click();setInterval(refreshTick,1000);
+loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();$('reload-config').click();setInterval(refreshTick,1000);
 </script></body></html>

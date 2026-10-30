@@ -264,6 +264,51 @@ if(descendants(zoneCard()).some(n=>n.tag==='circle'&&(n.getAttribute('class')||'
 zonesView({zones:[]});if(!text(document.getElementById('zones')).includes('No bridged zones')) throw Error('empty zone list needs a message');
 applyHA({available:true,time_zone:'Europe/London',lights:[{entity_id:'light.k',name:'First Floor Kitchen kitchen',zone_id:'1379',serial:null}]});
 if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should match by Lutron zone ID');
+// Direct Zigbee output: the gateway holds commands and never reports them as delivered.
+{
+  const direct={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:false,qualified_for_deployment:false,security_continuity_ready:false,
+    authenticated_readback_ready:false,endpoint_cache_epoch_ready:false,reason:'production_contract_unavailable',pins_configured:false,receiver_started:false,
+    hello_online:false,unverified_role:0,uart_bytes:0,frames_ok:0,crc_errors:0,valid_hellos:0,rejected_hellos:0}};
+  health(direct);
+  if(!view('hero').className.includes('bad')||!(view('headline').textContent+view('headline-detail').textContent).includes('Lighting output held'))throw Error('a held direct Zigbee output must be the headline problem');
+  if(!view('node-n4').className.includes('bad')||view('label-n4').textContent!=='Zigbee output'||!view('detail-n4').textContent.includes('held'))throw Error('the topology must show the Zigbee output as held');
+  if(!text(view('summary')).includes('Held')||!text(view('health')).includes('Direct Zigbee output (reported)')||!text(view('health')).includes('production_contract_unavailable'))throw Error('overview must report the held backend and its reason');
+  if(!text(view('summary')).includes('Not driven'))throw Error('lamps must not be summarised as compared while output is held');
+  health({...direct,direct_zigbee:{...direct.direct_zigbee,output_admitted:'true'}});
+  if(!view('hero').className.includes('bad'))throw Error('only a boolean admission opens the direct output');
+  health({...status,output_backend:'something-new'});
+  if(view('hero').className.includes('good')||!text(view('summary')).includes('Unknown'))throw Error('an unrecognised backend must not look healthy');
+  health(status);
+  if(view('label-n4').textContent!=='N4 output'||text(view('health')).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
+  if(text(view('summary')).includes('Zigbee member'))throw Error('no Zigbee member tile without a reported link');
+  health({...status,zigbee_uart:{enabled:true,online:false,bidirectional:false,timeouts:3}});
+  if(!view('headline-detail').textContent.includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
+  health({...status,zigbee_uart:{enabled:true,online:true,bidirectional:true,role:'end_device',state:'disarmed',radio:'off',identity_authenticated:false,rf_membership_verified:false,build_elf_sha256:'a'.repeat(64)}});
+  const member=view('summary').children.find(c=>text(c).includes('Zigbee member'));
+  if(!member?.className.includes('good')||!text(member).includes('not RF membership'))throw Error('a responding member is a serial link, not RF membership');
+  if(!text(view('health')).includes('RF membership verified')||!text(view('health')).includes('Role (claimed)')||!text(view('health')).includes('aaaaaaaaaaaa…'))throw Error('member claims must be labelled as claims');
+  health({...status,zigbee_uart:{enabled:false}});
+  if(text(view('summary')).includes('Zigbee member')||!text(view('health')).includes('Not enabled'))throw Error('a disabled member link has no tile');
+  // Activity: a held command stays held, without a "no progress" timeout.
+  const heldGroups=groupEvents([typed(1,'requested',7,{requested:5000}),typed(2,'ketra-held',7,{requested:5000})]);
+  health({...direct,gateway_uptime_ms:10_000_000});
+  const heldSum=commandSummary(heldGroups[0]),heldSteps=commandSteps(heldGroups[0]);
+  if(heldGroups.length!==1||heldSum.label!=='Held at the bridge · direct Zigbee output not admitted'||heldSum.tone!=='warn')throw Error('a held command must group with its request and say it is held: '+heldSum.label);
+  if(heldSteps[1][0]!=='To lamps'||heldSteps[1][1]!=='warn'||heldSteps[2][1]!=='skip')throw Error('held steps must not wait for a hub');
+  if(!text(stepLevels({stage:'ketra-held',requested:5000})[0]).includes('Held'))throw Error('the held step shows the held level');
+  eventView({boot_id:'held',next:3,oldest:1,lost:0,events:[typed(1,'requested',7,{requested:5000}),typed(2,'ketra-held',7,{requested:5000})]});
+  document.getElementById('filter-problems').checked=true;renderEvents();
+  if(rows().length!==1||!text(rows()[0]).includes('Held at the bridge'))throw Error('held commands belong under Problems only');
+  document.getElementById('filter-problems').checked=false;renderEvents();
+  // Lamp card: the bridge is holding, and a held output outranks everything else.
+  health(direct);deviceView(deviceSnapshot);
+  zonesView({...zoneSnapshot,output:{backend:'direct_zigbee',admitted:false},zones:[{...matchZone,output:'direct_zigbee',lamp:null,
+    sent:{level_x100:5000,held:true,seq:3,age_ms:1,fade_ms:0,delay_ms:0},checks:[{key:'output',status:'bad',title:'Lighting output held: direct Zigbee not admitted'}],
+    verdict:{tone:'bad',title:'Lighting output held: direct Zigbee not admitted'}}]});
+  if(!zoneCard().className.includes('bad')||!text(zoneCard()).includes('Bridge holding')||!text(zoneCard()).includes('Not sent')||!text(zoneCard()).includes('no lamp readings'))throw Error('a held lamp card must say the bridge is holding');
+  if(!view('device-note').textContent.startsWith('Lighting output is held'))throw Error('the lights note must explain the held output');
+  health(status);deviceView(deviceSnapshot);zonesView(zoneSnapshot);
+}
 `;
 const mappingChecks=`
 (async()=>{

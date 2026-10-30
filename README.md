@@ -37,7 +37,10 @@ The dashboard uses Home Assistant ingress; it does not expose a separate LAN
 web port. Events are archived on the HA host for seven days with a daily size
 limit. With an MQTT broker app such as Mosquitto, each bridged zone also gets
 Natural Show sensors in Home Assistant: its active show, what the show calls
-for now, what the bridge sent, and what N4 confirmed. See the [app documentation](c6-live-bridge/README.md) for API details.
+for now, what the bridge sent, and what N4 confirmed. On gateways with the direct Zigbee
+output option, the dashboard shows which output the gateway drives, flags
+commands held while that output is not admitted, and reports the read-only
+Zigbee member link. See the [app documentation](c6-live-bridge/README.md) for API details.
 
 ## Development
 

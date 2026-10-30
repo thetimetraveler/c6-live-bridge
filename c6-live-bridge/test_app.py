@@ -579,6 +579,7 @@ class ShowCollectorTests(unittest.TestCase):
     ZONES=[{"zone":0,"zone_id":30861,"serial":90130861,"name":"office","requested":{"flags":3,"level_x100":4950,"cct":2442},
             "confirmed":{"level_x100":4950,"source":"observed"}},
            {"zone":1,"zone_id":0,"serial":0,"name":"spare"}]
+    STATUS_EXTRA={}
     PROGRAM={"serial":90130861,"programmed":True,"selected":True,"show":31779,"members":[30861],"presets":[],
              "shows":[{"id":31779,"knots":SHOW_31779}],"brightness_override_x100":None}
 
@@ -594,7 +595,8 @@ class ShowCollectorTests(unittest.TestCase):
                     return self.program_code,"application/json",json.dumps(test.PROGRAM).encode()
                 code,ct,raw=super().request(path,method,body,content_type)
                 if path.startswith("/api/snapshot"):
-                    data=json.loads(raw);data["devices"]={"zones":test.ZONES};raw=json.dumps(data).encode()
+                    data=json.loads(raw);data["devices"]={"zones":test.ZONES};data["status"].update(test.STATUS_EXTRA)
+                    raw=json.dumps(data).encode()
                 return code,ct,raw
         self.gateway=Gateway()
         self.panel=app.Panel(self.gateway,app.EventArchive(Path(self.tmp.name)/"events"))
@@ -646,7 +648,7 @@ class ShowCollectorTests(unittest.TestCase):
         self.assertEqual(self.mqtt.topics("ccx_bridge/status"),[("ccx_bridge/status","offline",True)])
         self.collect();self.collect()
         self.mqtt.messages.clear();self.sensors.step()
-        configs=self.mqtt.topics("/config")
+        configs=[c for c in self.mqtt.topics("/config") if "ccx_bridge_gateway" not in c[0]]
         self.assertEqual(len(configs),len(app.SHOW_SENSORS))
         self.assertTrue(all(c[0].startswith("homeassistant/sensor/ccx_bridge_30861/") and c[2] for c in configs))
         show=json.loads(next(c[1] for c in configs if "/active_show/" in c[0]))
@@ -654,8 +656,9 @@ class ShowCollectorTests(unittest.TestCase):
                          ("ccx_bridge_30861_active_show","CCX Bridge office","90130861"))
         self.assertEqual(show["availability_topic"],"ccx_bridge/status")
         self.assertEqual(json.loads(next(c[1] for c in configs if "/target_cct/" in c[0]))["unit_of_measurement"],"K")
-        (topic,payload,retain),=self.mqtt.topics("/state")
+        (topic,payload,retain),=[m for m in self.mqtt.topics("/state") if "/zone/" in m[0]]
         state=json.loads(payload)
+        self.assertEqual((state["attributes"]["output_backend"],state["attributes"]["output_held"]),("n4",False))
         self.assertEqual((topic,retain),("ccx_bridge/zone/30861/state",True))
         self.assertEqual((state["active_show"],state["target_cct"],state["requested_cct"]),("31779",2442,2442))
         self.assertEqual(state["attributes"]["time_zone"],"Europe/London")
@@ -667,6 +670,37 @@ class ShowCollectorTests(unittest.TestCase):
         self.assertEqual(len(self.mqtt.topics("/config")),len(app.SHOW_SENSORS))
         self.assertTrue(all(m[1]=="" and m[2] for m in self.mqtt.topics("/config")+self.mqtt.topics("/state")))
         self.assertEqual(self.mqtt.topics("ccx_bridge/status")[-1][1],"offline")
+
+    def test_gateway_sensors_report_output_backend_and_zigbee_member_link(self):
+        self.collect();self.sensors.step()
+        configs=[c for c in self.mqtt.topics("/config") if c[0].startswith("homeassistant/sensor/ccx_bridge_gateway/")]
+        self.assertEqual(len(configs),len(app.GATEWAY_SENSORS))
+        output=json.loads(next(c[1] for c in configs if "/lighting_output/" in c[0]))
+        self.assertEqual((output["unique_id"],output["entity_category"],output["device"]["name"]),
+                         ("ccx_bridge_gateway_lighting_output","diagnostic","CCX Bridge Gateway"))
+        state=json.loads(self.mqtt.topics("ccx_bridge/gateway/state")[-1][1])
+        # Older gateways report no backend: they always write to N4 and have no Zigbee link.
+        self.assertEqual((state["lighting_output"],state["zigbee_member_link"]),("n4","unknown"))
+        self.STATUS_EXTRA={"output_backend":"direct_zigbee",
+            "direct_zigbee":{"output_admitted":False,"qualified_for_deployment":False,"security_continuity_ready":False,
+                             "authenticated_readback_ready":False,"endpoint_cache_epoch_ready":False,
+                             "reason":"production_contract_unavailable","hello_online":True},
+            "zigbee_uart":{"enabled":True,"online":True,"bidirectional":True,"state":"disarmed","radio":"off",
+                           "role":"end_device","role_verified_claim":False,"boot_id":7,"valid_responses":3,
+                           "identity_authenticated":False,"rf_membership_verified":False,"base_mac":"10:bd:a3:b1:5b:f0"}}
+        self.collect();self.collect();self.mqtt.messages.clear();self.sensors.step()
+        state=json.loads(self.mqtt.topics("ccx_bridge/gateway/state")[-1][1])
+        self.assertEqual((state["lighting_output"],state["zigbee_member_link"]),("direct_zigbee_held","online"))
+        self.assertEqual(state["attributes"]["output_reason"],"production_contract_unavailable")
+        self.assertIs(state["attributes"]["direct_zigbee"]["hello_online"],True)
+        self.assertIs(state["attributes"]["zigbee_member"]["rf_membership_verified"],False)
+        self.assertNotIn("base_mac",state["attributes"]["zigbee_member"])
+        zone=json.loads([m for m in self.mqtt.topics("/state") if "/zone/" in m[0]][-1][1])
+        self.assertEqual((zone["attributes"]["output_backend"],zone["attributes"]["output_held"]),("direct_zigbee",True))
+        self.STATUS_EXTRA={"zigbee_uart":{"enabled":True,"online":True,"bidirectional":False}}
+        self.collect();self.collect();self.sensors.step()
+        state=json.loads(self.mqtt.topics("ccx_bridge/gateway/state")[-1][1])
+        self.assertEqual((state["lighting_output"],state["zigbee_member_link"]),("n4","offline"))
 
     def test_gateway_timezone_overrides_home_assistant_for_show_targets(self):
         self.collect();self.collect();self.sensors.step()
@@ -819,6 +853,49 @@ class ZoneSummaryTests(unittest.TestCase):
         a=dict(a,zone_id=None,serial="90131467");b=dict(b,zone_id=None,serial="90131467")
         self.assertIsNone(app.match_light({"serial":90131467},[a,b]))
         self.assertIsNone(app.match_light({"name":"sitting room lamp"},[a,b]))
+
+    def test_output_backend_parsing(self):
+        self.assertEqual(app.output_state({}),{"backend":"n4","admitted":True,"reason":None})
+        self.assertEqual(app.output_state({"output_backend":"n4","direct_zigbee":{"output_admitted":False}})["admitted"],True)
+        held=app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":False,"reason":"production_contract_unavailable"}})
+        self.assertEqual(held,{"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable"})
+        self.assertFalse(app.output_state({"output_backend":"direct_zigbee"})["admitted"])
+        self.assertFalse(app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":"true"}})["admitted"])
+        self.assertTrue(app.output_state({"output_backend":"direct_zigbee","direct_zigbee":{"output_admitted":True}})["admitted"])
+        self.assertEqual(app.output_state({"output_backend":"mystery"}),{"backend":"unknown","admitted":False,"reason":"mystery"})
+        self.assertEqual(app.output_state(None)["backend"],"unknown")
+        self.assertEqual([app.zigbee_link_state(s) for s in ({},{"zigbee_uart":{"enabled":False}},
+                          {"zigbee_uart":{"enabled":True,"online":True,"bidirectional":True}},
+                          {"zigbee_uart":{"enabled":True,"online":True,"bidirectional":False}},{"zigbee_uart":{"enabled":"yes"}})],
+                         ["unknown","not_enabled","online","offline","unknown"])
+
+    def test_held_direct_output_never_claims_delivery_or_a_lamp_reading(self):
+        held={"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable"}
+        cmd={"flags":1,"level_x100":5000,"seq":4}
+        # A reading left over from N4 must not be shown as the lamp's state on the Zigbee output.
+        s=app.zone_summary(bridged(5000,requested=cmd),self.program(False),10,at(12),light("on",128),100_000,held)
+        self.assertEqual(s["verdict"],{"tone":"bad","title":"Lighting output held: direct Zigbee not admitted"})
+        self.assertIsNone(s["lamp"]);self.assertTrue(s["sent"]["held"]);self.assertEqual(s["output"],"direct_zigbee")
+        self.assertEqual(self.statuses(s)["output"],"bad");self.assertNotIn("hub",self.statuses(s))
+        self.assertNotIn("good",self.statuses(s).values())
+        normal=app.zone_summary(bridged(5000,requested=cmd),self.program(False),10,at(12),light("on",128),100_000)
+        self.assertFalse(normal["sent"]["held"]);self.assertNotIn("output",self.statuses(normal))
+        unknown=app.zone_summary(bridged(5000,requested=cmd),self.program(False),10,at(12),light("on",128),100_000,
+                                 {"backend":"unknown","admitted":False,"reason":"mystery"})
+        self.assertEqual(unknown["verdict"]["tone"],"wait");self.assertIsNone(unknown["lamp"])
+        admitted=app.zone_summary(bridged(5000,requested=cmd),self.program(False),10,at(12),light("on",128),100_000,
+                                  {"backend":"direct_zigbee","admitted":True,"reason":None})
+        self.assertEqual(admitted["verdict"],{"tone":"wait","title":"Lamp state unavailable on this output"})
+        self.assertFalse(admitted["sent"]["held"])
+
+    def test_zone_route_reports_the_output_backend(self):
+        panel=app.Panel(StubGateway(),app.EventArchive(tempfile.mkdtemp()))
+        panel.cache["devices"]=({"config_hash":7,"zones":[bridged(10000)]},app.time.monotonic())
+        panel.cache["status"]=({"config_hash":7,"gateway_uptime_ms":100_000,"output_backend":"direct_zigbee",
+                                "direct_zigbee":{"output_admitted":False,"reason":"production_contract_unavailable"}},app.time.monotonic())
+        result=panel.zone_summaries({"available":True,"lights":[light("off")]},lambda tz:(at(14,28),"UTC"))
+        self.assertEqual(result["output"]["backend"],"direct_zigbee");self.assertFalse(result["output"]["admitted"])
+        self.assertEqual(result["zones"][0]["verdict"]["title"],"Lighting output held: direct Zigbee not admitted")
 
     def test_zone_route_uses_cache_only_and_asks_for_programming(self):
         gateway=StubGateway();panel=app.Panel(gateway,app.EventArchive(tempfile.mkdtemp()))

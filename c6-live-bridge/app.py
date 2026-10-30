@@ -485,9 +485,48 @@ def _check(key, status, title, detail=""):
     return {"key": key, "status": status, "title": title, "detail": detail}
 
 
-def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
+N4_OUTPUT = {"backend": "n4", "admitted": True, "reason": None}
+
+
+def output_state(status):
+    """The gateway's lighting output backend and whether it admits commands.
+
+    Gateways before the direct Zigbee option omit output_backend and always write to N4.
+    The direct backend is admitted only when the gateway itself says so; its readiness
+    flags are reported for display and never open admission here.
+    """
+    if not isinstance(status, dict):
+        return {"backend": "unknown", "admitted": False, "reason": None}
+    backend = status.get("output_backend", "n4")
+    if backend == "n4":
+        return dict(N4_OUTPUT)
+    direct = status.get("direct_zigbee") if isinstance(status.get("direct_zigbee"), dict) else {}
+    if backend == "direct_zigbee":
+        return {"backend": backend, "admitted": direct.get("output_admitted") is True,
+                "reason": clean_text(direct.get("reason"), 64)}
+    return {"backend": "unknown", "admitted": False, "reason": clean_text(backend, 32)}
+
+
+def zigbee_link_state(status):
+    """The read-only Zigbee member UART link: not_enabled, online, offline or unknown."""
+    link = status.get("zigbee_uart") if isinstance(status, dict) else None
+    if not isinstance(link, dict) or type(link.get("enabled")) is not bool:
+        return "unknown"
+    if not link["enabled"]:
+        return "not_enabled"
+    return "online" if link.get("online") is True and link.get("bidirectional") is True else "offline"
+
+
+def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, output=N4_OUTPUT):
     """One bridged zone: what Lutron shows, what the bridge sent, what the lamp reports, and whether they agree."""
     sent, reported_lamp, lutron = _sent(zone, uptime_ms), _lamp(zone, uptime_ms), _lutron(light)
+    # Without an admitted output the gateway records each command and holds it in the
+    # zone's mailbox; nothing reaches a lamp, and N4 readings are never relabelled as Zigbee.
+    held = not output["admitted"]
+    if sent is not None:
+        sent["held"] = held
+    if output["backend"] != "n4":
+        reported_lamp = None
     # APPLIED may be REST acceptance of the requested state, not a readback.
     # Retain it for display, but compare only fresh observed/corrected readings.
     lamp = (reported_lamp if reported_lamp and reported_lamp["source"] in ("observed", "correction")
@@ -495,6 +534,18 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
     show = _show(program, program_age_s, local_ms)
     running = show["status"] == "running" and "target" in show
     checks = []
+
+    # 0. Can the bridge's commands reach the lamp at all?
+    if output["backend"] == "direct_zigbee" and held:
+        checks.append(_check("output", "bad", "Lighting output held: direct Zigbee not admitted",
+                             "The gateway is built for direct Zigbee output, which does not admit commands yet. "
+                             "Commands from Lutron are held at the bridge and not sent to the lamp."))
+    elif output["backend"] == "unknown":
+        checks.append(_check("output", "unknown", "Lighting output backend not recognised",
+                             f"The gateway reports {output['reason'] or 'no recognised backend'}."))
+    elif output["backend"] == "direct_zigbee":
+        checks.append(_check("output", "info", "Direct Zigbee output",
+                             "The gateway does not report direct Zigbee lamp readings, so the lamp can't be compared."))
 
     # 1. Lamp against Lutron: the question "is the light where Lutron thinks it is?"
     if lutron is None:
@@ -549,7 +600,9 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
                                  f"Hub reading matches {what}{' and colour' if level else ''} for this minute."))
 
     # 3. Lamp against the bridge's last command.
-    if sent is None or sent["level_x100"] is None:
+    if output["backend"] != "n4":
+        pass  # covered by the output check; there is no hub to confirm
+    elif sent is None or sent["level_x100"] is None:
         checks.append(_check("hub", "info", "No brightness command since the gateway started"))
     elif lamp is None:
         checks.append(_check("hub", "wait", "Waiting for the hub to confirm"))
@@ -569,6 +622,8 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
     worst = min(checks, key=lambda c: CHECK_ORDER[c["status"]])
     if worst["status"] in ("bad", "warn"):
         verdict = {"tone": worst["status"], "title": worst["title"]}
+    elif output["backend"] != "n4":
+        verdict = {"tone": "wait", "title": "Lamp state unavailable on this output"}
     elif lamp is None:
         verdict = {"tone": "wait", "title": "Waiting for a hub reading"}
     elif lutron is None or lutron["on"] is None:
@@ -579,7 +634,8 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms):
         verdict = {"tone": "good", "title": "In sync · following Natural Show" if running else "In sync"}
     return {"zone": zone.get("zone"), "zone_id": zone.get("zone_id"), "name": zone.get("name"),
             "n4_group": zone.get("n4_group"), "serial": zone.get("serial"),
-            "lutron": lutron, "sent": sent, "lamp": reported_lamp, "show": show, "checks": checks, "verdict": verdict}
+            "lutron": lutron, "sent": sent, "lamp": reported_lamp, "show": show, "checks": checks, "verdict": verdict,
+            "output": output["backend"]}
 
 
 def show_clock(gateway_zone, ha_time_zone, now):
@@ -714,16 +770,17 @@ class Panel:
                    and type(device_hash) is int and 0 <= device_hash <= 0xffffffff
                    and type(status_hash) is int and status_hash == device_hash and not inputs["delayed"])
         lights = ha_snapshot.get("lights") if isinstance(ha_snapshot, dict) and ha_snapshot.get("available") else None
+        output = output_state(inputs["status"])
         zones = []
         for zone in inputs["zones"]:
             program, age = inputs["programs"].get(zone.get("zone"), (None, None))
-            summary = zone_summary(zone, program, age, local_ms, match_light(zone, lights) if lights else None, uptime)
+            summary = zone_summary(zone, program, age, local_ms, match_light(zone, lights) if lights else None, uptime, output)
             if not current:
                 summary["checks"] = [_check("monitoring", "unknown", "Current comparison unavailable", "Gateway monitoring is delayed or unavailable.")]
                 summary["verdict"] = {"tone": "wait", "title": "Current comparison unavailable"}
             zones.append(summary)
         return {"zones": zones, "config_hash": device_hash, "time_zone": tz_name, "local_ms": local_ms,
-                "home_assistant": lights is not None, "age_s": inputs["age_s"],
+                "home_assistant": lights is not None, "age_s": inputs["age_s"], "output": output,
                 "monitoring": {"age_s": max(status_age, inputs["age_s"]) if status_age is not None and inputs["age_s"] is not None else None,
                                "status_age_s": status_age, "device_age_s": inputs["age_s"],
                                "delayed": inputs["delayed"] or not current}}
@@ -1037,6 +1094,39 @@ SHOW_SENSORS = (
 )
 
 
+GATEWAY_SENSORS = (
+    # key, name, icon
+    ("lighting_output", "Lighting output", "mdi:lightbulb-on-outline"),
+    ("zigbee_member_link", "Zigbee member link", "mdi:zigbee"),
+)
+# Read-only UART claims worth seeing in Home Assistant; none is identity or RF evidence.
+ZIGBEE_LINK_ATTRIBUTES = ("state", "radio", "role", "role_verified_claim", "boot_id", "build_elf_sha256",
+                          "requests", "valid_responses", "rejected_responses", "timeouts", "last_response_age_ms",
+                          "identity_authenticated", "rf_membership_verified")
+
+
+def gateway_state(status):
+    """Gateway-wide sensor values: which output the bridge drives and whether the Zigbee member answers."""
+    output = output_state(status) if isinstance(status, dict) else None
+    if output is None:
+        lighting = None
+    elif output["backend"] == "direct_zigbee":
+        lighting = "direct_zigbee" if output["admitted"] else "direct_zigbee_held"
+    else:
+        lighting = output["backend"]
+    link = status.get("zigbee_uart") if isinstance(status, dict) and isinstance(status.get("zigbee_uart"), dict) else {}
+    direct = status.get("direct_zigbee") if isinstance(status, dict) and isinstance(status.get("direct_zigbee"), dict) else {}
+    return {"lighting_output": lighting,
+            "zigbee_member_link": zigbee_link_state(status) if isinstance(status, dict) else None,
+            "attributes": {"output_admitted": output["admitted"] if output else None,
+                           "output_reason": output["reason"] if output else None,
+                           "direct_zigbee": {k: direct[k] for k in ("qualified_for_deployment", "security_continuity_ready",
+                                                                    "authenticated_readback_ready", "endpoint_cache_epoch_ready",
+                                                                    "hello_online") if type(direct.get(k)) is bool},
+                           "zigbee_member": {k: link[k] for k in ZIGBEE_LINK_ATTRIBUTES
+                                             if type(link.get(k)) in (bool, int) or isinstance(link.get(k), str) and len(link[k]) <= 64}}}
+
+
 class ShowSensors:
     """Per-zone Natural Show diagnostics, published to Home Assistant through MQTT discovery.
 
@@ -1074,6 +1164,18 @@ class ShowSensors:
                 config.update(json_attributes_topic=state_topic, json_attributes_template="{{ value_json.attributes | tojson }}")
             yield f"homeassistant/sensor/{self.PREFIX}_{zone_id}/{key}/config", json.dumps(config, separators=(",", ":"))
 
+    def gateway_discovery(self):
+        state_topic = f"{self.PREFIX}/gateway/state"
+        device = {"identifiers": [f"{self.PREFIX}_gateway"], "name": "CCX Bridge Gateway",
+                  "manufacturer": "CCX Bridge", "model": "C6 bridge gateway"}
+        for key, label, icon in GATEWAY_SENSORS:
+            config = {"name": label, "unique_id": f"{self.PREFIX}_gateway_{key}", "state_topic": state_topic,
+                      "value_template": "{{ value_json.%s }}" % key, "availability_topic": self.AVAILABILITY,
+                      "icon": icon, "device": device, "entity_category": "diagnostic",
+                      "json_attributes_topic": state_topic, "json_attributes_template": "{{ value_json.attributes | tojson }}",
+                      "origin": {"name": "CCX Bridge", "support_url": "https://github.com/thetimetraveler/c6-live-bridge"}}
+            yield f"homeassistant/sensor/{self.PREFIX}_gateway/{key}/config", json.dumps(config, separators=(",", ":"))
+
     def remove(self, zone_id):
         for key, *_ in SHOW_SENSORS:
             self.client.publish(f"homeassistant/sensor/{self.PREFIX}_{zone_id}/{key}/config", b"", retain=True)
@@ -1083,11 +1185,20 @@ class ShowSensors:
         inputs = self.panel.show_inputs()
         available = inputs["age_s"] is not None and inputs["age_s"] <= SNAPSHOT_STALE_S
         local_ms, tz_name = self.local_ms(inputs.get("timezone"))
+        output = output_state(inputs["status"])
+        if "gateway" not in self.discovered:
+            for topic, config in self.gateway_discovery():
+                self.client.publish(topic, config, retain=True)
+            self.discovered["gateway"] = True
+        gateway = json.dumps(gateway_state(inputs["status"]), separators=(",", ":"), sort_keys=True)
+        if self.published.get("gateway") != gateway:
+            self.client.publish(f"{self.PREFIX}/gateway/state", gateway, retain=True)
+            self.published["gateway"] = gateway
         zones = {}
         for zone in inputs["zones"]:
             if type(zone.get("zone_id")) is int and zone["zone_id"] > 0 and type(zone.get("serial")) is int and zone["serial"] > 0:
                 zones[zone["zone_id"]] = zone
-        for zone_id in [z for z in self.discovered if z not in zones]:
+        for zone_id in [z for z in self.discovered if z != "gateway" and z not in zones]:
             self.remove(zone_id)
             del self.discovered[zone_id]
             self.published.pop(zone_id, None)
@@ -1100,6 +1211,8 @@ class ShowSensors:
             program, age = inputs["programs"].get(zone.get("zone"), (None, None))
             state = zone_show_state(zone, program, age, local_ms)
             state["attributes"]["time_zone"] = tz_name
+            # Requested values are what Lutron asked the bridge for; while output is held they were not sent.
+            state["attributes"].update(output_backend=output["backend"], output_held=not output["admitted"])
             payload = json.dumps(state, separators=(",", ":"), sort_keys=True)
             if self.published.get(zone_id) != payload:
                 self.client.publish(f"{self.PREFIX}/zone/{zone_id}/state", payload, retain=True)

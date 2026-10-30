@@ -1,3 +1,13 @@
+## 0.9.0
+
+- Support gateways built with the direct Zigbee output option. The topology, Overview and Diagnostics show which output the gateway drives (`output_backend`). While the direct Zigbee output is not admitted, every Lutron command is held at the gateway: the Overview names this as the problem, the output node shows "held · not admitted", lamp cards show **Bridge holding** with "Not sent", and readings left over from N4 are never shown as the lamp's state.
+- Show the new `ketra-held` activity step as "Held · direct Zigbee output not admitted", grouped with its command and listed under **Problems only**. A held command does not time out into "No progress".
+- Add a **Direct Zigbee output (reported)** diagnostics group with admission, its reason, the readiness flags and the receive-only diagnostic UART counters.
+- Show the read-only Zigbee member UART link (`zigbee_uart`): a **Zigbee member** tile and a diagnostics group with its counters and the member's claims (device, addresses, build digest, boot, role, state, radio). Claims are labelled as claims; a responding link is not shown as identity or RF membership.
+- `/api/zones` adds `output` (backend, admitted, reason) and each zone's `output`; a zone with a held output gets an `output` check and `sent.held`.
+- With show sensors enabled, add a **CCX Bridge Gateway** device with diagnostic **Lighting output** (`n4`, `direct_zigbee_held`, `direct_zigbee`) and **Zigbee member link** (`online`, `offline`, `not_enabled`, `unknown`) sensors. Each zone's Active show attributes add `output_backend` and `output_held`.
+- Gateways that do not report an output backend are treated as N4, as before.
+
 ## 0.8.1
 
 - Estimate the 5-minute stability window in the startup sequence from the endpoint's uptime, restarting it when the endpoint reboots or its router-advert count drops. A window already under way when the dashboard opens is shown as an upper bound.

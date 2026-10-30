@@ -1,8 +1,8 @@
 name: CCX Bridge
-version: 0.8.1
+version: 0.9.0
 slug: c6-live-bridge
 url: https://github.com/thetimetraveler/c6-live-bridge
-description: Ingress dashboard for C6 bridge health, endpoints, events, configuration, and firmware
+description: Ingress dashboard for C6 bridge health, endpoints, lighting output (N4 or direct Zigbee), events, configuration, and firmware
 arch:
   - aarch64
   - amd64

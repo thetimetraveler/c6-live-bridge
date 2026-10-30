@@ -38,6 +38,9 @@ The cache and seven-day archive preserve new fields without extra polling.
   the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
   from cached data and never adds gateway requests)
 
+`/api/status` is forwarded as the gateway reports it, including `output_backend`,
+`direct_zigbee` and `zigbee_uart` on gateways that have them (see below).
+
 Only these methods and paths are accepted. Gateway responses are capped at 1 MiB; ordinary connections have finite timeouts, while firmware and programming transfers use a five-minute timeout. Firmware is forwarded byte-for-byte with a SHA-256 digest computed by the proxy and sent in `X-SHA256`. Query values are parsed as bounded integers. A gateway timeout or disconnect is shown as unavailable and retried by the dashboard. Event polling resumes from the latest delivered event ID, rewinds on a gateway boot ID change, and surfaces reported cursor gaps.
 
 Configuration writes must contain exactly `generation`, `hash`, and `zones`; the gateway owns validation and transaction semantics. Each zone mapping can include `zone_id`, `name`, `n4_group`, `serial`, and `warm_dim_curve`. Keep firmware images within the endpoint's supported format and size; the add-on does not transform firmware bytes.
@@ -212,3 +215,68 @@ unavailable. The collector reads the gateway setting every 30 seconds and the
 show sensors and programming chart use it, including daylight-saving changes.
 If a gateway reports an unrecognized legacy POSIX rule, target values remain
 unknown instead of silently using a different time zone.
+
+
+## Direct Zigbee output and the Zigbee member link (0.9.0)
+
+The gateway firmware is gaining a direct Zigbee output, so it can drive the
+Ketra lamps itself instead of writing to the N4 hub over WSS/TLS. The app reads
+what the gateway reports in `/api/status` and never decides on its own that
+the direct output is usable.
+
+**Lighting output.** `output_backend` is `n4` or `direct_zigbee`. Gateways
+that omit it write to N4, as before. With `direct_zigbee`, the output is in use
+only when `direct_zigbee.output_admitted` is `true`. Current firmware keeps it
+closed (`reason: production_contract_unavailable`): the gateway records each
+Lutron command, holds the newest one per zone in its mailbox and sends nothing.
+While output is held:
+
+- the Overview headline reads "Lighting output held: direct Zigbee output is
+  not admitted", the **Lighting output** tile shows **Held**, and the topology's
+  output node is labelled **Zigbee output · held · not admitted**;
+- each lamp card's middle column is **Bridge holding** with "Not sent", its
+  verdict is the held output, and the Lamp column shows no reading. The
+  gateway does not forward N4 observations as Zigbee readings, so the app
+  never compares the lamp against old N4 values;
+- the Activity tab shows the gateway's `ketra-held` step as
+  "Held · direct Zigbee output not admitted". It groups with the command's
+  `requested` step, appears under **Problems only**, and is not turned into
+  "No progress" after two minutes;
+- **Diagnostics → Direct Zigbee output (reported)** lists admission and its
+  reason, the deployment, security-continuity, authenticated-readback and
+  endpoint-cache-epoch readiness flags, and the receive-only diagnostic UART
+  counters (HELLOs, frames, CRC errors). The HELLO role is shown as an
+  unverified claim.
+
+An unrecognised `output_backend` is shown as unknown and never as healthy.
+
+**Zigbee member link.** A gateway built with the read-only UART2 link to a
+separate Zigbee member C6 reports `zigbee_uart`. When `enabled` is `true`, the
+Overview adds a **Zigbee member** tile (**Responding** when the link is
+`online` and `bidirectional`) and Diagnostics adds **Zigbee member link
+(reported)** with the request, response, timeout and error counters and the
+member's claims: device, board, base MAC, IEEE address, build digest, boot ID,
+role, state and radio. These are unauthenticated serial claims; the gateway
+reports `identity_authenticated` and `rf_membership_verified` as `false`, and
+the app labels them that way. A responding link does not show that the member
+is on the Ketra network or that lamps are reachable. A silent link is listed as
+a warning on the Overview.
+
+**`/api/zones`** adds `output` (`backend`, `admitted`, `reason`), and each zone
+adds `output`. With a held output a zone carries an `output` check, its `sent`
+record has `held: true`, and `lamp` is `null`.
+
+**MQTT.** With show sensors enabled, a **CCX Bridge Gateway** device adds two
+diagnostic sensors:
+
+| Sensor | States |
+|---|---|
+| Lighting output | `n4`, `direct_zigbee_held`, `direct_zigbee` |
+| Zigbee member link | `online`, `offline`, `not_enabled`, `unknown` (gateway does not report the link) |
+
+Their attributes hold admission, its reason, the direct Zigbee readiness flags
+and a subset of the member's claims and counters (no addresses). Each zone's
+Active show sensor adds `output_backend` and `output_held`. While output is
+held, a zone's **Requested** sensors show what Lutron asked the bridge for,
+which was not sent. To be told when lighting output is held, trigger an
+automation on **Lighting output** changing to `direct_zigbee_held`.

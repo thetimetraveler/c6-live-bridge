@@ -10,4 +10,4 @@ configuration:
     description: Home Assistant integrations whose lights are used to label zones, show areas and live state. Zones are matched by serial number, then by name.
   show_sensors:
     name: Show sensors
-    description: Publish each bridged zone's active Natural Show, show target, requested color temperature and brightness, and confirmed brightness to Home Assistant through MQTT discovery. Needs an MQTT broker app such as Mosquitto.
+    description: Publish each bridged zone's active Natural Show, show target, requested color temperature and brightness, and confirmed brightness, plus the gateway's lighting output and Zigbee member link, to Home Assistant through MQTT discovery. Needs an MQTT broker app such as Mosquitto.

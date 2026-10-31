@@ -34,6 +34,7 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/timezone`, `PUT /api/timezone` (gateway show time zone, when supported)
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
 - `GET /api/ketra`, `PUT /api/ketra` (Ketra lamp inventory for direct Zigbee output, when supported)
+- `POST /api/zigbee/enroll`, `POST /api/zigbee/update` (gateway-hosted Zigbee node: enrollment and signed firmware, maintenance only)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 - `GET /api/zones` (per-zone sync summary served by the add-on: Lutron state, the bridge's last command,
   the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
@@ -310,3 +311,16 @@ Gateways without the inventory show the card as not supported.
 The MQTT **Lighting output** sensor reports `n4_fallback` while a hybrid
 gateway is on N4, so an automation can notify you when direct Zigbee drops
 out.
+
+## Zigbee node session and firmware (0.11.0)
+
+Gateways that host the Zigbee node's session (it is powered from the gateway
+and has no USB in service) re-arm it after every restart. **Zigbee node** in
+Setup shows its state. After the one supervised USB install and first join,
+enter maintenance and press **Enroll node** while the node has just started;
+the gateway then keeps its own journal of the node's record. If the Overview
+reports a **record mismatch**, the node is held: find out why (for example a
+restored or replaced board) before enrolling again. **Update node firmware**
+sends a signed node image through the gateway; direct lighting pauses while it
+transfers (a hybrid gateway uses N4), and the node rolls back unless the
+gateway resumes the new image.

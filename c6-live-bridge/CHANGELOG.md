@@ -1,3 +1,10 @@
+## 0.11.0
+
+- Add a **Zigbee node** card in Setup for gateways that host the node's session: its state (running, resuming, not enrolled, record mismatch, error), enrollment, gateway resets, whether the reset line is wired, and the firmware transfer. **Enroll node** (maintenance) adopts the node's stored record once after the supervised USB install. **Update node firmware** sends a signed node image (up to 1.5 MB) through the gateway; the node checks it, restarts into it and keeps it only once the gateway has resumed it.
+- The Overview flags a node that is not enrolled, and a node whose record does not match the gateway's journal (held until checked). Diagnostics add the node session, enrollment, resets, journal and firmware transfer.
+- Proxy `POST /api/zigbee/enroll` (exactly `{}`) and `POST /api/zigbee/update` (octet-stream, at most 1,572,864 bytes, `X-SHA256` added, 10-minute timeout).
+- The **Lighting output** MQTT sensor's attributes add `zigbee_node` (session state, enrollment, resets, firmware transfer).
+
 ## 0.10.0
 
 - Support the gateway's direct Zigbee routing and automatic N4 fallback. A hybrid gateway (direct Zigbee preferred) carrying output on N4 shows **N4 fallback** on the Lighting output tile and names it in the Overview with the direct path's reason. Diagnostics adds **Direct Zigbee routing**: owning path, path switches, session readiness and its reason, node, lease and lamp-table state, lamp counts (resolved, uncertain, unreachable, changed outside the bridge), the reserved frame-counter range and send counters.

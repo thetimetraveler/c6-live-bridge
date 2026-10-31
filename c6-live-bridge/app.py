@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
 MAX_FIRMWARE = 786_432
+MAX_ZIGBEE_FIRMWARE = 0x180000
 # Show sensors: one programming read per collector slot, each zone at most every two minutes.
 PROGRAM_SLOT_S, PROGRAM_REFRESH_S, PROGRAM_STALE_S, PROGRAM_TIMEOUT_S = 30, 120, 600, 20
 SNAPSHOT_STALE_S = 120
@@ -52,6 +53,7 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
           "ketra": ("GET", "/api/ketra"), "ketra_put": ("PUT", "/api/ketra"),
           "update": ("POST", "/api/endpoint/update"),
+          "zigbee_update": ("POST", "/api/zigbee/update"), "zigbee_enroll": ("POST", "/api/zigbee/enroll"),
           "maintenance": ("POST", "/api/maintenance"),
           "power_put": ("PUT", "/api/endpoint/power"),
           "safety_clear": ("POST", "/api/endpoint/safety/clear")}
@@ -102,12 +104,14 @@ class Gateway:
     def request(self, path, method="GET", body=None, content_type=None, timeout=None):
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
         long_operation = path == "/api/endpoint/update" or path.startswith("/api/program?")
-        conn = conn_cls(self.hostname, self.port, timeout=timeout or (300 if long_operation else self.timeout))
+        # A node update streams the image over UART2 with the node's lease kept.
+        timeout = timeout or (600 if path == "/api/zigbee/update" else 300 if long_operation else self.timeout)
+        conn = conn_cls(self.hostname, self.port, timeout=timeout)
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = content_type or "application/octet-stream"
             headers["Content-Length"] = str(len(body))
-            if path == "/api/endpoint/update":
+            if path in ("/api/endpoint/update", "/api/zigbee/update"):
                 headers["X-SHA256"] = hashlib.sha256(body).hexdigest()
         try:
             conn.request(method, path, body=body, headers=headers)
@@ -1165,7 +1169,18 @@ def gateway_state(status):
                            "backend_phase": clean_text(selector.get("phase"), 16),
                            "backend_switches": selector.get("switches") if type(selector.get("switches")) is int else None,
                            "direct_routing": {k: routing[k] for k in BACKEND_ATTRIBUTES
-                                              if type(routing.get(k)) in (bool, int) or isinstance(routing.get(k), str) and len(routing[k]) <= 32}}}
+                                              if type(routing.get(k)) in (bool, int) or isinstance(routing.get(k), str) and len(routing[k]) <= 32},
+                           "zigbee_node": zigbee_node_state(routing)}}
+
+
+def zigbee_node_state(routing):
+    """The gateway-hosted node session (arming) and firmware transfer, when reported."""
+    arming = routing.get("arming") if isinstance(routing.get("arming"), dict) else {}
+    firmware = routing.get("firmware") if isinstance(routing.get("firmware"), dict) else {}
+    state = {"arming": clean_text(arming.get("state"), 24), "enrolled": arming.get("enrolled") if type(arming.get("enrolled")) is bool else None,
+             "node_resets": arming.get("node_resets") if type(arming.get("node_resets")) is int else None,
+             "firmware_transfer": clean_text(firmware.get("transfer"), 16)}
+    return {k: v for k, v in state.items() if v is not None} or None
 
 
 class ShowSensors:
@@ -1434,17 +1449,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {"error": str(exc)})
             except (OSError, http.client.HTTPException) as exc:
                 return self.reply(502, {"error": str(exc)})
-        if self.path != "/api/endpoint/update": return self.reply(404, {"error": "unknown endpoint"})
+        if self.path == "/api/zigbee/enroll":
+            try:
+                if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
+                if json.loads(self.read_body(16)) != {}: raise ValueError("expected an empty object")
+                code, ctype, raw = self.server.panel.proxy("zigbee_enroll", body=b"{}", content_type="application/json")
+                return self.send(code, raw, ctype)
+            except (ValueError, EOFError, OverflowError) as exc:
+                return self.reply(400, {"error": str(exc)})
+            except (OSError, http.client.HTTPException) as exc:
+                return self.reply(502, {"error": str(exc)})
+        if self.path not in ("/api/endpoint/update", "/api/zigbee/update"): return self.reply(404, {"error": "unknown endpoint"})
+        zigbee = self.path == "/api/zigbee/update"
         ctype = self.headers.get("Content-Type", "application/octet-stream")
         if ctype.split(";", 1)[0].strip().lower() != "application/octet-stream":
             return self.reply(415, {"error": "application/octet-stream required"})
         try:
-            body = self.read_body(MAX_FIRMWARE)
+            body = self.read_body(MAX_ZIGBEE_FIRMWARE if zigbee else MAX_FIRMWARE)
         except OverflowError as exc: return self.reply(413, {"error": str(exc)})
         except EOFError as exc: return self.reply(400, {"error": str(exc)})
         except ValueError as exc: return self.reply(411, {"error": str(exc)})
         try:
-            code, out_type, raw = self.server.panel.proxy("update", body=body, content_type="application/octet-stream")
+            code, out_type, raw = self.server.panel.proxy("zigbee_update" if zigbee else "update", body=body,
+                                                          content_type="application/octet-stream")
             return self.send(code, raw, out_type)
         except (OSError, http.client.HTTPException, ValueError) as exc: return self.reply(502, {"error": str(exc)})
 

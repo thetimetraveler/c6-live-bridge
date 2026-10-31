@@ -452,6 +452,15 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
     <details class="raw json-editor"><summary>Edit as JSON (advanced)</summary><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><p id="json-note" class="small muted">The zones list as JSON. Changes here update the table above.</p></details>
     <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
   </section>
+  <section class="card" id="zigbee-node-card" hidden>
+    <div class="card-head"><h2>Zigbee node</h2><span id="zigbee-node-pill" class="pill wait">Loading</span></div>
+    <p class="lede">The gateway runs the Zigbee node's session and re-arms it after any restart. Enroll once after the supervised USB install and first join, while the node has just started. Node firmware updates go through the gateway; the node checks the image's signature, restarts into it, and keeps it only once the gateway has resumed it.</p>
+    <div id="zigbee-node-facts" class="groups"></div>
+    <div class="actions"><button id="zigbee-enroll" class="secondary">Enroll node</button></div>
+    <label class="dropzone"><input id="zigbee-firmware" type="file" aria-label="Zigbee node firmware image"><strong id="zigbee-firmware-name">Choose a signed node image</strong><span class="muted small">up to 1.5 MB (1,572,864 bytes)</span></label>
+    <div class="actions"><button id="zigbee-upload" disabled>Update node firmware</button></div>
+    <p id="zigbee-node-note" class="muted small" role="status"></p>
+  </section>
   <section class="card">
     <div class="card-head"><h2>Ketra lamps</h2><span id="ketra-pill" class="pill wait">Loading</span></div>
     <p class="lede">Direct Zigbee output drives these lamps. Each Lutron zone lists its Ketra group and its lamps (Zigbee address and Ketra logical address). Changes need maintenance mode and take effect without a restart.</p>
@@ -503,6 +512,23 @@ const outputHeld=o=>o.kind!=='n4'&&!o.admitted;
 function zigbeeLink(s){const z=s?.zigbee_uart;if(!z||typeof z!=='object'||typeof z.enabled!=='boolean')return null;
   if(!z.enabled)return {enabled:false,tone:'',label:'Not enabled'};const ok=z.online===true&&z.bidirectional===true;
   return {enabled:true,tone:ok?'good':'warn',label:ok?'Responding':'Not responding'}}
+/* The gateway-hosted Zigbee node session (direct_routing.arming) and firmware transfer. */
+const ZIGBEE_ARMING={external:'Armed by another host',not_enrolled:'Not enrolled',record_mismatch:'Record mismatch (held)',reading_record:'Reading its record',
+  resuming:'Resuming',starting:'Starting',running:'Running',node_error:'Error, resetting'};
+function armingTone(a){return a==='running'||a==='external'?'good':a==='record_mismatch'||a==='node_error'?'bad':'warn'}
+function zigbeeArming(s){const a=s?.direct_routing?.arming;return a&&typeof a==='object'&&typeof a.state==='string'?a.state:null}
+let zigbeeFile=null;
+const ZIGBEE_FW_LIMIT=1572864;
+function renderZigbeeNode(s){const r=s?.direct_routing,a=r?.arming,f=r?.firmware;const card=$('zigbee-node-card');
+  if(!a||typeof a!=='object'){card.hidden=true;return}
+  card.hidden=false;const state=a.state;$('zigbee-node-pill').className='pill '+armingTone(state);$('zigbee-node-pill').textContent=ZIGBEE_ARMING[state]||val(state);
+  const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
+  $('zigbee-node-facts').replaceChildren(group('Session',[['State',ZIGBEE_ARMING[state]||val(state),armingTone(state)],['Enrolled',yn(a.enrolled)],
+    ['Gateway resets',num(a.node_resets)],['Reset line wired',yn(a.reset_configured),a.reset_configured===false?'warn':''],
+    ['Boot epoch',val(a.boot_epoch)],['Counter limit',val(a.committed_upper)],
+    ['Firmware transfer',f&&typeof f==='object'?`${val(f.transfer)}${f.size?` · ${num(f.offset)} of ${num(f.size)} bytes`:''}`:'—',f?.transfer==='failed'?'bad':'']]));
+  $('zigbee-upload').disabled=!zigbeeFile;
+}
 /* The gateway's direct routing engine (/api/status direct_routing) and backend selector. */
 function routingGroup(s){const r=s.direct_routing,b=s.backend&&typeof s.backend==='object'?s.backend:{},yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
   const counters=r.counter_upper&&r.counter_next?`${num(r.counter_next)} of ${num(r.counter_upper)}`:'—';
@@ -513,6 +539,10 @@ function routingGroup(s){const r=s.direct_routing,b=s.backend&&typeof s.backend=
     ['Lamps (resolved)',`${num(r.lamps)} (${num(r.resolved)})`],['Zones with lamps',num(r.routed_zones)],
     ['Uncertain lamps',num(r.uncertain),Number(r.uncertain)>0?'warn':''],['Unreachable lamps',num(r.unreachable),Number(r.unreachable)>0?'bad':''],
     ['Changed outside the bridge',num(r.external_changes),Number(r.external_changes)>0?'warn':''],['Frame counter used',counters],
+    ...(r.arming&&typeof r.arming==='object'?[['Node session',ZIGBEE_ARMING[r.arming.state]||val(r.arming.state),armingTone(r.arming.state)],
+      ['Enrolled',yn(r.arming.enrolled)],['Node resets by gateway',num(r.arming.node_resets),Number(r.arming.node_resets)>0?'warn':''],
+      ['Journal saved',yn(r.arming.journal_ok),r.arming.journal_ok===false?'warn':'']]:[]),
+    ...(r.firmware&&typeof r.firmware==='object'?[['Node firmware transfer',val(r.firmware.transfer),r.firmware.transfer==='failed'?'bad':'']]:[]),
     ['Frames sent',num(r.sends)],['Zone commands applied',num(r.applied)],['Readings reported',num(r.observed)],
     ['Commands without lamps',num(r.unrouted),Number(r.unrouted)>0?'warn':''],['UART overflows',num(r.overflows),Number(r.overflows)>0?'warn':'']])}
 function zigbeeRole(r){return ({0:'unknown',1:'detached',2:'end device',3:'router',4:'coordinator'})[Number(r)]||val(r)}
@@ -634,6 +664,9 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   const net=netName(s),netOk=netUp(s),issues=[],lampStats=lampSummary();if(netOk!==true)issues.push([netOk===false?'bad':'warn',`Gateway ${net==='Network'?'network':net} is ${netOk===false?'down':'unavailable'}`]);if(state.tone!=='good')issues.push([state.tone,state.title]);if(s.config_match!==true)issues.push(['warn',s.config_match===false?'Zone mapping is not yet in sync on both boards':'Zone mapping status is unavailable']);
   const out=outputBackend(s),held=outputHeld(out),zl=zigbeeLink(s),dz=s.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{},zu=s.zigbee_uart&&typeof s.zigbee_uart==='object'?s.zigbee_uart:{};
   if(out.fallback)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`]);
+  const arm=zigbeeArming(s);
+  if(arm==='not_enrolled')issues.push(['warn','Zigbee node not enrolled: enroll it in Setup after the supervised install']);
+  if(arm==='record_mismatch')issues.push(['bad','Zigbee node record does not match the gateway journal; it is held. Check why before re-enrolling']);
   if(out.kind==='direct'&&held)issues.push(['bad','Lighting output held: direct Zigbee output is not admitted']);else if(out.kind==='unknown')issues.push(['warn','Lighting output backend not recognised']);
   if(zl?.enabled&&zl.tone!=='good')issues.push(['warn','Zigbee member link not responding']);
   // A held output already explains every lamp; repeating it per lamp adds nothing.
@@ -1046,7 +1079,7 @@ async function refresh(){
   try{
     const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor+(eventBootId===null?'':'&boot_id='+encodeURIComponent(eventBootId))),req('zones')]);
     if(results[0].status==='fulfilled'&&results[0].value&&typeof results[0].value==='object'&&!Array.isArray(results[0].value)){
-      const s=results[0].value;health(s,startedAt);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;trackFirmwareStatus(s);
+      const s=results[0].value;health(s,startedAt);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;trackFirmwareStatus(s);renderZigbeeNode(s);
     }else{
       if(latestStatus)health({...latestStatus,monitoring:{age_s:snapshotAge(latestStatus),delayed:true}});
       else setHero('warn','Monitoring unavailable','Waiting for a valid gateway snapshot. '+(results[0].reason?.message||''),false);
@@ -1087,6 +1120,16 @@ $('dropzone').addEventListener('dragleave',dropzoneClass);
 $('dropzone').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer?.files?.[0];if(!f)return dropzoneClass();try{$('firmware').files=e.dataTransfer.files}catch{}pickFirmware(f)});
 $('upload').onclick=async()=>{const f=firmwareFile;if(!f)return uploadNote('Choose a firmware image first.','warn');if(f.size>FW_LIMIT)return uploadNote('This image is larger than the 786,432 byte limit.','bad');if(!await confirmSheet('Install this firmware?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent to the endpoint, which then restarts to run it.`,'Upload'))return;
   fw('uploading','Uploading…','info');$('upload').disabled=true;let sent=false;try{if(!await ensureMaintenance())return;const baseline=firmwareBaseline(latestStatus);const r=await req('endpoint/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sent=true;firmwarePending=true;firmwareOfflineSeen=false;firmwareBaselineUptime=baseline;firmwareStartedAt=Date.now();firmwareReconnectAt=0;fw('waiting',`Upload ${val(r.status||'accepted')}. Waiting for a fresh endpoint uptime report…`,'info')}catch(e){fw('failed','Upload failed: '+e.message,'bad')}finally{if(!sent)$('upload').disabled=false}};
+$('zigbee-firmware').onchange=e=>{zigbeeFile=e.target.files[0]||null;$('zigbee-firmware-name').textContent=zigbeeFile?`${zigbeeFile.name} · ${zigbeeFile.size.toLocaleString()} bytes`:'Choose a signed node image';$('zigbee-upload').disabled=!zigbeeFile};
+$('zigbee-enroll').onclick=async()=>{const note=$('zigbee-node-note');
+  if(!await confirmSheet('Enroll the Zigbee node?','The gateway adopts the node\'s stored record as its own journal. Do this once after the supervised USB install and first join, while the node has just started. If the node reports a record mismatch, find out why before enrolling again.','Enroll'))return;
+  try{if(!await ensureMaintenance())return;await req('zigbee/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});note.textContent='Enrolled. The gateway now re-arms the node after every restart.'}catch(e){note.textContent='Enrollment failed: '+e.message}};
+$('zigbee-upload').onclick=async()=>{const f=zigbeeFile,note=$('zigbee-node-note');if(!f)return;
+  if(f.size>ZIGBEE_FW_LIMIT){note.textContent='This image is larger than the 1,572,864 byte limit.';return}
+  if(!await confirmSheet('Update the Zigbee node?',`${f.name} (${f.size.toLocaleString()} bytes) goes to the node through the gateway. The node checks its signature, restarts into it, and rolls back unless the gateway resumes it. Direct lighting pauses meanwhile; a hybrid gateway uses N4.`,'Update'))return;
+  $('zigbee-upload').disabled=true;note.textContent='Sending the image to the node…';
+  try{if(!await ensureMaintenance())return;await req('zigbee/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});note.textContent='Accepted. The node is restarting into the new image; watch the session return to Running.'}
+  catch(e){note.textContent='Node update failed: '+e.message}finally{$('zigbee-upload').disabled=!zigbeeFile}};
 for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}

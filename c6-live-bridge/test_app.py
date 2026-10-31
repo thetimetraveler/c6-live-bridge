@@ -26,6 +26,10 @@ class StubGateway:
         if path == "/api/endpoint/update":
             self.endpoint_online=False
             return 202,"application/json",b'{"status":"rebooting"}'
+        if path == "/api/zigbee/update":
+            return 202,"application/json",b'{"state":"rebooting"}'
+        if path == "/api/zigbee/enroll":
+            return 200,"application/json",b'{"enrolled":true}'
         return 200,"application/json",json.dumps({"after":0,"next":2,"oldest":1,"lost":0,"events":[{"id":1,"stage":"confirmed"}]}).encode()
 
 
@@ -200,6 +204,36 @@ class AddonTests(unittest.TestCase):
         wrong_type.do_POST()
         self.assertEqual(wrong_type.results[0][0],415)
 
+    def test_zigbee_node_update_and_enroll(self):
+        self.assertEqual(app.MAX_ZIGBEE_FIRMWARE,0x180000)
+        image=b"\xe9signed\x00node"
+        h=self.handler(path="/api/zigbee/update")
+        h.headers["Content-Type"]="application/octet-stream";h.headers["Content-Length"]=str(len(image));h.rfile=io.BytesIO(image)
+        h.do_POST()
+        self.assertEqual(h.results[0][0],202)
+        self.assertEqual(self.gateway.calls[-1],("POST","/api/zigbee/update",image,"application/octet-stream"))
+        # The node image may exceed the endpoint's limit, but not its own.
+        big=self.handler(path="/api/zigbee/update")
+        big.headers["Content-Type"]="application/octet-stream";big.headers["Content-Length"]=str(app.MAX_FIRMWARE+1)
+        big.rfile=io.BytesIO(b"x"*(app.MAX_FIRMWARE+1))
+        big.do_POST(); self.assertEqual(big.results[0][0],202)
+        over=self.handler(path="/api/zigbee/update")
+        over.headers["Content-Type"]="application/octet-stream";over.headers["Content-Length"]=str(app.MAX_ZIGBEE_FIRMWARE+1)
+        over.do_POST(); self.assertEqual(over.results[0][0],413)
+        endpoint=self.handler(path="/api/endpoint/update")
+        endpoint.headers["Content-Type"]="application/octet-stream";endpoint.headers["Content-Length"]=str(app.MAX_FIRMWARE+1)
+        endpoint.do_POST(); self.assertEqual(endpoint.results[0][0],413)
+        # Enrollment takes exactly an empty JSON object.
+        e=self.handler(path="/api/zigbee/enroll")
+        e.headers["Content-Type"]="application/json";e.headers["Content-Length"]="2";e.rfile=io.BytesIO(b"{}")
+        e.do_POST()
+        self.assertEqual(e.results[0][0],200)
+        self.assertEqual(self.gateway.calls[-1],("POST","/api/zigbee/enroll",b"{}","application/json"))
+        for body in (b'{"x":1}',b'[]'):
+            bad=self.handler(path="/api/zigbee/enroll")
+            bad.headers["Content-Type"]="application/json";bad.headers["Content-Length"]=str(len(body));bad.rfile=io.BytesIO(body)
+            bad.do_POST(); self.assertEqual(bad.results[0][0],400)
+
     def test_handler_transactional_config_put(self):
         doc={"generation":4,"hash":"abc123","zones":[{"zone_id":1,"name":"Kitchen","n4_group":"uuid","serial":"123","warm_dim_curve":1}]}
         body=json.dumps(doc).encode()
@@ -291,6 +325,11 @@ class AddonTests(unittest.TestCase):
         import hashlib
         self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
         self.assertEqual(captured["timeout"],300)
+        with patch("app.http.client.HTTPConnection",Connection):
+            client=app.Gateway("http://localhost","token")
+            self.assertEqual(client.request("/api/zigbee/update","POST",binary,"application/octet-stream")[0],202)
+        self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
+        self.assertEqual(captured["timeout"],600)
 
     def test_reconnect_after_gateway_disconnect(self):
         self.collect()
@@ -918,6 +957,11 @@ class ZoneSummaryTests(unittest.TestCase):
                     direct_zigbee={"output_admitted":True,"reason":"admitted"})
         self.assertEqual(app.gateway_state(direct)["lighting_output"],"direct_zigbee")
         self.assertFalse(app.output_state({"output_backend":"n4","backend":{"mode":"n4"}})["fallback"])
+        self.assertIsNone(g["attributes"]["zigbee_node"])
+        armed=dict(status,direct_routing=dict(status["direct_routing"],arming={"state":"record_mismatch","enrolled":True,"node_resets":2},
+                                              firmware={"transfer":"idle","offset":0,"size":0}))
+        self.assertEqual(app.gateway_state(armed)["attributes"]["zigbee_node"],
+                         {"arming":"record_mismatch","enrolled":True,"node_resets":2,"firmware_transfer":"idle"})
 
     def test_held_direct_output_never_claims_delivery_or_a_lamp_reading(self):
         held={"backend":"direct_zigbee","admitted":False,"reason":"production_contract_unavailable"}

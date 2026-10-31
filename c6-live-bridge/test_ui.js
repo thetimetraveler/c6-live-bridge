@@ -322,6 +322,27 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   if(text(view('summary')).includes('N4 fallback')||!text(view('summary')).includes('Direct Zigbee'))throw Error('a hybrid gateway on direct shows Direct Zigbee');
   health(status);
   if(text(view('summary')).includes('N4 fallback'))throw Error('an N4-only gateway is not a fallback');
+  // The gateway-hosted node session: card, diagnostics and attention items.
+  renderZigbeeNode(status);
+  if(!view('zigbee-node-card').hidden)throw Error('the node card stays hidden without a gateway-hosted session');
+  const mismatch={...fallback,direct_routing:{...fallback.direct_routing,arming:{state:'record_mismatch',enrolled:true,journal_ok:true,
+    node_resets:0,reset_configured:true,boot_epoch:'5',committed_upper:'4096'},firmware:{transfer:'idle',offset:0,size:0}}};
+  health(mismatch);renderZigbeeNode(mismatch);
+  if(view('zigbee-node-card').hidden||view('zigbee-node-pill').textContent!=='Record mismatch (held)'||!view('zigbee-node-pill').className.includes('bad'))
+    throw Error('a record mismatch must be shown as held');
+  if(!(view('headline').textContent+view('headline-detail').textContent+text(view('summary'))).includes('does not match the gateway journal'))
+    throw Error('a record mismatch needs attention in the overview');
+  if(!text(view('health')).includes('Node session')||!text(view('health')).includes('Record mismatch'))throw Error('diagnostics show the node session');
+  const fresh={...mismatch,direct_routing:{...mismatch.direct_routing,arming:{...mismatch.direct_routing.arming,state:'not_enrolled',enrolled:false},
+    firmware:{transfer:'sending',offset:2048,size:4096}}};
+  health(fresh);renderZigbeeNode(fresh);
+  if(!(view('headline').textContent+view('headline-detail').textContent+text(view('summary'))).includes('not enrolled'))throw Error('an unenrolled node needs attention');
+  if(!text(view('zigbee-node-facts')).includes('2,048 of 4,096'))throw Error('the transfer progress is shown');
+  const running={...fresh,direct_routing:{...fresh.direct_routing,arming:{...fresh.direct_routing.arming,state:'running',enrolled:true}}};
+  health(running);renderZigbeeNode(running);
+  if(!view('zigbee-node-pill').className.includes('good')||(view('headline').textContent+view('headline-detail').textContent).includes('enrolled'))
+    throw Error('a running node is healthy');
+  health(status);
   // Lab inventory import maps zone names to the mapping's zone IDs.
   const lab={schema:'ketra-lab-inventory-v1',captured_at:1,source_sha256:'0'.repeat(64),zones:{
     Office:{group:22,members:[{eui_wire:'0102030405060708',logical:{pan:5,logical:40,interface:0,channel:0,subchannel:0}}]},

@@ -451,6 +451,27 @@ const mappingChecks=`
   if(!view('endpoint-control-note').textContent.includes('did not complete'))throw Error('a failed clear must be reported');
   health({...status,endpoint_power:undefined});
   if(!view('endpoint-toggle').disabled||!view('endpoint-control-note').textContent.includes('does not report endpoint control'))throw Error('old firmware must not show controls');
+  // Why no path owns output yet (backend.hold_reason), additive on newer gateways.
+  const routing={session_ready:true,admitted:false,reason:'held',node_known:true,joined:true,lease_ok:true,table_committed:true,lamps:3,routed_zones:3,resolved:3};
+  const routingRows=s=>{const g=routingGroup(s);return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
+  const heldStatus={...status,output_backend:'n4',direct_routing:routing,endpoint_power:{...status.endpoint_power,boot_hold_remaining_s:90},
+    backend:{mode:'hybrid',phase:'waiting_epoch_drain',switches:0,hold_reason:'endpoint_admission',admission:'boot_hold',epoch_stage:'idle',epoch_frames_sent:0,output_owner:'none'}};
+  let hold=backendHold(heldStatus);
+  if(!hold||hold.reason!=='endpoint_admission'||!hold.text.includes('boot hold: 90 s left')||hold.owned)throw Error('a boot hold must be named with its countdown and not count as owned');
+  let r2=routingRows(heldStatus);
+  if(r2['Output owner'].textContent!=='none'||!r2['Output owner'].className.includes('warn')||!r2['Hold reason'].textContent.includes('boot hold: 90 s left')||
+     r2['Endpoint admission'].textContent!=='boot hold'||r2['Epoch handshake'].textContent!=='idle'||r2['Epoch frames sent'].textContent!=='0')throw Error('routing diagnostics must show the hold fields');
+  const owned={...heldStatus,backend:{...heldStatus.backend,phase:'direct',hold_reason:'none',admission:'ok',epoch_stage:'active',epoch_frames_sent:4,output_owner:'direct'}};
+  if(backendHold(owned)!==null)throw Error('no hold means no hold note');
+  r2=routingRows(owned);
+  if(r2['Hold reason'].textContent!=='None'||r2['Output owner'].textContent!=='direct'||r2['Endpoint admission'].textContent!=='ok')throw Error('an owned output must read as healthy');
+  const older={...status,output_backend:'n4',direct_routing:routing,backend:{mode:'hybrid',phase:'n4',switches:1}};
+  if(backendHold(older)!==null||'Output owner' in routingRows(older))throw Error('gateways without the fields must be unchanged');
+  for(const bad of [{hold_reason:7},{hold_reason:'none'},null,'x',{}])if(backendHold({...status,backend:bad})!==null)throw Error('malformed or absent hold data must be ignored');
+  health(heldStatus);
+  if(!view('headline-detail').textContent.includes('Lighting is not being delivered yet: the gateway is not yet admitting endpoint commands'))throw Error('the overview must warn while no path owns output');
+  health(owned);
+  if(view('headline-detail').textContent.includes('Lighting is not being delivered yet'))throw Error('the warning must clear once a path owns output');
   // Startup sequence on the overview.
   const startup=()=>{const g=view('health').children.find(c=>c.children[0]?.textContent==='Startup sequence');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
   const windowRow='Stability window (≥ 300 s, receive-only)';

@@ -1168,6 +1168,9 @@ def gateway_state(status):
                            "backend_mode": clean_text(selector.get("mode"), 16),
                            "backend_phase": clean_text(selector.get("phase"), 16),
                            "backend_switches": selector.get("switches") if type(selector.get("switches")) is int else None,
+                           "backend_hold_reason": clean_text(selector.get("hold_reason"), 32),
+                           "backend_output_owner": clean_text(selector.get("output_owner"), 16),
+                           "backend_admission": clean_text(selector.get("admission"), 32),
                            "direct_routing": {k: routing[k] for k in BACKEND_ATTRIBUTES
                                               if type(routing.get(k)) in (bool, int) or isinstance(routing.get(k), str) and len(routing[k]) <= 32},
                            "zigbee_node": zigbee_node_state(routing)}}

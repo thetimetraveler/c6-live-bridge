@@ -529,10 +529,23 @@ function renderZigbeeNode(s){const r=s?.direct_routing,a=r?.arming,f=r?.firmware
     ['Firmware transfer',f&&typeof f==='object'?`${val(f.transfer)}${f.size?` · ${num(f.offset)} of ${num(f.size)} bytes`:''}`:'—',f?.transfer==='failed'?'bad':'']]));
   $('zigbee-upload').disabled=!zigbeeFile;
 }
+/* Why neither path owns lighting output (/api/status backend.hold_reason); absent on older gateways. */
+const BACKEND_HOLD={endpoint_capability:'waiting for the endpoint to announce itself',epoch_exhausted:'the endpoint handshake ran out of epochs',
+  endpoint_admission:'the gateway is not yet admitting endpoint commands (its boot hold, or no fresh safe HELLO)',
+  n4_busy:'N4 still has work in flight',direct_busy:'the Zigbee engine still has work in flight',handover_take:'moving outstanding work between paths',
+  generation_bind:'binding a new output generation',epoch_begin:'starting the endpoint handshake',epoch_ack:'waiting for the endpoint to acknowledge the handshake'};
+const ADMISSION_TEXT=v=>typeof v==='string'?v.replace(/_/g,' '):'—';
+function backendHold(s){const b=s?.backend;if(!b||typeof b!=='object'||typeof b.hold_reason!=='string'||b.hold_reason==='none')return null;
+  const rem=Number(s?.endpoint_power?.boot_hold_remaining_s);const boot=b.hold_reason==='endpoint_admission'&&Number.isFinite(rem)&&rem>0?` (boot hold: ${rem} s left)`:'';
+  return {reason:b.hold_reason,text:(BACKEND_HOLD[b.hold_reason]||b.hold_reason.replace(/_/g,' '))+boot,owned:b.output_owner&&b.output_owner!=='none'}}
 /* The gateway's direct routing engine (/api/status direct_routing) and backend selector. */
 function routingGroup(s){const r=s.direct_routing,b=s.backend&&typeof s.backend==='object'?s.backend:{},yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
   const counters=r.counter_upper&&r.counter_next?`${num(r.counter_next)} of ${num(r.counter_upper)}`:'—';
   return group('Direct Zigbee routing (reported)',[['Backend mode',val(b.mode)],['Owning path',val(b.phase)],['Path switches',num(b.switches)],
+    ...(typeof b.output_owner==='string'?[['Output owner',val(b.output_owner),b.output_owner==='none'?'warn':''],
+      ['Hold reason',b.hold_reason==='none'?'None':backendHold(s)?.text??val(b.hold_reason),b.hold_reason&&b.hold_reason!=='none'?'warn':''],
+      ['Endpoint admission',ADMISSION_TEXT(b.admission),b.admission&&b.admission!=='ok'?'warn':''],
+      ['Epoch handshake',val(b.epoch_stage)],['Epoch frames sent',num(b.epoch_frames_sent)]]:[]),
     ['Session ready',yn(r.session_ready),r.session_ready===false?'warn':''],['Admitted',yn(r.admitted),r.admitted===false?'warn':''],
     ['Reason',typeof r.reason==='string'?r.reason.replace(/_/g,' '):'—'],['Node identity checked',yn(r.node_known)],['Joined',yn(r.joined)],
     ['Lease current',yn(r.lease_ok)],['Lamp table synced',yn(r.table_committed)],['Inventory generation',val(r.inventory_generation)],
@@ -664,6 +677,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   const net=netName(s),netOk=netUp(s),issues=[],lampStats=lampSummary();if(netOk!==true)issues.push([netOk===false?'bad':'warn',`Gateway ${net==='Network'?'network':net} is ${netOk===false?'down':'unavailable'}`]);if(state.tone!=='good')issues.push([state.tone,state.title]);if(s.config_match!==true)issues.push(['warn',s.config_match===false?'Zone mapping is not yet in sync on both boards':'Zone mapping status is unavailable']);
   const out=outputBackend(s),held=outputHeld(out),zl=zigbeeLink(s),dz=s.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{},zu=s.zigbee_uart&&typeof s.zigbee_uart==='object'?s.zigbee_uart:{};
   if(out.fallback)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`]);
+  {const hold=backendHold(s);if(hold&&!hold.owned)issues.push(['warn',`Lighting is not being delivered yet: ${hold.text}`])}
   const arm=zigbeeArming(s);
   if(arm==='not_enrolled')issues.push(['warn','Zigbee node not enrolled: enroll it in Setup after the supervised install']);
   if(arm==='record_mismatch')issues.push(['bad','Zigbee node record does not match the gateway journal; it is held. Check why before re-enrolling']);

@@ -943,6 +943,19 @@ class ZoneSummaryTests(unittest.TestCase):
                           {"zigbee_uart":{"enabled":True,"online":True,"bidirectional":False}},{"zigbee_uart":{"enabled":"yes"}})],
                          ["unknown","not_enabled","online","offline","unknown"])
 
+    def test_backend_hold_attributes(self):
+        held={"output_backend":"n4","backend":{"mode":"hybrid","phase":"waiting_epoch_drain","switches":0,
+              "hold_reason":"endpoint_admission","admission":"boot_hold","epoch_stage":"idle","epoch_frames_sent":0,
+              "output_owner":"none"},"direct_zigbee":{"output_admitted":False,"reason":"held"}}
+        a=app.gateway_state(held)["attributes"]
+        self.assertEqual((a["backend_hold_reason"],a["backend_output_owner"],a["backend_admission"]),
+                         ("endpoint_admission","none","boot_hold"))
+        old=app.gateway_state({"output_backend":"n4","backend":{"mode":"hybrid","phase":"n4","switches":2}})["attributes"]
+        self.assertEqual((old["backend_hold_reason"],old["backend_output_owner"],old["backend_admission"]),(None,None,None))
+        junk=app.gateway_state({"output_backend":"n4","backend":{"hold_reason":["x"],"output_owner":7,"admission":"y"*80}})["attributes"]
+        self.assertIsNone(junk["backend_hold_reason"]); self.assertIsNone(junk["backend_output_owner"])
+        self.assertLessEqual(len(junk["backend_admission"] or ""),32)
+
     def test_hybrid_fallback_is_reported(self):
         status={"output_backend":"n4","backend":{"mode":"hybrid","phase":"n4","switches":2},
                 "direct_zigbee":{"output_admitted":False,"reason":"node_unavailable"},

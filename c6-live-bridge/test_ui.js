@@ -472,6 +472,11 @@ const mappingChecks=`
   if(!view('headline-detail').textContent.includes('Lighting is not being delivered yet: the gateway is not yet admitting endpoint commands'))throw Error('the overview must warn while no path owns output');
   health(owned);
   if(view('headline-detail').textContent.includes('Lighting is not being delivered yet'))throw Error('the warning must clear once a path owns output');
+  health(heldStatus);
+  if(view('headline-detail').textContent.includes('N4 is carrying lighting')||!view('headline').textContent.length)throw Error('during the hold the fallback line must not claim N4 is carrying lighting');
+  health({...heldStatus,backend:{...heldStatus.backend,hold_reason:'none',output_owner:'n4',phase:'n4'}});
+  if(!view('headline-detail').textContent.includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
+  if(backendHold({...heldStatus,backend:{...heldStatus.backend,hold_reason:'constructor'}}).text!=='constructor')throw Error('reason names must not resolve through object prototypes');
   // Startup sequence on the overview.
   const startup=()=>{const g=view('health').children.find(c=>c.children[0]?.textContent==='Startup sequence');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
   const windowRow='Stability window (≥ 300 s, receive-only)';

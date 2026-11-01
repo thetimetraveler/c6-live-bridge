@@ -537,7 +537,7 @@ const BACKEND_HOLD={endpoint_capability:'waiting for the endpoint to announce it
 const ADMISSION_TEXT=v=>typeof v==='string'?v.replace(/_/g,' '):'—';
 function backendHold(s){const b=s?.backend;if(!b||typeof b!=='object'||typeof b.hold_reason!=='string'||b.hold_reason==='none')return null;
   const rem=Number(s?.endpoint_power?.boot_hold_remaining_s);const boot=b.hold_reason==='endpoint_admission'&&Number.isFinite(rem)&&rem>0?` (boot hold: ${rem} s left)`:'';
-  return {reason:b.hold_reason,text:(BACKEND_HOLD[b.hold_reason]||b.hold_reason.replace(/_/g,' '))+boot,owned:b.output_owner&&b.output_owner!=='none'}}
+  return {reason:b.hold_reason,text:(Object.hasOwn(BACKEND_HOLD,b.hold_reason)?BACKEND_HOLD[b.hold_reason]:b.hold_reason.replace(/_/g,' '))+boot,owned:b.output_owner&&b.output_owner!=='none'}}
 /* The gateway's direct routing engine (/api/status direct_routing) and backend selector. */
 function routingGroup(s){const r=s.direct_routing,b=s.backend&&typeof s.backend==='object'?s.backend:{},yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v);
   const counters=r.counter_upper&&r.counter_next?`${num(r.counter_next)} of ${num(r.counter_upper)}`:'—';
@@ -676,8 +676,10 @@ const errTone=v=>Number(v)>0?'warn':'';
 function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){latestStatus=s;statusReceivedAt=receivedAt??Date.now()}const age=snapshotAge(s),current=snapshotFresh(s),up=s.gateway_uptime_ms;statusAnchor=typeof up==='number'&&Number.isFinite(up)&&age!==null?Date.now()-age*1000-up:null;const role=roleName(s.thread_role),state=endpointHealth(s),q=s.endpoint_safety||{},p=s.endpoint_power||{};
   const net=netName(s),netOk=netUp(s),issues=[],lampStats=lampSummary();if(netOk!==true)issues.push([netOk===false?'bad':'warn',`Gateway ${net==='Network'?'network':net} is ${netOk===false?'down':'unavailable'}`]);if(state.tone!=='good')issues.push([state.tone,state.title]);if(s.config_match!==true)issues.push(['warn',s.config_match===false?'Zone mapping is not yet in sync on both boards':'Zone mapping status is unavailable']);
   const out=outputBackend(s),held=outputHeld(out),zl=zigbeeLink(s),dz=s.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{},zu=s.zigbee_uart&&typeof s.zigbee_uart==='object'?s.zigbee_uart:{};
-  if(out.fallback)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`]);
-  {const hold=backendHold(s);if(hold&&!hold.owned)issues.push(['warn',`Lighting is not being delivered yet: ${hold.text}`])}
+  /* While no path owns output, N4 is not carrying lighting either: say that instead of the fallback line. */
+  const hold=backendHold(s),unowned=!!(hold&&!hold.owned);
+  if(out.fallback&&!unowned)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`]);
+  if(unowned)issues.push(['warn',`Lighting is not being delivered yet: ${hold.text}`]);
   const arm=zigbeeArming(s);
   if(arm==='not_enrolled')issues.push(['warn','Zigbee node not enrolled: enroll it in Setup after the supervised install']);
   if(arm==='record_mismatch')issues.push(['bad','Zigbee node record does not match the gateway journal; it is held. Check why before re-enrolling']);

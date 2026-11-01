@@ -1,7 +1,7 @@
 ## 0.12.0
 
-- Show why a gateway is not delivering lighting yet. Gateways that report `backend.hold_reason`, `admission`, `epoch_stage`, `epoch_frames_sent` and `output_owner` get five new rows in **Direct Zigbee routing (reported)**, and the Overview warns while no path owns output (for example during the gateway's boot hold, with the seconds left from `endpoint_power.boot_hold_remaining_s`). Gateways that do not send them are unchanged.
-- The Lighting output MQTT sensor's attributes add `backend_hold_reason`, `backend_output_owner` and `backend_admission`.
+- Show why a gateway is not delivering lighting yet. Gateways that report `backend.hold_reason`, `admission`, `epoch_stage`, `epoch_frames_sent` and `output_owner` get five new rows in **Direct Zigbee routing (reported)**, and the Overview warns while no path owns output (for example during the gateway's boot hold, with the seconds left from `endpoint_power.boot_hold_remaining_s`), and no longer also claims that N4 is carrying lighting while it is not. Gateways that do not send them are unchanged.
+- The gateway MQTT sensors' attributes add `backend_hold_reason`, `backend_output_owner` and `backend_admission`.
 
 ## 0.11.0
 

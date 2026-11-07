@@ -48,11 +48,16 @@ p{margin:6px 0}
 @keyframes breathe{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
 
 /* Segmented control */
-.segmented{position:relative;display:grid;grid-template-columns:repeat(4,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:520px;margin:0 auto}
-.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/4);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
+.segmented{position:relative;display:grid;grid-template-columns:repeat(5,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:520px;margin:0 auto}
+.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/5);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
 .segmented[data-tab=activity] .thumb{transform:translateX(100%)}
-.segmented[data-tab=programming] .thumb{transform:translateX(200%)}
-.segmented[data-tab=setup] .thumb{transform:translateX(300%)}
+.segmented[data-tab=diagnostics] .thumb{transform:translateX(200%)}
+.segmented[data-tab=programming] .thumb{transform:translateX(300%)}
+.segmented[data-tab=setup] .thumb{transform:translateX(400%)}
+.segmented button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.segmented .short{display:none}
+@media(max-width:480px){#tabs.segmented button{font-size:.72rem;padding:6px 1px;letter-spacing:-.01em}.segmented .full{display:none}.segmented .short{display:inline}}
+@media(max-width:360px){#tabs.segmented button{font-size:.66rem}}
 .segmented button{position:relative;z-index:1;background:none;border:0;color:var(--label);font:inherit;font-size:.86rem;font-weight:500;padding:6px 4px;border-radius:7px;cursor:pointer;transition:opacity .2s}
 .segmented button[aria-selected=true]{font-weight:600}
 .segmented button:active{opacity:.6}
@@ -461,7 +466,8 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
   <nav id="tabs" class="segmented" data-tab="overview" role="tablist" aria-label="Sections"><span class="thumb"></span>
     <button id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview">Overview</button>
     <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity">Activity<span id="activity-badge" class="tab-badge"></span></button>
-    <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming">Programming</button>
+    <button id="tab-diagnostics" role="tab" aria-selected="false" aria-controls="panel-diagnostics" aria-label="Diagnostics"><span class="full">Diagnostics</span><span class="short">Diag.</span><span id="diag-badge" class="tab-badge"></span></button>
+    <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming" aria-label="Programming"><span class="full">Programming</span><span class="short">Program</span></button>
     <button id="tab-setup" role="tab" aria-selected="false" aria-controls="panel-setup">Setup</button>
   </nav>
 </div></header>
@@ -494,6 +500,22 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <p id="device-note" class="muted small">Waiting for live device data.</p><p id="ha-note" class="muted small"></p>
   </section>
 
+
+</div>
+
+<div id="panel-activity" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
+    <p class="lede">Each row is one lighting command and the steps it went through, or a status report or query reply, newest first. Select a row to see every step. <span id="events-tz"></span></p>
+    <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
+    <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Reports to Lutron update the processor’s record of the lamp, not the zone level Lutron shows. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports without a command association are listed as status updates. Report details separate the report counter from brightness and show why each report was sent. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
+    <div class="scroll"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
+    <p id="events-note" class="muted small">No events yet.</p>
+    <p id="cursor-note" class="muted small"></p>
+  </section>
+</div>
+
+<div id="panel-diagnostics" class="panel" role="tabpanel" hidden>
   <section class="card" id="perf-card">
     <div class="card-head"><h2>Performance</h2><span id="perf-count" class="muted small"></span></div>
     <p class="lede">How long a lighting command takes at each hop, timed on the gateway's own clock. Each figure is the median of recent commands; p95 is the slowest one in twenty. Lower is better.</p>
@@ -509,18 +531,6 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <p class="lede">Every counter both boards report, grouped by the part of the bridge it describes, in the order a command travels. Anything worth checking is listed first, and its section opens on its own.</p>
     <div id="diag-attention"></div>
     <div id="health" class="diag"></div>
-  </section>
-</div>
-
-<div id="panel-activity" class="panel" role="tabpanel" hidden>
-  <section class="card">
-    <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
-    <p class="lede">Each row is one lighting command and the steps it went through, or a status report or query reply, newest first. Select a row to see every step. <span id="events-tz"></span></p>
-    <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
-    <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Reports to Lutron update the processor’s record of the lamp, not the zone level Lutron shows. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports without a command association are listed as status updates. Report details separate the report counter from brightness and show why each report was sent. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
-    <div class="scroll"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
-    <p id="events-note" class="muted small">No events yet.</p>
-    <p id="cursor-note" class="muted small"></p>
   </section>
 </div>
 
@@ -864,7 +874,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       ...(out.kind!=='n4'?[group('Direct Zigbee output (reported)',[['Backend',out.kind==='direct'?'Direct Zigbee':val(out.reason)],['Output admitted',yn(dz.output_admitted),dz.output_admitted===true?'':'bad'],['Reason',val(dz.reason)],['Qualified for deployment',yn(dz.qualified_for_deployment),dz.qualified_for_deployment===true?'':'warn'],['Security continuity ready',yn(dz.security_continuity_ready)],['Authenticated readback ready',yn(dz.authenticated_readback_ready)],['Endpoint cache epoch ready',yn(dz.endpoint_cache_epoch_ready)],['Radio UART pins configured',yn(dz.pins_configured)],['Receiver started',yn(dz.receiver_started)],['Diagnostic HELLO in last 15 s',yn(dz.hello_online)],['Role (unverified claim)',dz.unverified_role===undefined?'—':zigbeeRole(dz.unverified_role)],['Bytes',num(dz.uart_bytes)],['Frames OK',num(dz.frames_ok)],['CRC errors',num(dz.crc_errors),errTone(dz.crc_errors)],['Valid HELLOs',num(dz.valid_hellos)],['Rejected HELLOs',num(dz.rejected_hellos),errTone(dz.rejected_hellos)]])]:[]),
       ...(zl?.enabled?[group('Zigbee member link (reported)',[['Responding',yn(zu.online===true&&zu.bidirectional===true),zl.tone==='good'?'':'warn'],['Last response',Number.isFinite(zu.last_response_age_ms)&&zu.last_response_age_ms>0?duration(zu.last_response_age_ms)+' ago':'—'],['UART2 TX / RX GPIO',`${val(zu.tx_gpio)} / ${val(zu.rx_gpio)}`],['Baud',num(zu.baud)],['Receiver started',yn(zu.receiver_started),zu.receiver_started===false?'warn':''],['Requests',num(zu.requests)],['Valid responses',num(zu.valid_responses)],['Rejected responses',num(zu.rejected_responses),errTone(zu.rejected_responses)],['Timeouts',num(zu.timeouts),errTone(zu.timeouts)],['Partial-line timeouts',num(zu.partial_timeouts),errTone(zu.partial_timeouts)],['Overflows',num(zu.overflows),errTone(zu.overflows)],['Send failures',num(zu.tx_failures),errTone(zu.tx_failures)],['Receiver errors',num(zu.receiver_errors),errTone(zu.receiver_errors)],['Device (claimed)',val(zu.device||null)],['Board (claimed)',val(zu.board||null)],['Base MAC (claimed)',val(zu.base_mac||null)],['IEEE address (claimed)',val(zu.ieee_address||null)],['Build SHA-256 (claimed)',typeof zu.build_elf_sha256==='string'&&zu.build_elf_sha256?zu.build_elf_sha256.slice(0,12)+'…':'—'],['Boot ID (claimed)',val(zu.boot_id||null)],['Role (claimed)',val(zu.role||null)],['Role verified (claim)',yn(zu.role_verified_claim)],['Member state (claimed)',val(zu.state||null)],['Radio (claimed)',val(zu.radio||null)],['Identity authenticated',yn(zu.identity_authenticated)],['RF membership verified',yn(zu.rf_membership_verified)]])]:[])]),
     diagSection('ha','⌂','Home Assistant',haData?`Connected · ${haData.time_zone||'time zone unknown'}`:'Not available',[haGroup()])];
-  $('health').replaceChildren(...sections);$('diag-attention').replaceChildren(attentionList(sections));
+  $('health').replaceChildren(...sections);$('diag-attention').replaceChildren(attentionList(sections));{const n=sections.flatMap(s=>s.flags||[]).length,b=$('diag-badge');b.textContent=n?'\u200b':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
   const flagCount=sections.reduce((n,x)=>n+x.flags.length,0),flagTone=sections.some(x=>x.flags.some(f=>f.tone==='bad'))?'bad':flagCount?'warn':'good';$('diag-pill').className='pill '+flagTone;$('diag-pill').textContent=flagCount?`${flagCount} to check`:'All normal';
   $('health-note').textContent=`${age===null?'Snapshot age unavailable':`Snapshot ${age.toFixed(1)} seconds old`}${current?' · endpoint online means a recent HELLO':' · current endpoint state is unknown'}.`;
   perfView();
@@ -1362,7 +1372,7 @@ async function refresh(){
   }finally{refreshing=false}
 }
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
-const tabs=['overview','activity','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
+const tabs=['overview','activity','diagnostics','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
 $('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
 $('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};

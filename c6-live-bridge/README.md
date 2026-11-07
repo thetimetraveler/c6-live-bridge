@@ -120,6 +120,8 @@ need `application/json` and, like maintenance, bypass the monitoring backoff.
 
 ## Overview: lights, performance and diagnostics (0.13.0)
 
+Since 0.13.4, Performance and Diagnostics are on their own **Diagnostics** tab.
+
 **Lights.** A strip at the top shows every bridged lamp as a circle glowing in
 its reported colour and brightness; select one to jump to its card. Each card
 has one bar from off to full: the fill is the lamp (as the hub reports it), ▼

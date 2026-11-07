@@ -38,7 +38,9 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 - `GET /api/zones` (per-zone sync summary served by the add-on: Lutron state, the bridge's last command,
   the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
-  from cached data and never adds gateway requests)
+  from cached data and never adds gateway requests). Lutron's level is the reference: it is the zone
+  level the processor last commanded, and lamp reports to the processor never change it, so a lamp that
+  differs from Lutron is flagged for the bridge to correct rather than expected to sync back.
 
 `/api/status` is forwarded as the gateway reports it, including `output_backend`,
 `direct_zigbee` and `zigbee_uart` on gateways that have them (see below).
@@ -127,7 +129,8 @@ Older gateways can still emit an activity row for each heartbeat.
 The Activity tab shows one row per lighting command: what was asked, where it
 got to (from Lutron → to hub → lights → to Lutron) and how it ended. Select a
 row to see each step. Every step names who sent it and who received it
-(Lutron → Bridge, Bridge → Ketra hub, Ketra hub → Bridge, Bridge → Lutron) and
+(Lutron → Bridge, Bridge → Ketra hub, Ketra hub → Bridge, Bridge → Lutron; the
+last updates the processor's record of the lamp, not the zone level Lutron shows) and
 shows only the level that step carried; its grey line holds the event number,
 the technical path (Thread, UART, N4), gateway uptime and the raw `requested`
 and `confirmed` fields alongside the typed report metadata. Commands are grouped

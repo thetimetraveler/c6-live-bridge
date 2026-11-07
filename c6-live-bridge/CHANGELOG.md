@@ -1,3 +1,8 @@
+## 0.12.1
+
+- Show Lutron as the reference for each bridged lamp. Lutron (via Home Assistant) reports the zone level the processor last commanded; lamp reports reach the processor's lamp record but never change that level. The Lights lede, the Lutron column caption, the event legend and the details of every lamp-versus-Lutron mismatch now say so, instead of implying Lutron will catch up with the lamp.
+- A selected Natural Show is now described as ending on any level command, including brightness-only ones, matching a genuine A20 (endpoint `76d10f6` and later). Scene recalls with a show brightness and raise/lower still show the held show brightness.
+
 ## 0.12.0
 
 - Show why a gateway is not delivering lighting yet. Gateways that report `backend.hold_reason`, `admission`, `epoch_stage`, `epoch_frames_sent` and `output_owner` get five new rows in **Direct Zigbee routing (reported)**, and the Overview warns while no path owns output (for example during the gateway's boot hold, with the seconds left from `endpoint_power.boot_hold_remaining_s`), and no longer also claims that N4 is carrying lighting while it is not. Gateways that do not send them are unchanged.

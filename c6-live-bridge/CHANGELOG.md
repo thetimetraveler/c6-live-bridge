@@ -1,3 +1,7 @@
+## 0.13.5
+
+- Stop two false warnings in Diagnostics. Remove "Qualified for deployment" and the three rows after it (security continuity, authenticated readback, endpoint cache epoch): the gateway reports them as fixed `false` constants that say nothing about readiness. Flag **UART overflows** only while the count is still rising in normal running (after the first 2 minutes of gateway uptime, within the last 10 minutes); the burst while the Zigbee node restarts after a gateway update is shown as a total, not a warning.
+
 ## 0.13.4
 
 - Move **Performance** and **Diagnostics** to their own **Diagnostics** tab, Performance first. Overview keeps the command flow and the Lights. The tab shows a dot when Diagnostics has something to check. On narrow screens the tab bar shortens Diagnostics and Programming to "Diag." and "Program" so all five tabs fit.

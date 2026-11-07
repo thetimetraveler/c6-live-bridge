@@ -59,6 +59,10 @@ if(!i||i[0]!=='warn'||!i[1].includes('20 min')||!i[1].includes('Zone 30861 not a
 health(status);if(!view('headline-detail').textContent.includes('Lamp scene storage not ready'))throw Error('stuck scene storage must reach the attention summary');
 if(sceneCacheIssue({...latestNative,scene_cache_ready:true})||sceneCacheIssue({}))throw Error('ready or missing scene storage is not flagged');
 latestNative=null;health(status);
+if(overflowRow(160,900000)[1]||overflowRow(160,960000)[1])throw Error('a settled overflow count is not flagged');
+if(overflowRow(0,10000)[1]||overflowRow(150,15000)[1])throw Error('the burst while the node restarts after boot is not flagged');
+overflowLast=160;if(overflowRow(162,1000000)[1]!=='warn'||!overflowRow(162,1000000)[0].includes('rising'))throw Error('overflows rising in normal running are flagged');
+overflowLast=null;overflowRoseAt=0;
 for(const role of [3,4]){assertNotSafe({...status,thread_role:role},'router or leader');if(!view('node-thread').className.includes('bad'))throw Error('router or leader must be shown as a fault');}
 for(const test of [
   {...status,endpoint_safety:undefined},safetyPatch({present:false}),safetyPatch({may_send:'true'}),

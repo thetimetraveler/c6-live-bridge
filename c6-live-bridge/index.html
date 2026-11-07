@@ -793,6 +793,18 @@ const flaggedRows=groups=>groups.flatMap(g=>(g.rows||[]).filter(r=>r[2]==='warn'
 function diagSection(key,icon,title,sub,groups){const flags=flaggedRows(groups),tone=flags.some(f=>f.tone==='bad')?'bad':flags.length?'warn':'good',d=el('details','dsec '+tone),sm=el('summary'),t=el('span','dsec-t',title);
   t.append(el('small','',sub));sm.append(el('span','dsec-ic',icon),t,pill(flags.length?`${flags.length} to check`:'OK',tone));const body=el('div','dsec-body'),grid=el('div','groups');grid.append(...groups);body.append(grid);d.append(sm,body);
   const auto=tone!=='good';d.open=diagOpen[key]??auto;d.addEventListener('toggle',()=>{if(d.open!==auto)diagOpen[key]=d.open;else delete diagOpen[key]});d.flags=flags.map(f=>({...f,section:title}));return d}
+/* Lamp scene storage (the gateway's scene cache). Scenes still work while it is
+   not ready, sent as ordinary commands, so flag it only once it has stayed
+   not ready for 10 minutes. */
+let latestNative=null,nativeRequestedAt=0;const SCENE_CACHE_FLAG_MS=600000;
+function sceneCacheIssue(n){
+  if(!n||n.scene_cache_ready!==false)return null;const c=n.scene_cache;
+  if(!c||!Number.isFinite(c.not_ready_ms)||c.not_ready_ms<SCENE_CACHE_FLAG_MS)return null;
+  const mins=ms=>Math.max(1,Math.round(ms/60000)),failing=(Array.isArray(n.bulbs)?n.bulbs:[]).filter(b=>b&&b.result!==0).map(b=>zoneInfo(b.zone).title);
+  const why=failing.length?`${failing.join(', ')} not answering`:(n.scene_cache_error||n.error||'').replace(/_/g,' ');
+  const retry=Number.isFinite(c.retry_in_ms)&&c.retry_in_ms>0?`; next check in ${mins(c.retry_in_ms)} min`:'';
+  return ['warn',`Lamp scene storage not ready for ${mins(c.not_ready_ms)} min${why?' ('+why+')':''}; scenes are sent as ordinary commands${retry}`];
+}
 function attentionList(sections){const flags=sections.flatMap(s=>s.flags||[]).sort((a,b)=>(b.tone==='bad')-(a.tone==='bad')),ul=el('ul','attention'+(flags.length?'':' clear'));
   if(!flags.length){const li=el('li','good');li.append(el('span','ic','✓'),el('span','','Nothing flagged: every reported counter and check looks normal.'),el('small',''));ul.append(li);return ul}
   for(const f of flags.slice(0,8)){const li=el('li',f.tone);li.append(el('span','ic',f.tone==='bad'?'✕':'!'),el('span','',`${f.key}: ${f.value}`),el('small','',f.section+(f.group&&f.group!==f.section?' · '+f.group:'')));ul.append(li)}
@@ -812,6 +824,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   if(arm==='record_mismatch')issues.push(['bad','Zigbee node record does not match the gateway journal; it is held. Check why before re-enrolling']);
   if(out.kind==='direct'&&held)issues.push(['bad','Lighting output held: direct Zigbee output is not admitted']);else if(out.kind==='unknown')issues.push(['warn','Lighting output backend not recognised']);
   if(zl?.enabled&&zl.tone!=='good')issues.push(['warn','Zigbee member link not responding']);
+  const sceneIssue=sceneCacheIssue(latestNative);if(sceneIssue)issues.push(sceneIssue);
   // A held output already explains every lamp; repeating it per lamp adds nothing.
   if(!held){if(!lampStats.current)issues.push(['warn','Lamp comparisons unavailable']);else if(lampStats.issues.length){const i=lampStats.assessed.findIndex(v=>['bad','warn'].includes(v.tone));issues.push([lampStats.assessed[i].tone,lampStats.issues.length===1?`${lampStats.lamps[i].name||'Lamp'}: ${lampStats.assessed[i].title}`:`${lampStats.issues.length} lamps need attention`])}else if(lampStats.pending)issues.push(['warn',`${lampStats.pending} lamp comparison${lampStats.pending===1?' is':'s are'} incomplete`]);}
   const tone=issues.some(i=>i[0]==='bad')?'bad':issues.length?'warn':'good';
@@ -1343,6 +1356,7 @@ async function refresh(){
     if(results[3].status==='fulfilled'&&results[3].value&&typeof results[3].value==='object'&&!Array.isArray(results[3].value)&&Array.isArray(results[3].value.zones))zonesView(results[3].value,startedAt);
     else if(lastZones)zonesView({...lastZones,monitoring:{age_s:zoneSnapshotAge(lastZones),delayed:true}});
     else $('device-note').textContent='Lamp comparisons unavailable.';
+    if(Date.now()-nativeRequestedAt>=30000){nativeRequestedAt=Date.now();req('ketra/native').then(n=>{if(n&&typeof n==='object'&&!Array.isArray(n))latestNative=n}).catch(()=>{})}
     if(latestStatus)health(latestStatus);
     if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message);
   }finally{refreshing=false}

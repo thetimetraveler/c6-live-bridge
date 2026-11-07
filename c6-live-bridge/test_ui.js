@@ -52,6 +52,13 @@ health(status);
 if(!view('node-thread').className.includes('good')||!view('summary').children[1].className.includes('good'))throw Error('a fresh child with complete safety telemetry should show ready');
 if(!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('does not confirm current command delivery'))throw Error('good status must explain the hardware and snapshot limits');
 if(firmwareBaseline(latestStatus)!==30||Number.isFinite(firmwareBaseline({...status,monitoring:{age_s:9,delayed:true}})))throw Error('firmware restart comparison requires a fresh pre-upload baseline');
+latestNative={scene_cache_ready:false,scene_cache_error:'inventory_unavailable',bulbs:[{zone:30861,result:5},{zone:31467,result:0}],scene_cache:{not_ready_ms:300000,retry_in_ms:0}};
+if(sceneCacheIssue(latestNative))throw Error('scene storage is not flagged before 10 minutes');
+latestNative.scene_cache={not_ready_ms:1200000,retry_in_ms:120000};{const i=sceneCacheIssue(latestNative);
+if(!i||i[0]!=='warn'||!i[1].includes('20 min')||!i[1].includes('Zone 30861 not answering')||!i[1].includes('next check in 2 min'))throw Error('stuck scene storage must name the lamp and the next check: '+i);}
+health(status);if(!view('headline-detail').textContent.includes('Lamp scene storage not ready'))throw Error('stuck scene storage must reach the attention summary');
+if(sceneCacheIssue({...latestNative,scene_cache_ready:true})||sceneCacheIssue({}))throw Error('ready or missing scene storage is not flagged');
+latestNative=null;health(status);
 for(const role of [3,4]){assertNotSafe({...status,thread_role:role},'router or leader');if(!view('node-thread').className.includes('bad'))throw Error('router or leader must be shown as a fault');}
 for(const test of [
   {...status,endpoint_safety:undefined},safetyPatch({present:false}),safetyPatch({may_send:'true'}),

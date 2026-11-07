@@ -1,3 +1,7 @@
+## 0.13.2
+
+- Flag lamp scene storage that stays not ready. The gateway loads Lutron scenes onto the lamps so a recall is one short message; until every lamp has been checked, scenes are sent as ordinary commands instead. If that lasts 10 minutes the attention summary says so, names the lamps not answering, and gives the time to the gateway's next check (gateway `afe69fa` and later report this in `/api/ketra/native`).
+
 ## 0.13.1
 
 - Show Lutron as the reference for each bridged lamp. Lutron (via Home Assistant) reports the zone level the processor last commanded; lamp reports reach the processor's lamp record but never change that level. The Lights lede, the Lutron column caption, the event legend and the details of every lamp-versus-Lutron mismatch now say so, instead of implying Lutron will catch up with the lamp.

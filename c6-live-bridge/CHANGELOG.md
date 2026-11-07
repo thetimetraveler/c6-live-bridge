@@ -1,3 +1,8 @@
+## 0.13.1
+
+- Show Lutron as the reference for each bridged lamp. Lutron (via Home Assistant) reports the zone level the processor last commanded; lamp reports reach the processor's lamp record but never change that level. The Lights lede, the Lutron column caption, the event legend and the details of every lamp-versus-Lutron mismatch now say so, instead of implying Lutron will catch up with the lamp.
+- A selected Natural Show is now described as ending on any level command, including brightness-only ones, matching a genuine A20 (endpoint `76d10f6` and later). Scene recalls with a show brightness and raise/lower still show the held show brightness.
+
 ## 0.13.0
 
 - Add a **Performance** card to the Overview: median, p95 and maximum time from a Lutron command to hub acceptance, to the first hub reading and back to Lutron, measured on the gateway clock from the event feed; the gateway's hub API response time (`acceptance_last_ms`, `acceptance_p95_ms`, `acceptance_max_ms`) with a live sparkline; its queue-to-hub time (`last_command_ms`, `max_command_ms`); the share of hub writes accepted first time; and a waterfall of the last ten commands hop by hop. Figures are coloured against stated thresholds.

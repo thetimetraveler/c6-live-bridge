@@ -375,6 +375,11 @@ def zone_show_state(zone, program, program_age_s, local_ms):
 # Zone sync check tolerances. Lutron/HA brightness is 0-255 or whole percent, so allow 1%.
 SYNC_LEVEL_TOL, SHOW_LEVEL_TOL, SHOW_CCT_TOL, SYNC_CCT_TOL = 100, 50, 15, 60
 CONFIRM_STALE_MS = 120_000
+# Lutron (LEAP, via Home Assistant) reports the processor's zone level: the level it last
+# commanded. Lamp reports reach the processor's lamp record but never change that zone
+# level, so Lutron is the reference and a difference is for the bridge to correct.
+REFERENCE_NOTE = ("Lutron shows the zone level the processor last commanded. Lamp reports don't change it, "
+                  "so Lutron won't follow the lamp; send the level from Lutron to bring them back in line.")
 CHECK_ORDER = {"bad": 0, "warn": 1, "wait": 2, "unknown": 3, "info": 4, "good": 5}
 
 
@@ -569,9 +574,9 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
         checks.append(_check("lutron", "unknown", f"Lutron state is {lutron['state'] or 'unknown'}"))
     elif not lutron["on"] and lamp["level_x100"] > 0:
         checks.append(_check("lutron", "bad", f"Lamp is on at {_pct_text(lamp['level_x100'])}, Lutron shows off",
-                             "Changed outside Lutron, for example after a power cut or from the Ketra app."))
+                             "Changed outside Lutron, for example after a power cut or from the Ketra app. " + REFERENCE_NOTE))
     elif lutron["on"] and lamp["level_x100"] == 0:
-        checks.append(_check("lutron", "bad", "Lutron shows on, lamp is off"))
+        checks.append(_check("lutron", "bad", "Lutron shows on, lamp is off", REFERENCE_NOTE))
     elif not lutron["on"]:
         checks.append(_check("lutron", "good", "Lamp and Lutron are both off"))
     elif lutron["level_x100"] is None:
@@ -580,9 +585,9 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
         checks.append(_check("lutron", "info", "Lutron shows the show's next keyframe",
                              f"Lutron reports {_pct_text(lutron['level_x100'])} while the show fades the lamp there; see the show check."))
     elif lutron["level_x100"] is not None and abs(lutron["level_x100"] - lamp["level_x100"]) > SYNC_LEVEL_TOL:
-        checks.append(_check("lutron", "warn", f"Lamp at {_pct_text(lamp['level_x100'])}, Lutron shows {_pct_text(lutron['level_x100'])}"))
+        checks.append(_check("lutron", "warn", f"Lamp at {_pct_text(lamp['level_x100'])}, Lutron shows {_pct_text(lutron['level_x100'])}", REFERENCE_NOTE))
     elif lutron["cct"] and lamp["cct"] and abs(lutron["cct"] - lamp["cct"]) > SYNC_CCT_TOL:
-        checks.append(_check("lutron", "warn", f"Lamp colour {lamp['cct']} K, Lutron shows {lutron['cct']} K"))
+        checks.append(_check("lutron", "warn", f"Lamp colour {lamp['cct']} K, Lutron shows {lutron['cct']} K", REFERENCE_NOTE))
     elif lutron["cct"] is None or lamp["cct"] is None:
         checks.append(_check("lutron", "unknown", "Brightness matches; colour unavailable"))
     else:
@@ -592,7 +597,7 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
     if show["status"] == "unknown":
         checks.append(_check("show", "unknown", "Waiting for the zone's programming"))
     elif show["status"] == "not_selected":
-        checks.append(_check("show", "info", "No Natural Show selected", "A scene, colour or off command cancels the show; selecting it again resumes it."))
+        checks.append(_check("show", "info", "No Natural Show selected", "Any level, scene, colour or off command ends the show, as on a genuine A20; selecting it again resumes it."))
     elif not running:
         checks.append(_check("show", "warn", "Show selected but it can't be evaluated", show["status"].replace("_", " ")))
     else:

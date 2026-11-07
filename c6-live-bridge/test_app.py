@@ -874,6 +874,10 @@ class ZoneSummaryTests(unittest.TestCase):
         self.assertEqual(ok["sent"]["xy"],[0.3457,0.3585])
         off_by=app.zone_summary(bridged(7000,"observed",240,sent),self.program(False),10,at(9,20),light("on",128),100_000)
         self.assertEqual(off_by["verdict"],{"tone":"warn","title":"Lamp at 70%, Lutron shows 50.2%"})
+        # Lutron is the reference: lamp reports never move the processor's zone level.
+        mismatch=next(c for c in off_by["checks"] if c["key"]=="lutron")
+        self.assertIn("processor last commanded",mismatch["detail"])
+        self.assertIn("won't follow the lamp",mismatch["detail"])
         moving=bridged(3000,"observed",240,dict(sent,transition_ms=10_000),last_command_ms=95_000)
         self.assertEqual(self.statuses(app.zone_summary(moving,self.program(False),10,at(9,20),light("on",179),100_000))["hub"],"wait")
 

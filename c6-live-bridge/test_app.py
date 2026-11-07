@@ -996,8 +996,15 @@ class ZoneSummaryTests(unittest.TestCase):
         self.assertEqual(unknown["verdict"]["tone"],"wait");self.assertIsNone(unknown["lamp"])
         admitted=app.zone_summary(bridged(5000,requested=cmd),self.program(False),10,at(12),light("on",128),100_000,
                                   {"backend":"direct_zigbee","admitted":True,"reason":None})
-        self.assertEqual(admitted["verdict"],{"tone":"wait","title":"Lamp state unavailable on this output"})
-        self.assertFalse(admitted["sent"]["held"])
+        # Admitted direct output reads the lamp over Zigbee: the reading is compared.
+        self.assertEqual(admitted["lamp"]["level_x100"],5000);self.assertFalse(admitted["sent"]["held"])
+        self.assertEqual(self.statuses(admitted)["hub"],"good");self.assertNotEqual(admitted["verdict"]["title"],"Lamp state unavailable on this output")
+        # A steady lamp is read every 5 minutes: a 4-minute-old direct reading is current, a 4-minute-old N4 one is not.
+        aged=bridged(5000,requested=cmd,at_ms=160_000)
+        d=app.zone_summary(aged,self.program(False),10,at(12),light("on",128),400_000,{"backend":"direct_zigbee","admitted":True,"reason":None})
+        self.assertIsNotNone(d["lamp"]);self.assertNotIn("fresh",self.statuses(d))
+        n=app.zone_summary(aged,self.program(False),10,at(12),light("on",128),400_000)
+        self.assertEqual(self.statuses(n)["fresh"],"warn")
 
     def test_zone_route_reports_the_output_backend(self):
         panel=app.Panel(StubGateway(),app.EventArchive(tempfile.mkdtemp()))

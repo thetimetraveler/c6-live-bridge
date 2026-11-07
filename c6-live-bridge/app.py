@@ -376,6 +376,9 @@ def zone_show_state(zone, program, program_age_s, local_ms):
 # Zone sync check tolerances. Lutron/HA brightness is 0-255 or whole percent, so allow 1%.
 SYNC_LEVEL_TOL, SHOW_LEVEL_TOL, SHOW_CCT_TOL, SYNC_CCT_TOL = 100, 50, 15, 60
 CONFIRM_STALE_MS = 120_000
+# Direct Zigbee reads a steady lamp every 5 minutes (every 30 s during a Natural Show),
+# so its readings stay current for the refresh period plus a margin.
+DIRECT_STALE_MS = 420_000
 # Lutron (LEAP, via Home Assistant) reports the processor's zone level: the level it last
 # commanded. Lamp reports reach the processor's lamp record but never change that zone
 # level, so Lutron is the reference and a difference is for the bridge to correct.
@@ -544,12 +547,17 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
     held = not output["admitted"]
     if sent is not None:
         sent["held"] = held
-    if output["backend"] != "n4":
+    direct = output["backend"] == "direct_zigbee"
+    # Held direct output reads no lamps, and an unknown backend's readings can't be
+    # placed; a reading left over from N4 must not be shown as the lamp's state.
+    if output["backend"] not in ("n4", "direct_zigbee") or (direct and held):
         reported_lamp = None
+    stale_ms = DIRECT_STALE_MS if direct else CONFIRM_STALE_MS
+    reader = "lamp" if direct else "hub"
     # APPLIED may be REST acceptance of the requested state, not a readback.
     # Retain it for display, but compare only fresh observed/corrected readings.
     lamp = (reported_lamp if reported_lamp and reported_lamp["source"] in ("observed", "correction")
-            and reported_lamp["age_ms"] is not None and reported_lamp["age_ms"] <= CONFIRM_STALE_MS else None)
+            and reported_lamp["age_ms"] is not None and reported_lamp["age_ms"] <= stale_ms else None)
     show = _show(program, program_age_s, local_ms)
     running = show["status"] == "running" and "target" in show
     checks = []
@@ -564,7 +572,8 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
                              f"The gateway reports {output['reason'] or 'no recognised backend'}."))
     elif output["backend"] == "direct_zigbee":
         checks.append(_check("output", "info", "Direct Zigbee output",
-                             "The gateway does not report direct Zigbee lamp readings, so the lamp can't be compared."))
+                             "The gateway reads each lamp over Zigbee after a command and every 5 minutes "
+                             "(every 30 s during a Natural Show)."))
 
     # 1. Lamp against Lutron: the question "is the light where Lutron thinks it is?"
     if lutron is None:
@@ -619,29 +628,29 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
                                  f"Hub reading matches {what}{' and colour' if level else ''} for this minute."))
 
     # 3. Lamp against the bridge's last command.
-    if output["backend"] != "n4":
-        pass  # covered by the output check; there is no hub to confirm
+    if output["backend"] not in ("n4", "direct_zigbee") or (direct and held):
+        pass  # covered by the output check
     elif sent is None or sent["level_x100"] is None:
         checks.append(_check("hub", "info", "No brightness command since the gateway started"))
     elif lamp is None:
-        checks.append(_check("hub", "wait", "Waiting for the hub to confirm"))
+        checks.append(_check("hub", "wait", f"Waiting for the {reader} to confirm"))
     elif abs(lamp["level_x100"] - sent["level_x100"]) <= SHOW_LEVEL_TOL:
-        checks.append(_check("hub", "good", "Hub reading matches the last command"))
+        checks.append(_check("hub", "good", f"{reader.capitalize()} reading matches the last command"))
     elif sent["age_ms"] is not None and sent["age_ms"] < sent["fade_ms"] + sent["delay_ms"] + 5000:
         checks.append(_check("hub", "wait", f"Fading to {_pct_text(sent['level_x100'])}"))
     else:
-        checks.append(_check("hub", "warn", f"Hub reads {_pct_text(lamp['level_x100'])}; last command was {_pct_text(sent['level_x100'])}",
+        checks.append(_check("hub", "warn", f"{reader.capitalize()} reads {_pct_text(lamp['level_x100'])}; last command was {_pct_text(sent['level_x100'])}",
                              "The lamp changed after the bridge's last command."))
 
     # 4. Freshness of the lamp reading.
-    if reported_lamp and reported_lamp["source"] in ("observed", "correction") and (reported_lamp["age_ms"] is None or reported_lamp["age_ms"] > CONFIRM_STALE_MS):
-        checks.append(_check("fresh", "warn", "No recent reading from the hub",
+    if reported_lamp and reported_lamp["source"] in ("observed", "correction") and (reported_lamp["age_ms"] is None or reported_lamp["age_ms"] > stale_ms):
+        checks.append(_check("fresh", "warn", f"No recent reading from the {reader}",
                              "" if reported_lamp["age_ms"] is None else f"Last reading {reported_lamp['age_ms'] // 60000} min ago."))
 
     worst = min(checks, key=lambda c: CHECK_ORDER[c["status"]])
     if worst["status"] in ("bad", "warn"):
         verdict = {"tone": worst["status"], "title": worst["title"]}
-    elif output["backend"] != "n4":
+    elif output["backend"] not in ("n4", "direct_zigbee"):
         verdict = {"tone": "wait", "title": "Lamp state unavailable on this output"}
     elif lamp is None:
         verdict = {"tone": "wait", "title": "Waiting for a hub reading"}

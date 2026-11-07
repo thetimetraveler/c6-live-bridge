@@ -1,3 +1,7 @@
+## 0.13.3
+
+- Show direct Zigbee lamp readings. The app still assumed the gateway took no readings on direct Zigbee output, so every lamp said "Waiting for the lamp's first reading". The gateway reads each lamp after a command and every 5 minutes (every 30 s during a Natural Show); those readings are now compared with Lutron and with the bridge's last command, labelled "Lamp · Zigbee", and count as current for 7 minutes (2 minutes on N4). Held direct output still shows no reading.
+
 ## 0.13.2
 
 - Flag lamp scene storage that stays not ready. The gateway loads Lutron scenes onto the lamps so a recall is one short message; until every lamp has been checked, scenes are sent as ordinary commands instead. If that lasts 10 minutes the attention summary says so, names the lamps not answering, and gives the time to the gateway's next check (gateway `afe69fa` and later report this in `/api/ketra/native`).

@@ -116,6 +116,46 @@ fault bits, partition, leader, routers heard and blocked transmissions.
 `POST /api/endpoint/safety/clear` exactly `{"confirm":"clear-r1-latch"}`; both
 need `application/json` and, like maintenance, bypass the monitoring backoff.
 
+## Overview: lights, performance and diagnostics (0.13.0)
+
+**Lights.** A strip at the top shows every bridged lamp as a circle glowing in
+its reported colour and brightness; select one to jump to its card. Each card
+has one bar from off to full: the fill is the lamp (as the hub reports it), ▼
+is Lutron, the thin line is the bridge's last command and ◆ is what the Natural
+Show calls for now. Below it, Lutron → bridge → lamp sit side by side in that
+order. A running show's chart colours the day by the show's colour temperature
+(area and a band underneath), draws its brightness, shades night from Home
+Assistant's sun times, and marks now, the show target, the lamp and the next
+keyframe. Hover or drag across it to read the show at any time; the position is
+kept across the once-a-second refresh.
+
+**Performance.** Per-hop latency, as the median, p95 and maximum of recent
+commands (up to 60), from the event feed's gateway timestamps:
+
+- *Lutron → hub accepted*: `requested` to `applied`;
+- *Lutron → lamp reading*: `requested` to the zone's first `observed` hub
+  reading (or `correction`) within 15 s;
+- *Round trip back to Lutron*: `requested` to `report-sent`.
+
+The gateway's own timers add *Hub API response* (`acceptance_last_ms`, with
+`acceptance_p95_ms` and `acceptance_max_ms` over its last 64 writes, and a
+sparkline of the writes seen while the dashboard is open), *Gateway queue →
+hub* (`last_command_ms`, `max_command_ms`) and the share of hub writes accepted
+first time (`puts_ok` against `puts_failed`). Each figure is green, orange or
+red against a stated threshold (for example under 500 ms / over 2 s for hub
+acceptance). A waterfall shows the last ten commands hop by hop, with failed,
+held and replaced commands marked. Thread transit into the endpoint is not
+included: the endpoint stamps events with its own clock.
+
+**Diagnostics.** Counters are grouped into five sections in the order a command
+travels: Thread & endpoint, Endpoint ↔ gateway link (UART), Gateway (network,
+configuration, memory, sockets, stacks, restart cause), Lighting output (N4
+delivery and WebSocket, direct Zigbee routing and output, Zigbee member link)
+and Home Assistant. Every flagged value is listed at the top with its section,
+each section's header says how many values to check, and a section with
+something flagged opens itself unless you closed it. A missing physical hold is
+flagged only when one is configured.
+
 ## Activity (0.5.2)
 
 Gateway availability/configuration events have readable labels. Endpoint
@@ -244,7 +284,7 @@ While output is held:
   "Held · direct Zigbee output not admitted". It groups with the command's
   `requested` step, appears under **Problems only**, and is not turned into
   "No progress" after two minutes;
-- **Diagnostics → Direct Zigbee output (reported)** lists admission and its
+- **Diagnostics → Lighting output → Direct Zigbee output (reported)** lists admission and its
   reason, the deployment, security-continuity, authenticated-readback and
   endpoint-cache-epoch readiness flags, and the receive-only diagnostic UART
   counters (HELLOs, frames, CRC errors). The HELLO role is shown as an
@@ -294,7 +334,7 @@ A **hybrid** gateway prefers direct Zigbee and falls back to N4 by itself.
 While N4 carries output for it, the Lighting output tile reads **N4 fallback**
 and the Overview names the direct path's reason; with direct Zigbee in
 control the tile reads **Direct Zigbee**. Diagnostics shows the details under
-**Direct Zigbee routing**.
+**Lighting output → Direct Zigbee routing**.
 
 **Ketra lamps** (Setup) edits the gateway's lamp inventory: for each Lutron
 zone, its Ketra group (pan and logical address, or none for per-lamp sends

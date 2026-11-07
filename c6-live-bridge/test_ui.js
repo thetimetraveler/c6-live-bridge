@@ -478,7 +478,7 @@ const mappingChecks=`
   if(!view('headline-detail').textContent.includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
   if(backendHold({...heldStatus,backend:{...heldStatus.backend,hold_reason:'constructor'}}).text!=='constructor')throw Error('reason names must not resolve through object prototypes');
   // Startup sequence on the overview.
-  const startup=()=>{const g=view('health').children.find(c=>c.children[0]?.textContent==='Startup sequence');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
+  const startup=()=>{const all=n=>[n,...(n.children||[]).flatMap(all)],g=all(view('health')).find(c=>c.children?.[0]?.textContent==='Startup sequence'&&c.children?.[1]?.className==='list');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
   const windowRow='Stability window (≥ 300 s, receive-only)';
   health(safetyPatch({phase:'start-delay',gate_remaining_s:120,gate_adverts:0},{boot_hold_remaining_s:40}));
   let rows=startup();
@@ -501,6 +501,39 @@ const mappingChecks=`
   if(!at('listening',20,0).startsWith('Up to 300 s remaining'))throw Error('a reboot seen mid-listening must give only an upper bound');
   at('attached',400,3);
   if(!at('listening',410,0).startsWith('Up to 300 s remaining'))throw Error('listening not preceded by the start delay is an upper bound');
+  // Diagnostics: sections in command order, flagged rows listed first, no-hold builds not flagged.
+  const tree=n=>[n,...(n.children||[]).flatMap(tree)];
+  health({...status,uart_crc_errors:3,uart_frames_ok:997,diagnostics:{maintenance:false,heap_free:182000,sockets_used:19,socket_limit:20,reset_reason:4}});
+  const secs=view('health').children;
+  if(secs.length!==5||!secs.every(x=>x.className.startsWith('dsec')))throw Error('diagnostics must be one section per part of the bridge');
+  const titles=secs.map(x=>text(x.children[0]));
+  for(const want of ['Thread & endpoint','Endpoint ↔ gateway link','Gateway','Lighting output','Home Assistant'])if(!titles.some(t=>t.includes(want)))throw Error('missing diagnostics section '+want);
+  const att=text(view('diag-attention'));
+  if(!att.includes('CRC errors: 3')||!att.includes('Sockets in use')||!att.includes('Crash (panic)'))throw Error('flagged rows must be listed first: '+att);
+  if(att.includes('Physical hold available'))throw Error('a build without a configured hold must not be flagged for it');
+  if(!secs[1].open||!secs[1].className.includes('warn')||secs[0].open)throw Error('only sections with something flagged open themselves');
+  if(!view('diag-pill').textContent.endsWith('to check'))throw Error('the diagnostics pill counts flagged rows');
+  {const ha=haData,dev=lastDevices;haData={lights:[],integrations:['lutron'],time_zone:'UTC'};lastDevices={...dev,zones:[]};health(status);
+  if(!text(view('diag-attention')).includes('Nothing flagged')||view('diag-pill').textContent!=='All normal')throw Error('a clean snapshot says so');haData=ha;lastDevices=dev}
+  // Performance: hop timings from the event feed and the gateway's own timers.
+  latestStatus={...status,puts_ok:99,puts_failed:1,diagnostics:{maintenance:false,accepted_count:5,acceptance_last_ms:150,acceptance_p95_ms:300,acceptance_max_ms:400,last_command_ms:210,max_command_ms:900,delivery_failed:0}};
+  eventView({boot_id:'perf',boot_epoch_ms:Date.now()-100000,next:20,next_sequence:20,oldest:1,lost:0,events:[
+    {id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2},{id:2,ts_ms:1200,stage:'applied',zone:1,requested:5000,command_seq:1,schema_version:2},
+    {id:3,ts_ms:1900,stage:'observed',zone:1,confirmed:5000,requested:5000},{id:4,ts_ms:2100,stage:'report-sent',zone:1,reported:5000,command_seq:1,report_seq:1,schema_version:2},
+    {id:5,ts_ms:5000,stage:'requested',zone:2,requested:0,command_seq:2,schema_version:2},{id:6,ts_ms:9000,stage:'delivery-failed',zone:2,requested:0,command_seq:2,schema_version:2}]});
+  const ptext=text(view('perf-stats'));
+  for(const want of ['Lutron → hub accepted','200','Lutron → lamp reading','900','Round trip back to Lutron','1.10','Hub API response','Gateway queue → hub','99.0'])if(!ptext.includes(want))throw Error('performance should show '+want+': '+ptext);
+  const wf=view('perf-waterfall').children;
+  if(wf.length!==2||!text(wf[0]).includes('Failed')||!text(wf[1]).includes('1.10 s'))throw Error('the waterfall lists recent commands newest first with their totals');
+  if(tree(wf[1]).filter(n=>/^seg-/.test(n.className)).map(n=>n.className).join()!=='seg-hub,seg-lamp,seg-back')throw Error('waterfall segments follow the hops in time order');
+  if(view('perf-count').textContent!=='2 commands timed')throw Error('performance counts timed commands');
+  // Lights: level rail markers, show chart coloured by CCT, glance strip.
+  zonesView({config_hash:1,zones:[sitting,{...sitting,zone:2,name:'Den'}],time_zone:'America/Los_Angeles',home_assistant:true,monitoring:{age_s:0,delayed:false}});
+  const card=view('zones').children[0],nodes=tree(card);
+  if(!nodes.some(n=>n.className==='rail-mk mk-lutron hi')||!nodes.some(n=>(n.className||'').startsWith('rail-mk mk-show'))||!nodes.some(n=>n.className==='rail-mk mk-sent'))throw Error('the rail marks Lutron, the bridge and the show');
+  if(!nodes.some(n=>n.tag==='stop'&&n.getAttribute('stop-color')===kelvinRGB(1800)))throw Error('the show chart is coloured by the show colour temperature');
+  if(!nodes.some(n=>n.className==='show-readout'))throw Error('the show chart has a readout');
+  if(view('zones-glance').children.length!==2||!text(view('zones-glance')).includes('Den'))throw Error('two or more lamps get a glance strip');
 })()
 `;
 await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

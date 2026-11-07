@@ -420,6 +420,13 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
     <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
     <details class="raw"><summary>Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
   </section>
+  <section class="card">
+    <div class="card-head"><h2>Bulb-local playback</h2><span class="pill info">Read-only</span></div>
+    <p class="lede">Check the gateway’s native programming status. Shows and scenes are authored in Lutron Designer.</p>
+    <button id="native-refresh" class="secondary">Check status</button>
+    <p id="native-note" class="muted small" role="status">No status requested yet.</p>
+    <div id="native-status"></div>
+  </section>
 </div>
 
 <div id="panel-setup" class="panel" role="tabpanel" hidden>
@@ -672,6 +679,61 @@ function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-ua
 function setHero(tone,title,detail,online=true){$('hero').className='hero '+tone;$('hero-glyph').textContent={good:'✓',warn:'!',bad:'✕',wait:'…'}[tone];$('headline').textContent=title;$('headline-detail').textContent=detail;$('live').className='live '+(online?'good':'bad');$('live-text').textContent=online?'Live':'Reconnecting'}
 function tile(label,value,tone,hint){const d=el('div','tile '+tone);d.append(el('span','tile-dot'),el('span','tile-label',label),el('strong','',value),el('small','',hint||' '));return d}
 function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row');r.append(el('span','',k),el('strong',tone||'',v));list.append(r)}g.append(el('h3','',title),list);return g}
+function nativeView(data){
+  $('native-status').replaceChildren();
+  const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+  if(!object(data)||typeof data.operational!=='boolean'||typeof data.rf_enabled!=='boolean'||!object(data.store)||!object(data.accepted_sources))throw Error('Native programming status is unavailable on this gateway.');
+  const store=data.store,sources=data.accepted_sources;
+  const storeNames={ready:'Available',blank:'Not initialized',foreign:'Unrecognized data — held',corrupt:'Corrupt — held',poisoned:'Recovery required',io_error:'Read failed',unavailable:'Unavailable',uninitialized:'Waiting for inspection'};
+  if(!Object.prototype.hasOwnProperty.call(storeNames,store.state)||!['endpoint_available','clock_fault','fence_exhausted','started','mapping_valid'].every(k=>typeof sources[k]==='boolean')||!Number.isInteger(sources.count)||sources.count<0||sources.count>16||!Number.isInteger(sources.last_verified)||sources.last_verified<0||sources.last_verified>sources.count)throw Error('Native programming status is incomplete or malformed.');
+  const own=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key);
+  const whole=(v,min,max)=>Number.isSafeInteger(v)&&v>=min&&v<=max;
+  const states={waiting:'Waiting',fetching:'Checking',backoff:'Waiting to retry',last_verified:'Last verified'};
+  const results={ok:'Source program received',busy:'Bridge or endpoint busy',unsupported:'Endpoint source export unavailable',
+    meta_no_matching_reply:'No matching source reply',timeout:'Source transfer timed out',stale:'Source changed during the check',
+    not_found:'Source program not found',invalid:'Source program or reply failed validation',
+    io:'Source check encountered a read or communication error',no_memory:'Not enough memory for source check'};
+  const invalid=()=>{throw Error('Native source details are incomplete or malformed.')};
+  if(own(sources,'mapping_revision')&&!whole(sources.mapping_revision,0,4294967295))invalid();
+  if(own(sources,'peer_backoff')&&typeof sources.peer_backoff!=='boolean')invalid();
+  if(own(sources,'endpoint_boot')&&!(sources.endpoint_boot===null||typeof sources.endpoint_boot==='string'&&/^[0-9a-f]{16}$/i.test(sources.endpoint_boot)))invalid();
+  if(own(sources,'backoff')&&!whole(sources.backoff,0,sources.count))invalid();
+  let details=null;
+  if(own(sources,'sources')){
+    if(!Array.isArray(sources.sources)||sources.sources.length!==sources.count)invalid();
+    const ids=new Set(),indices=new Set(),serials=new Set();
+    const verifiedFields=['generation','total','operation_count','verified_at_ms','sha256'];
+    details=sources.sources.map(item=>{
+      if(!object(item)||!whole(item.zone_index,0,127)||!whole(item.zone_id,1,65535)||!whole(item.serial,1,4294967295)||
+         !own(states,item.state)||typeof item.retry_pending!=='boolean'||typeof item.has_result!=='boolean'||
+         (item.has_result?!own(results,item.last_result):item.last_result!==null)||
+         ids.has(item.zone_id)||indices.has(item.zone_index)||serials.has(item.serial))invalid();
+      ids.add(item.zone_id);indices.add(item.zone_index);serials.add(item.serial);
+      if(item.state==='last_verified'){
+        if(!item.has_result||item.last_result!=='ok'||!whole(item.generation,1,4294967295)||
+           !whole(item.total,1,262144)||!whole(item.operation_count,1,4096)||
+           !whole(item.verified_at_ms,0,Number.MAX_SAFE_INTEGER)||typeof item.sha256!=='string'||!/^[0-9a-f]{64}$/i.test(item.sha256))invalid();
+      }else if(verifiedFields.some(k=>own(item,k)))invalid();
+      return item;
+    });
+    if(details.filter(item=>item.state==='last_verified').length!==sources.last_verified||
+       own(sources,'backoff')&&details.filter(item=>item.state==='backoff').length!==sources.backoff)invalid();
+  }
+  const count=sources.last_verified;
+  const sourceState=sources.clock_fault?'Clock fault — held':sources.fence_exhausted?'Recovery required':!sources.started?'Inspection unavailable':!sources.mapping_valid?'Mapping unverified':sources.endpoint_available?(count?'Endpoint reachable':'Endpoint reachable; no source verified'):'Endpoint unavailable';
+  $('native-status').append(group('Last status check',[
+    ['Native playback',data.operational&&data.rf_enabled?'Gateway reports enabled; execution unverified here':'Disabled','warn'],
+    ['Backup store',storeNames[store.state]||'Unknown'],['Last-verified source programs',String(count)],['Source inspection',sourceState]]));
+  if(details?.length)$('native-status').append(group('Source program checks',details.map(item=>[
+    'Zone ID '+item.zone_id,states[item.state]+' · '+(item.has_result?'Last check: '+results[item.last_result]:'Not checked yet'),item.state==='last_verified'?'':'warn'])));
+  $('native-note').textContent='Checked '+new Date().toLocaleString()+'. '+(data.reason==='native_capabilities_unverified'?'Lamp playback, stopping and restore still need validation. ':'')+'Stored source programs do not verify bulb content or playback.';
+}
+async function loadNative(){
+  $('native-refresh').disabled=true;$('native-status').replaceChildren();$('native-note').textContent='Checking native programming status…';
+  try{nativeView(await req('ketra/native'))}catch(e){$('native-status').replaceChildren();$('native-note').textContent='Native status unavailable. '+e.message}
+  finally{$('native-refresh').disabled=false}
+}
+$('native-refresh').onclick=loadNative;
 const errTone=v=>Number(v)>0?'warn':'';
 function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){latestStatus=s;statusReceivedAt=receivedAt??Date.now()}const age=snapshotAge(s),current=snapshotFresh(s),up=s.gateway_uptime_ms;statusAnchor=typeof up==='number'&&Number.isFinite(up)&&age!==null?Date.now()-age*1000-up:null;const role=roleName(s.thread_role),state=endpointHealth(s),q=s.endpoint_safety||{},p=s.endpoint_power||{};
   const net=netName(s),netOk=netUp(s),issues=[],lampStats=lampSummary();if(netOk!==true)issues.push([netOk===false?'bad':'warn',`Gateway ${net==='Network'?'network':net} is ${netOk===false?'down':'unavailable'}`]);if(state.tone!=='good')issues.push([state.tone,state.title]);if(s.config_match!==true)issues.push(['warn',s.config_match===false?'Zone mapping is not yet in sync on both boards':'Zone mapping status is unavailable']);

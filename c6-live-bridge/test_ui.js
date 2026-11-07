@@ -46,6 +46,38 @@ if(!html.includes('Online again after 30 s')||!html.includes('Uptime decrease ob
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
+const nativeText=()=>{const visit=e=>[e.textContent,...e.children.map(visit)].join(' ');return visit(view('native-status'))};
+const nativePayload=()=>({operational:false,rf_enabled:false,reason:'native_capabilities_unverified',store:{state:'ready'},accepted_sources:{last_verified:3,count:3,endpoint_available:true,clock_fault:false,fence_exhausted:false,started:true,mapping_valid:true}});
+nativeView(nativePayload());
+if(!nativeText().includes('Disabled')||!nativeText().includes('3')||!view('native-note').textContent.includes('do not verify bulb content'))throw Error('a source cache or ready backup store must not imply bulb playback');
+{const payload=nativePayload();payload.operational=payload.rf_enabled=true;payload.accepted_sources.clock_fault=true;nativeView(payload)}
+if(!nativeText().includes('execution unverified')||!nativeText().includes('Clock fault'))throw Error('gateway claims and clock holds must be explicit');
+try{nativeView({});throw Error('malformed native response accepted')}catch(e){if(e.message==='malformed native response accepted')throw e}
+if(view('native-status').children.length)throw Error('invalid native status must clear the previous snapshot');
+for(const change of [p=>p.store=[],p=>p.accepted_sources={},p=>delete p.accepted_sources.endpoint_available,p=>p.accepted_sources.endpoint_available='false',p=>p.accepted_sources.last_verified=4]){const payload=nativePayload();change(payload);try{nativeView(payload);throw Error('malformed nested native response accepted')}catch(e){if(e.message==='malformed nested native response accepted')throw e}if(view('native-status').children.length)throw Error('malformed native status retained old data')}
+const nativeDetailed=()=>{const p=nativePayload();Object.assign(p.accepted_sources,{last_verified:1,backoff:2,peer_backoff:true,mapping_revision:1,endpoint_boot:'000000000000004d',sources:[
+  {zone_index:2,zone_id:30861,serial:111,state:'backoff',retry_pending:true,has_result:true,last_result:'meta_no_matching_reply'},
+  {zone_index:0,zone_id:42,serial:222,state:'backoff',retry_pending:false,has_result:false,last_result:null},
+  {zone_index:1,zone_id:23,serial:333,state:'last_verified',retry_pending:false,has_result:true,last_result:'ok',generation:1,total:123,operation_count:3,verified_at_ms:10,sha256:'ab'.repeat(32)}]});return p};
+const nativeRows=()=>{const g=view('native-status').children.find(c=>c.children[0]?.textContent==='Source program checks');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1].textContent]))};
+nativeView(nativeDetailed());
+let sourceRows=nativeRows();
+if(!sourceRows['Zone ID 30861'].includes('Last check: No matching source reply')||!sourceRows['Zone ID 42'].includes('Not checked yet')||
+   sourceRows['Zone ID 42'].includes('unavailable')||!sourceRows['Zone ID 23'].includes('Last verified')||nativeText().includes('ab'.repeat(32)))throw Error('source checks must distinguish unanswered, unattempted and verified without exposing hashes');
+{const p=nativeDetailed();p.accepted_sources.sources[0].last_result='unsupported';nativeView(p)}
+sourceRows=nativeRows();
+if(!sourceRows['Zone ID 30861'].includes('Endpoint source export unavailable')||sourceRows['Zone ID 42'].includes('unavailable'))throw Error('explicit unsupported belongs only to the attempted source');
+{const p=nativePayload();p.accepted_sources.last_verified=0;nativeView(p)}
+if(!nativeText().includes('Endpoint reachable; no source verified'))throw Error('an available endpoint does not establish a verified source');
+for(const change of [
+  p=>p.accepted_sources.sources={},p=>p.accepted_sources.sources.pop(),p=>p.accepted_sources.peer_backoff='true',
+  p=>p.accepted_sources.sources[0].state='constructor',p=>p.accepted_sources.sources[0].last_result='unknown',
+  p=>p.accepted_sources.sources[1].last_result='unsupported',p=>delete p.accepted_sources.sources[1].retry_pending,
+  p=>p.accepted_sources.sources[1].zone_id=30861,p=>p.accepted_sources.sources[2].sha256='bad',
+  p=>p.accepted_sources.sources[0].sha256='ab'.repeat(32),p=>p.accepted_sources.last_verified=0,
+  p=>p.accepted_sources.backoff=1,p=>p.accepted_sources.sources[0].zone_index=128,
+  p=>{delete p.accepted_sources.sources;p.accepted_sources.mapping_revision='bad'}
+]){const p=nativeDetailed();nativeView(p);change(p);try{nativeView(p);throw Error('malformed native source accepted')}catch(e){if(e.message==='malformed native source accepted')throw e}if(view('native-status').children.length)throw Error('malformed source details retained old data')}
 const safetyPatch=(safety={},power={})=>({...status,endpoint_safety:{...status.endpoint_safety,...safety},endpoint_power:{...status.endpoint_power,...power}});
 const assertNotSafe=(s,why)=>{health(s);if(view('hero').className.includes('good')||view('node-thread').className.includes('good')||view('summary').children[1].className.includes('good'))throw Error(why+' must not be shown as safe');};
 health(status);
@@ -371,6 +403,11 @@ const mappingChecks=`
   // Settle the initial background loads before simulating an independent editor.
   for(let i=0;i<30;i++)await Promise.resolve();
   if(refreshing)throw Error('initial refresh did not settle');
+  replies.native=nativePayload();replies.native.store.state='blank';replies.native.accepted_sources.last_verified=0;
+  await loadNative();
+  if(!nativeText().includes('Not initialized')||view('native-refresh').disabled)throw Error('manual native check should complete without initializing storage');
+  failKeys.add('native');await loadNative();failKeys.delete('native');
+  if(view('native-status').children.length||!view('native-note').textContent.includes('unavailable'))throw Error('failed refresh must clear native status');
   const realNow=Date.now;let now=realNow();Date.now=()=>now;
   try{
     const devices={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};

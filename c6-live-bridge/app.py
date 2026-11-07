@@ -52,6 +52,7 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
           "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
           "ketra": ("GET", "/api/ketra"), "ketra_put": ("PUT", "/api/ketra"),
+          "native": ("GET", "/api/ketra/native"),
           "update": ("POST", "/api/endpoint/update"),
           "zigbee_update": ("POST", "/api/zigbee/update"), "zigbee_enroll": ("POST", "/api/zigbee/enroll"),
           "maintenance": ("POST", "/api/maintenance"),
@@ -1374,7 +1375,7 @@ class Handler(BaseHTTPRequestHandler):
             ha = self.server.ha
             return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone",
-                 "/api/ketra": "ketra"}.get(parts.path)
+                 "/api/ketra": "ketra", "/api/ketra/native": "native"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
         allowed = {"events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}

@@ -30,6 +30,8 @@ class StubGateway:
             return 202,"application/json",b'{"state":"rebooting"}'
         if path == "/api/zigbee/enroll":
             return 200,"application/json",b'{"enrolled":true}'
+        if path == "/api/ketra/native":
+            return 200,"application/json",b'{"operational":false,"rf_enabled":false,"reason":"native_capabilities_unverified"}'
         return 200,"application/json",json.dumps({"after":0,"next":2,"oldest":1,"lost":0,"events":[{"id":1,"stage":"confirmed"}]}).encode()
 
 
@@ -47,6 +49,32 @@ class StubHomeAssistant(app.HomeAssistant):
 
 
 class AddonTests(unittest.TestCase):
+    def test_native_status_is_an_explicit_read_only_proxy(self):
+        code, _, raw = self.panel.proxy("native")
+        self.assertEqual(code, 200)
+        self.assertIs(json.loads(raw)["rf_enabled"], False)
+        self.assertEqual(self.gateway.calls[-1], ("GET", "/api/ketra/native", None, None))
+        self.assertEqual(app.ROUTES["native"], ("GET", "/api/ketra/native"))
+        self.assertNotIn("native", app.SAFETY_ROUTES)
+
+    def test_native_status_handler_scope(self):
+        good = self.handler(path="/api/ketra/native")
+        good.do_GET()
+        self.assertEqual(good.results[0][0], 200)
+        calls = len(self.gateway.calls)
+        denied = self.handler(peer="192.168.1.20", path="/api/ketra/native")
+        denied.do_GET()
+        self.assertEqual(denied.results[0][0], 403)
+        for path in ("/api/ketra/native?zone=0", "/api/ketra/native#fragment"):
+            bad = self.handler(path=path)
+            bad.do_GET()
+            self.assertEqual(bad.results[0][0], 404)
+        for method in ("do_PUT", "do_POST"):
+            bad = self.handler(path="/api/ketra/native")
+            getattr(bad, method)()
+            self.assertEqual(bad.results[0][0], 404)
+        self.assertEqual(len(self.gateway.calls), calls)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.gateway=StubGateway()

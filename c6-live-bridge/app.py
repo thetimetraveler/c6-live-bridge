@@ -76,7 +76,7 @@ HA_TEMPLATE = """{%- set ns = namespace(lights=[]) -%}
   "area": area_name(eid), "device_id": dev, "zone_id": state_attr(eid, 'zone_id'),
   "device": (device_attr(dev, 'name_by_user') or device_attr(dev, 'name')) if dev else none,
   "serial": device_attr(dev, 'serial_number') if dev else none,
-  "model": device_attr(dev, 'model') if dev else none}] -%}
+  "model": device_attr(dev, 'model') if dev else none, "entry": config_entry_id(eid)}] -%}
 {%- endfor -%}
 {%- endfor -%}
 {{ {"lights": ns.lights, "sun": {"next_rising": state_attr('sun.sun', 'next_rising'),
@@ -138,6 +138,7 @@ class HomeAssistant:
         self.integrations = [i for i in integrations if isinstance(i, str) and INTEGRATION.fullmatch(i)][:8]
         self.lock = threading.Lock()
         self.cached, self.cached_at, self.core_config = None, 0.0, None
+        self.leap_cache, self.leap_at = None, 0.0
 
     def request(self, method, path, body=None):
         conn = http.client.HTTPConnection(self.host, timeout=self.timeout)
@@ -193,11 +194,72 @@ class HomeAssistant:
                           "location_name": clean_text(self.core_config.get("location_name")),
                           "sun": {k: clean_text(sun.get(k), 64) for k in ("next_rising", "next_setting")},
                           "lights": [l for l in map(self.light, data["lights"][:500]) if l]}
+                result["leap"] = self.leap(data["lights"][:500])
             except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
                 LOG.warning("Home Assistant lookup failed: %s", exc)
                 result = {"available": False, "error": f"Home Assistant lookup failed: {exc}"}
             self.cached, self.cached_at = result, time.monotonic()
             return result
+
+    LEAP_TTL, LEAP_RETRY = 600, 1800
+    ENTRY_ID = re.compile(r"[A-Za-z0-9]{1,64}\Z")
+
+    @staticmethod
+    def leap_data(diagnostics):
+        """The Lutron processor's areas, zones and keypads from a lutron_caseta diagnostics dump."""
+        bridge = ((diagnostics or {}).get("data") or {}).get("bridge_data") if isinstance(diagnostics, dict) else None
+        if not isinstance(bridge, dict):
+            raise ValueError("no Lutron bridge data in diagnostics")
+        raw_areas = bridge.get("areas") if isinstance(bridge.get("areas"), dict) else {}
+        areas = {}
+        for key, area in list(raw_areas.items())[:500]:
+            if not isinstance(area, dict) or not SAFE_INT.match(str(key)):
+                continue
+            names, seen, node = [], set(), area
+            # Walk up to (not including) the top-level home; guard against loops.
+            while isinstance(node, dict) and node.get("parent_id") and str(node.get("id")) not in seen and len(names) < 8:
+                seen.add(str(node.get("id")))
+                names.append(clean_text(node.get("name"), 64))
+                node = raw_areas.get(str(node.get("parent_id")))
+            areas[str(key)] = {"name": clean_text(area.get("name"), 64), "path": " › ".join(reversed([n for n in names if n]))}
+        zones, keypads = {}, {}
+        for key, dev in list((bridge.get("devices") or {}).items())[:1000] if isinstance(bridge.get("devices"), dict) else []:
+            if not isinstance(dev, dict) or not SAFE_INT.match(str(key)):
+                continue
+            area = str(dev.get("area")) if SAFE_INT.match(str(dev.get("area"))) else None
+            if dev.get("zone") is not None and SAFE_INT.match(str(dev.get("zone"))):
+                tuning = dev.get("white_tuning_range") if isinstance(dev.get("white_tuning_range"), dict) else {}
+                lo, hi = tuning.get("Min"), tuning.get("Max")
+                zones[str(dev["zone"])] = {"name": clean_text(dev.get("device_name") or dev.get("name"), 64), "area": area,
+                                           "type": clean_text(dev.get("type"), 32),
+                                           "tuning": [lo, hi] if all(type(v) is int and 1000 <= v <= 20000 for v in (lo, hi)) else None,
+                                           "warm_dim": dev.get("warm_dim") if type(dev.get("warm_dim")) is bool else None}
+            elif dev.get("button_groups"):
+                keypads[str(key)] = {"name": clean_text(dev.get("control_station_name") or dev.get("name"), 64),
+                                     "device": clean_text(dev.get("device_name"), 64), "area": area,
+                                     "model": clean_text(dev.get("model"), 32)}
+        return {"areas": areas, "zones": zones, "keypads": keypads}
+
+    def leap(self, lights):
+        """Lutron processor data for labels; read from the integration's diagnostics, cached for 10 minutes."""
+        if self.leap_cache is not None and time.monotonic() - self.leap_at < (self.LEAP_TTL if "error" not in self.leap_cache else self.LEAP_RETRY):
+            return self.leap_cache
+        entries = sorted({l.get("entry") for l in lights if isinstance(l, dict) and l.get("integration") == "lutron_caseta"
+                          and isinstance(l.get("entry"), str) and self.ENTRY_ID.match(l["entry"])})
+        merged = {"areas": {}, "zones": {}, "keypads": {}}
+        try:
+            if not entries:
+                raise ValueError("no Lutron Caséta/RA3 integration entry")
+            for entry in entries[:4]:
+                part = self.leap_data(json.loads(self.request("GET", f"/diagnostics/config_entry/{entry}")))
+                for k in merged:
+                    merged[k].update(part[k])
+            result = merged
+        except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+            LOG.info("Lutron processor data unavailable: %s", exc)
+            result = {"error": clean_text(str(exc), 120)}
+        self.leap_cache, self.leap_at = result, time.monotonic()
+        return result
 
     def time_zone(self):
         """Home Assistant's time zone, read once; None while it cannot be read."""

@@ -1,3 +1,8 @@
+## 0.15.0
+
+- **Names from the Lutron processor.** The app reads Home Assistant's Lutron Caséta/RA3 integration diagnostics (every 10 minutes, through the Supervisor) for the processor's area tree, zones and keypads. Zone programming's **Answers to** names each ID: *Area: Second Floor › Office*, another zone, a keypad, *This lamp's device or load* (the IDs the processor numbers just after the zone), or *Group*. Lamp rows and the zone summary show the processor's area path and fixture type (for example *SpectrumTune · 1400–10000 K · warm dim*). Health → Home Assistant reports how many areas, zones and keypads were read, or why not. Without the diagnostics everything works as before.
+- Scene names are not available: Home Assistant does not receive Lutron preset names, so scenes stay numbered.
+
 ## 0.14.3
 
 - **Zone programming is readable.** *Members* becomes **Answers to**: the Lutron IDs the lamp listens to, each labelled (this zone, another mapped zone, or an area or group), with a line explaining that a command sent to any of them reaches the lamp. *Presets* become a **Scenes** table saying what each scene does to the lamp: its brightness (converted from Lutron's 16-bit level), colour temperature or xy with a swatch, vibrancy, warm-dim curve, "Starts Natural Show …", or "Unaffected", with fade and delay in seconds. The scene last recalled is marked, and each row's raw values are in its tooltip. The summary shows the running Natural Show and how many scenes change the lamp.

@@ -594,6 +594,9 @@ const mappingChecks=`
     shows:[{id:31779,knots:[{minute:0,level:6000,cct:1900},{minute:720,level:65279,cct:4500}]}]});
     const v=text(view('program-viz'));
     for(const want of ['Answers to','Area or group','Scene preset 4261','25%','2700 K · vibrancy 25','Off','10 s fade','Starts Natural Show 31779','after 1 s delay','Halogen warm dim','Unaffected','100%','4 change this lamp · 1 leave it alone'])if(!v.includes(want))throw Error('zone programming should read '+want+': '+v);
+    {const ha=haData;haData={lights:[],leap:{areas:{'2710':{name:'Office',path:'Second Floor › Office'}},zones:{'30861':{name:'office lamp',area:'2710',type:'SpectrumTune',tuning:[1400,10000],warm_dim:false}},keypads:{}}};
+      const z={zone_id:30861};if(memberLabel(2710,z)[0]!=='Area: Second Floor › Office'||memberLabel(30861,z)[0]!=='This zone'||memberLabel(30864,z)[0]!=='This lamp’s device or load'||memberLabel(999,z)[0]!=='Group')throw Error('members are named from the Lutron processor');
+      if(fixtureText(leapZone(30861))!=='SpectrumTune · 1400–10000 K')throw Error('fixture text: '+fixtureText(leapZone(30861)));haData=ha}
     if(level16(15826)!==2500||level16(65279)!==10000||level16(0)!==0)throw Error('16-bit levels convert as the endpoint does')}
   // Programming sync: rejected transfers, re-reading after a transfer, N4 lamps need nothing.
   {deviceView(deviceSnapshot);latestNative=null;const now=Date.now();

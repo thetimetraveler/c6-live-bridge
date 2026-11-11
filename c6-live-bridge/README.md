@@ -175,7 +175,15 @@ Select a zone row to show its programming below.
 **Zone programming** shows the endpoint's copy of a zone's Designer
 programming. **Answers to** lists `members`, the Lutron object IDs the lamp
 listens to (its zone, its load, and areas or groups that include it), named
-where the mapping or Home Assistant knows them. **Scenes** lists `presets` by
+where the mapping or Home Assistant knows them. The app also reads the
+Lutron Caséta/RA3 integration's diagnostics
+(`/api/diagnostics/config_entry/<entry>` through the Supervisor, cached for
+10 minutes, retried after 30 minutes on failure) for the processor's area tree,
+zones and keypads, served in `/api/ha` as `leap` (`areas` with their path,
+`zones` with area, fixture type, tuning range and warm dim, `keypads`). Areas
+are named with their path (*Second Floor › Office*); IDs within five after the
+lamp's zone are its own device or load. Lutron preset (scene) names are not
+available through Home Assistant, so scenes stay numbered. **Scenes** lists `presets` by
 what they do: type 1 *Unaffected*; type 72 sets brightness (`value`, Lutron's
 16-bit level), colour (`cct` or `xy`), vibrancy (`field2`) and warm-dim curve
 (`field5`: 1 Halogen, 2 Finiré 2700, 3 Finiré 3000, 4 Generic Daylight,

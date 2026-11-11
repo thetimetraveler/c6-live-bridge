@@ -1130,13 +1130,13 @@ function lampDelta(z,observed){const l=observed?z.lamp:null,lu=z.lutron;if(!l||!
   const lut=lu.on?(Number.isInteger(lu.level_x100)?pct(lu.level_x100):'on'):'Off';return `Lamp ${pct(l.level_x100)}${Number.isInteger(l.cct)?' · '+l.cct+' K':''} · Lutron ${lut}${lu.on&&Number.isInteger(lu.cct)?' · '+lu.cct+' K':''}`}
 function zonesView(data,receivedAt){if(data!==lastZones||receivedAt!==undefined){lastZones=data;zonesReceivedAt=receivedAt??Date.now()}const zones=Array.isArray(data?.zones)?data.zones:[],current=lampInputsCurrent(),elapsed=Math.max(0,Date.now()-zonesReceivedAt),cards=[];
   for(const raw of zones){const z=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{},v=lampAssessment(z,current),tone=CHECK_TONE[v.tone]||'wait',key=String(z.zone??z.zone_id),card=el('details','zone lamp '+tone),sm=el('summary'),name=el('span','lamp-name');
-    const title=z.name||z.lutron?.name||'Zone '+val(z.zone);name.append(title);if(z.lutron?.area&&normName(z.lutron.area)!==normName(title))name.append(el('small','',z.lutron.area));
+    const title=z.name||z.lutron?.name||'Zone '+val(z.zone),lz=leapZone(z.zone_id),where=lz?.path||z.lutron?.area;name.append(title);if(where&&normName(where)!==normName(title))name.append(el('small','',where));
     const observed=current&&freshLampObservation(z);
     const delta=['warn','bad'].includes(tone)?lampDelta(z,observed):'';
     name.append(el('span','lamp-state',v.title+(delta&&!v.title.includes('Lutron shows')?' · '+delta:'')));sm.append(bulb(zoneLight(z),true),name,lampRowLevel(z,observed));
     const rawChecks=Array.isArray(z.checks)?z.checks.filter(c=>c&&typeof c==='object'):[];
     const checks=!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:rawChecks.map(c=>c.status==='good'?{status:'unknown',title:isDirect(z)?'Lamp reading unavailable':'Hub observation unavailable'}:c);
-    const body=el('div','lamp-body'),sub=[z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null,isDirect(z)?'Direct Zigbee':null].filter(Boolean).join(' · ');if(sub)body.append(el('p','zone-sub',sub));
+    const body=el('div','lamp-body'),sub=[z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null,isDirect(z)?'Direct Zigbee':null,fixtureText(lz)||null].filter(Boolean).join(' · ');if(sub)body.append(el('p','zone-sub',sub));
     const trio=el('div','trio flow');trio.append(lutronSide(z.lutron),el('span','flow-arrow','→'),sentSide(z.sent,elapsed),el('span','flow-arrow','→'),lampSide(z.lamp,elapsed,z.output));body.append(levelRail(z),trio,showBlock(z,current,observed),checkList(checks));
     card.append(sm,body);card.open=openLamps.has(key);card.addEventListener('toggle',()=>{if(card.open)openLamps.add(key);else openLamps.delete(key)});cards.push(card)}
   $('zones').replaceChildren(...(cards.length?cards:[el('p','empty','No bridged zones reported yet.')]));
@@ -1159,6 +1159,11 @@ function showZone(){const t=gatewayTimezone?.timezone;return SHOW_ZONE_RULES[t]|
 function haMinute(date){const tz=showZone();if(tz){try{const p={};for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hour:'numeric',minute:'numeric',second:'numeric',hourCycle:'h23'}).formatToParts(date))p[x.type]=x.value;return Number(p.hour)%24*60+Number(p.minute)+Number(p.second)/60}catch{}}return date.getHours()*60+date.getMinutes()+date.getSeconds()/60}
 const nowMinute=()=>haMinute(new Date());
 function sunMinutes(){const r=new Date(haData?.sun?.next_rising||''),s=new Date(haData?.sun?.next_setting||'');return Number.isFinite(r.getTime())&&Number.isFinite(s.getTime())?{rise:haMinute(r),set:haMinute(s)}:null}
+/* The Lutron processor's own data (areas, zones, keypads), read by the app from Home Assistant's Lutron integration. */
+const leap=()=>haData?.leap&&typeof haData.leap==='object'&&!haData.leap.error?haData.leap:null;
+function leapZone(id){const l=leap(),z=l?.zones?.[String(id)];return z?{...z,path:l.areas?.[z.area]?.path||null}:null}
+/* "SpectrumTune · 1400–10000 K · warm dim" for a Lutron zone. */
+function fixtureText(z){if(!z)return '';return [z.type,Array.isArray(z.tuning)?`${z.tuning[0]}–${z.tuning[1]} K`:null,z.warm_dim===true?'warm dim':null].filter(Boolean).join(' · ')}
 function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={zone:new Map(),serial:new Map(),name:new Map()};const dup=new Set();
   for(const l of haData?.lights||[]){if(l.zone_id&&!haIndex.zone.has(serialNorm(l.zone_id)))haIndex.zone.set(serialNorm(l.zone_id),l);if(l.serial)haIndex.serial.set(serialNorm(l.serial),l);for(const n of new Set([normName(l.name),normName(l.device)])){if(!n)continue;if(haIndex.name.has(n)&&haIndex.name.get(n)!==l)dup.add(n);else haIndex.name.set(n,l)}}for(const n of dup)haIndex.name.delete(n);
   const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial,l.zone_id]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);renderEvents();renderSerialOptions();editorChanged(false)}
@@ -1169,7 +1174,7 @@ $('save-timezone').onclick=async()=>{const value=$('show-timezone').value;if(!SH
 
 function renderSerialOptions(){const list=$('ha-serials');list.replaceChildren(...(haData?.lights||[]).filter(l=>l.serial).map(l=>Object.assign(document.createElement('option'),{value:l.serial,label:[l.name,l.area].filter(Boolean).join(' — ')})))}
 function haGroup(){const rows=[['Status',haData?'Connected':'Not available',haData?'':'warn']];if(!haData){if(haError)rows.push(['Reason',haError]);return group('Home Assistant',rows)}const zones=(lastDevices?.zones||[]).filter(d=>zoneOf(d)!==undefined&&zoneOf(d)!==null);const matched=zones.filter(d=>haFor(zoneById(zoneOf(d)))).length;
-  rows.push(['Lutron lights found',num(haData.lights?.length)],['Zones matched',zones.length?`${matched} of ${zones.length}`:'—',zones.length&&matched<zones.length?'warn':''],['Integrations searched',(haData.integrations||[]).join(', ')||'—'],['Time zone',val(haData.time_zone)]);return group('Home Assistant',rows)}
+  rows.push(['Lutron lights found',num(haData.lights?.length)],['Zones matched',zones.length?`${matched} of ${zones.length}`:'—',zones.length&&matched<zones.length?'warn':''],['Integrations searched',(haData.integrations||[]).join(', ')||'—'],['Lutron processor data',leap()?`${Object.keys(leap().areas||{}).length} areas · ${Object.keys(leap().zones||{}).length} zones · ${Object.keys(leap().keypads||{}).length} keypads`:haData.leap?.error?'Unavailable: '+haData.leap.error:'—'],['Time zone',val(haData.time_zone)]);return group('Home Assistant',rows)}
 
 let programChips=[],programSig='';
 function renderProgramZones(rows){const known=rows.filter(d=>Number.isInteger(Number(zoneOf(d)))&&zoneOf(d)!==null&&zoneOf(d)!==undefined);const sig=JSON.stringify(known.map(d=>[zoneOf(d),d.name]))+haLabelSig;if(sig===programSig)return;programSig=sig;
@@ -1220,10 +1225,15 @@ function showChart(show){const knots=show.knots.map(k=>({...k,minute:Math.max(0,
    type 1 leaves the lamp alone, 72 sets a state, 73 starts a Natural Show. */
 const WARM_DIM={0:'default warm dim',1:'Halogen warm dim',2:'Finiré 2700 warm dim',3:'Finiré 3000 warm dim',4:'Generic Daylight warm dim',5:'Modified Halogen warm dim'};
 const qs=v=>{const s=Number(v)/4;return Number.isFinite(s)?(s%1?s.toFixed(2).replace(/0$/,''):String(s))+' s':'—'};
-function memberLabel(id,zone){const zid=Number(zone?.zone_id);if(id===zid)return ['This zone','good'];
+function memberLabel(id,zone){const zid=Number(zone?.zone_id),l=leap();if(id===zid)return ['This zone','good'];
+  const a=l?.areas?.[String(id)];if(a)return ['Area: '+(a.path||a.name),'info'];
+  const lz=l?.zones?.[String(id)];if(lz)return ['Zone: '+lz.name,'info'];
+  const k=l?.keypads?.[String(id)];if(k)return ['Keypad: '+[k.name,k.device].filter(Boolean).join(' '),'info'];
   const z=(configBase?.zones||[]).find(x=>Number(x?.zone_id)===id)||(lastZones?.zones||[]).find(x=>Number(x?.zone_id)===id);if(z)return [z.name||'Zone '+id,'info'];
-  const l=(haData?.lights||[]).find(x=>Number(x?.zone_id)===id);if(l)return [l.name,'info'];
-  return ['Area or group',''];}
+  const hl=(haData?.lights||[]).find(x=>Number(x?.zone_id)===id);if(hl)return [hl.name,'info'];
+  /* The processor numbers a lamp's own device and load just after its zone (zone 22357: device 22358, load 22360). */
+  if(Number.isFinite(zid)&&id>zid&&id<=zid+5)return ['This lamp’s device or load',''];
+  return [l?'Group':'Area or group',''];}
 function presetRow(p,last){const tr=el('tr'),t=Number(p.type),what=el('td'),swatch=el('span','swatch');
   const c1=cell(tr,'');c1.append(el('strong','',`Scene preset ${val(p.preset)}`));if(last)c1.append(el('small','good-text','last recalled'));
   tr.append(what);
@@ -1242,17 +1252,17 @@ function presetRow(p,last){const tr=el('tr'),t=Number(p.type),what=el('td'),swat
   tr.title=`Raw: ${JSON.stringify(p)}`;return tr}
 function renderProgram(data){lastProgram=data;const viz=$('program-viz');const shows=(Array.isArray(data.shows)?data.shows:[]).filter(s=>Array.isArray(s.knots)&&s.knots.length);const presets=(Array.isArray(data.presets)?data.presets:[]).slice().sort((a,b)=>Number(a.preset)-Number(b.preset));const out=[];
   const facts=el('div','metrics');const fact=(k,v,sub)=>{const b=el('div','metric');b.append(el('span','',k),el('strong','',v));if(sub)b.append(el('span','',sub));facts.append(b)};
-  const zid=data.zone??$('program-zone').value,zi=zoneInfo(zid),zone=zoneById(zid);fact('Zone',zi.title,[zi.area,'Zone '+val(zid)].filter(Boolean).join(' · '));
+  const zid=data.zone??$('program-zone').value,zi=zoneInfo(zid),zone=zoneById(zid);const lz=leapZone(zone?.zone_id);fact('Zone',zi.title,[lz?.path||zi.area,fixtureText(lz)||null,'Zone '+val(zid)].filter(Boolean).join(' · '));
   if(data.selected!==undefined)fact('Natural Show',data.selected&&data.show?`Show ${val(data.show)} running`:'None running',data.selected&&data.brightness_override_x100!==null&&data.brightness_override_x100!==undefined?`brightness held at ${pct(data.brightness_override_x100)}`:shows.length?`${shows.length} installed`:'none installed');
   const used=presets.filter(p=>Number(p.type)!==1).length;fact('Scenes',String(presets.length),presets.length?`${used} change this lamp · ${presets.length-used} leave it alone`:'none programmed');
   if(data.programmed===false)fact('Programming','Not received','transfer from Designer to program this lamp');out.push(facts);
   const members=Array.isArray(data.members)?data.members.map(Number).filter(Number.isFinite):[];
   if(members.length){const chips=el('div','chips');for(const m of members){const [label,tone]=memberLabel(m,zone),c=el('span','chip member'+(tone?' '+tone:''));c.append(el('span','',label),el('small','',String(m)));chips.append(c)}
-    out.push(section('Answers to',el('p','muted small','The Lutron IDs this lamp listens to. A command or scene sent to any of them reaches it: its own zone, its load, and any area or group that includes it.'),chips))}
+    out.push(section('Answers to',el('p','muted small','The Lutron IDs this lamp listens to. A command or scene sent to any of them reaches it: its own zone, its load, and any area or group that includes it.'+(leap()?' Names come from the Lutron processor, through Home Assistant.':'')),chips))}
   if(shows.length)out.push(section('Daily schedule',scheduleView(shows,data.show)));
   if(presets.length){const last=Number(latestNative?.last_scene_event?.valid?latestNative.last_scene_event.preset:NaN),table=el('table','activity presets'),head=el('thead'),hr=el('tr');for(const h of ['Scene','What it does','Timing']){const th=el('th','',h);hr.append(th)}head.append(hr);const body=el('tbody');
     for(const p of presets)body.append(presetRow(p,Number(p.preset)===last));table.append(head,body);const wrap=el('div','scroll');wrap.append(table);
-    out.push(section('Scenes',el('p','muted small','How this lamp responds to each Lutron scene (preset) it belongs to. Lutron sends scene numbers, not names; hover a row for its raw values.'),wrap))}
+    out.push(section('Scenes',el('p','muted small','How this lamp responds to each Lutron scene (preset) it belongs to. Lutron sends scene numbers to the lamp, and Home Assistant doesn’t receive scene names, so scenes are numbered; hover a row for its raw values.'),wrap))}
   if(!shows.length&&!presets.length)out.push(el('p','empty-state','This zone has no shows or presets programmed.'));viz.replaceChildren(...out)}
 async function loadProgram(force=false){const z=Number($('program-zone').value),btn=$('load-program'),viz=$('program-viz');markProgramZone();btn.disabled=true;btn.textContent='Loading…';viz.setAttribute('aria-busy','true');
   try{const data=await req(`program?zone=${z}&page=0&refresh=${force?1:0}`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;viz.replaceChildren(el('p','empty-state',`Couldn't load zone ${z}: ${e.message}`))}finally{btn.disabled=false;btn.textContent='Load snapshot';viz.setAttribute('aria-busy','false')}}

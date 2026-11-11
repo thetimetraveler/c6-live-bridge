@@ -826,6 +826,39 @@ def bridged(level,source="observed",seq=1,requested=None,at_ms=99_000,color=None
             "requested":requested,"confirmed":confirmed,"last_command_ms":last_command_ms,"last_confirmed_ms":at_ms}
 
 
+LEAP_DIAG={"data":{"bridge_data":{
+    "areas":{"3":{"id":"3","name":"Home","parent_id":None},"1077":{"id":"1077","name":"Second Floor","parent_id":"3"},
+             "2710":{"id":"2710","name":"Office","parent_id":"1077"},"9":{"id":"9","name":"Loop","parent_id":"9"}},
+    "devices":{"30861":{"zone":"30861","device_name":"office lamp","area":"2710","type":"SpectrumTune","white_tuning_range":{"Min":1400,"Max":10000},"warm_dim":False},
+               "1208":{"zone":None,"button_groups":["1219"],"control_station_name":"stairs top","device_name":"Position 2","area":"2710","model":"HRST-HN4B-XX"},
+               "1215":{"zone":None,"type":"KeypadLED","parent_device":"1208"}}}}}
+
+
+class LeapDataTests(unittest.TestCase):
+    def test_processor_areas_zones_and_keypads(self):
+        d=app.HomeAssistant.leap_data(LEAP_DIAG)
+        self.assertEqual(d["areas"]["2710"],{"name":"Office","path":"Second Floor › Office"})
+        self.assertEqual(d["areas"]["9"]["name"],"Loop")  # a parent loop ends the walk
+        self.assertEqual(d["zones"]["30861"],{"name":"office lamp","area":"2710","type":"SpectrumTune","tuning":[1400,10000],"warm_dim":False})
+        self.assertEqual(list(d["keypads"]),["1208"])
+        with self.assertRaises(ValueError):
+            app.HomeAssistant.leap_data({"data":{}})
+
+    def test_leap_is_read_from_diagnostics_and_failure_is_quiet(self):
+        ha=app.HomeAssistant("token",["lutron_caseta"])
+        lights=[{"entity_id":"light.a","integration":"lutron_caseta","entry":"01KGXVXX45YH9NMBFVWCVHQYRK"}]
+        with patch.object(ha,"request",return_value=json.dumps(LEAP_DIAG).encode()) as req:
+            self.assertIn("2710",ha.leap(lights)["areas"])
+            ha.leap(lights)
+        self.assertEqual(req.call_count,1)  # cached
+        self.assertEqual(req.call_args[0][1],"/diagnostics/config_entry/01KGXVXX45YH9NMBFVWCVHQYRK")
+        ha.leap_cache=None
+        with patch.object(ha,"request",side_effect=ValueError("Home Assistant returned HTTP 401")):
+            self.assertIn("401",ha.leap(lights)["error"])
+        ha.leap_cache=None
+        self.assertIn("error",ha.leap([{"integration":"lutron_caseta","entry":"../x"}]))
+
+
 class ProgramEventTests(unittest.TestCase):
     def test_newest_programming_event_per_zone(self):
         latest={}

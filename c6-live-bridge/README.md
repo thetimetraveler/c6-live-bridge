@@ -118,28 +118,74 @@ fault bits, partition, leader, routers heard and blocked transmissions.
 `POST /api/endpoint/safety/clear` exactly `{"confirm":"clear-r1-latch"}`; both
 need `application/json` and, like maintenance, bypass the monitoring backoff.
 
-## Overview: lights, performance and diagnostics (0.13.0)
+## Layout (0.14.0)
 
-Since 0.13.4, Performance and Diagnostics are on their own **Diagnostics** tab.
+The dashboard has five tabs, each answering one question:
 
-**Lights.** A strip at the top shows every bridged lamp as a circle glowing in
-its reported colour and brightness; select one to jump to its card. Each card
-has one bar from off to full: the fill is the lamp (as the hub reports it), ▼
-is Lutron, the thin line is the bridge's last command and ◆ is what the Natural
-Show calls for now. Below it, Lutron → bridge → lamp sit side by side in that
-order. A running show's chart colours the day by the show's colour temperature
-(area and a band underneath), draws its brightness, shades night from Home
-Assistant's sun times, and marks now, the show target, the lamp and the next
-keyframe. Hover or drag across it to read the show at any time; the position is
-kept across the once-a-second refresh.
+| Tab | Question | What's there |
+|---|---|---|
+| **Overview** | Is everything working? | Headline (one problem: what it is and what to do), status tiles, Lights |
+| **Activity** | What happened to a command? | One row per command and its steps |
+| **Health** | Which part needs a look, and how fast is it? | Components (was Diagnostics), Response times (was Performance), How commands flow |
+| **Programming** | Has new programming reached the lamps? | Programming sync, per-zone shows and presets |
+| **Setup** | Change something | Everyday controls, Configuration, Zigbee node and firmware |
 
-**Performance.** Per-hop latency, as the median, p95 and maximum of recent
+Each Overview tile opens the place that explains it. A healthy bridge reads
+**Everything is working**; the endpoint's hardware caveats (no physical hold)
+stay in Health, where they belong.
+
+**Lights.** One compact row per lamp: the lamp's glow, name, its reading and
+whether it is **in sync** with Lutron (or a running Natural Show). In sync
+means within 2 percentage points of brightness and 10 mired of colour
+temperature (about 70 K at 2700 K); colour is compared only when both Lutron
+and the lamp report it, so a Lutron zone without colour is compared on
+brightness. A lamp that is out of step shows both levels in its row. Select a
+row for the details: one bar from off to full (fill: lamp; ▼ Lutron; thin
+line: the bridge's last command; ◆ the show target), Lutron → bridge → lamp
+side by side, the show chart (hover or drag to read the show at any time) and
+the checks. Readings through the N4 hub are current for 2 minutes; direct
+Zigbee readings for 7, because the gateway reads each lamp after a command and
+every 5 minutes (30 s during a show).
+
+**Programming sync** follows a Designer transfer step by step:
+
+1. *Lutron Designer → endpoint*: the newest `program-installed` or
+   `program-rejected` event per zone. The add-on remembers them for seven days
+   (from its event archive, so across restarts); `/api/zones` reports them as
+   `programming.events`.
+2. *Zone mapping on both boards*: `config_match`.
+3. *Gateway's copy of each zone*: when the gateway last read each zone's
+   programming (`zones[].program`: `programmed`, `selected`, `shows`,
+   `age_s`). A copy older than the zone's last transfer is "re-reading"; the
+   gateway reads one zone every 30 seconds.
+4. *Ketra lamps*: on direct Zigbee, whether the lamp table is synced and
+   Lutron's scenes are stored on every lamp (`/api/ketra/native`). On N4 there is
+   nothing to sync.
+
+Select a zone row to show its programming below.
+
+**Setup** groups its cards as Everyday controls (maintenance, endpoint control,
+show time zone), Configuration (zone mapping, Ketra lamps) and Zigbee node and
+firmware. Every card says when to use it. **Firmware updates** holds both
+uploads side by side: the endpoint board (CCX on Thread, an ESP32 app image up
+to 768 KB) and the Zigbee node (Ketra radio, a signed image up to 1.5 MB, shown
+only on gateways that host the node).
+
+**Response times.** Per-hop latency, as the median, p95 and maximum of recent
 commands (up to 60), from the event feed's gateway timestamps:
 
-- *Lutron → hub accepted*: `requested` to `applied`;
-- *Lutron → lamp reading*: `requested` to the zone's first `observed` hub
-  reading (or `correction`) within 15 s;
+- *Lutron → hub accepted* (on direct Zigbee, *Lutron → sent to lamps*):
+  `requested` to `applied`;
+- *Lutron → lamp reading*: `requested` to the zone's first `observed` reading
+  (or `correction`) within 15 s on N4, 30 s on direct Zigbee; it no longer
+  needs an `applied` step first;
 - *Round trip back to Lutron*: `requested` to `report-sent`.
+
+Only measurements with data are shown. When nothing can be timed, the card says
+why from what the feed holds (no events, no command from Lutron, every command
+held, or commands with no later step). On direct Zigbee the N4-only figures
+below are left out and a **Direct Zigbee delivery** figure shows the gateway's
+routing counters (`direct_routing.applied`, `sends`, `observed`, `unrouted`).
 
 The gateway's own timers add *Hub API response* (`acceptance_last_ms`, with
 `acceptance_p95_ms` and `acceptance_max_ms` over its last 64 writes, and a
@@ -151,7 +197,7 @@ acceptance). A waterfall shows the last ten commands hop by hop, with failed,
 held and replaced commands marked. Thread transit into the endpoint is not
 included: the endpoint stamps events with its own clock.
 
-**Diagnostics.** Counters are grouped into five sections in the order a command
+**Components** (Health tab, formerly Diagnostics). Counters are grouped into five sections in the order a command
 travels: Thread & endpoint, Endpoint ↔ gateway link (UART), Gateway (network,
 configuration, memory, sockets, stacks, restart cause), Lighting output (N4
 delivery and WebSocket, direct Zigbee routing and output, Zigbee member link)
@@ -289,7 +335,7 @@ While output is held:
   "Held · direct Zigbee output not admitted". It groups with the command's
   `requested` step, appears under **Problems only**, and is not turned into
   "No progress" after two minutes;
-- **Diagnostics → Lighting output → Direct Zigbee output (reported)** lists admission and its
+- **Health → Components → Lighting output → Direct Zigbee output (reported)** lists admission and its
   reason, the deployment, security-continuity, authenticated-readback and
   endpoint-cache-epoch readiness flags, and the receive-only diagnostic UART
   counters (HELLOs, frames, CRC errors). The HELLO role is shown as an
@@ -300,7 +346,7 @@ An unrecognised `output_backend` is shown as unknown and never as healthy.
 **Zigbee member link.** A gateway built with the read-only UART2 link to a
 separate Zigbee member C6 reports `zigbee_uart`. When `enabled` is `true`, the
 Overview adds a **Zigbee member** tile (**Responding** when the link is
-`online` and `bidirectional`) and Diagnostics adds **Zigbee member link
+`online` and `bidirectional`) and Health adds **Zigbee member link
 (reported)** with the request, response, timeout and error counters and the
 member's claims: device, board, base MAC, IEEE address, build digest, boot ID,
 role, state and radio. These are unauthenticated serial claims; the gateway
@@ -338,7 +384,7 @@ lease and lamp-table state, lamp counts and the reserved frame-counter range).
 A **hybrid** gateway prefers direct Zigbee and falls back to N4 by itself.
 While N4 carries output for it, the Lighting output tile reads **N4 fallback**
 and the Overview names the direct path's reason; with direct Zigbee in
-control the tile reads **Direct Zigbee**. Diagnostics shows the details under
+control the tile reads **Direct Zigbee**. Health shows the details under
 **Lighting output → Direct Zigbee routing**.
 
 **Ketra lamps** (Setup) edits the gateway's lamp inventory: for each Lutron

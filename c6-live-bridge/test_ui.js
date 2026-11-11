@@ -46,17 +46,18 @@ if(!html.includes('Online again after 30 s')||!html.includes('Uptime decrease ob
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
+const heroText=()=>view('headline').textContent+' '+view('headline-detail').textContent;
 const safetyPatch=(safety={},power={})=>({...status,endpoint_safety:{...status.endpoint_safety,...safety},endpoint_power:{...status.endpoint_power,...power}});
 const assertNotSafe=(s,why)=>{health(s);if(view('hero').className.includes('good')||view('node-thread').className.includes('good')||view('summary').children[1].className.includes('good'))throw Error(why+' must not be shown as safe');};
 health(status);
 if(!view('node-thread').className.includes('good')||!view('summary').children[1].className.includes('good'))throw Error('a fresh child with complete safety telemetry should show ready');
-if(!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('does not confirm current command delivery'))throw Error('good status must explain the hardware and snapshot limits');
+if(heroText().includes('No physical hold')||heroText().includes('does not confirm'))throw Error('a healthy bridge says so plainly, without hardware caveats: '+view('headline-detail').textContent);
 if(firmwareBaseline(latestStatus)!==30||Number.isFinite(firmwareBaseline({...status,monitoring:{age_s:9,delayed:true}})))throw Error('firmware restart comparison requires a fresh pre-upload baseline');
 latestNative={scene_cache_ready:false,scene_cache_error:'inventory_unavailable',bulbs:[{zone:30861,result:5},{zone:31467,result:0}],scene_cache:{not_ready_ms:300000,retry_in_ms:0}};
 if(sceneCacheIssue(latestNative))throw Error('scene storage is not flagged before 10 minutes');
 latestNative.scene_cache={not_ready_ms:1200000,retry_in_ms:120000};{const i=sceneCacheIssue(latestNative);
 if(!i||i[0]!=='warn'||!i[1].includes('20 min')||!i[1].includes('Zone 30861 not answering')||!i[1].includes('next check in 2 min'))throw Error('stuck scene storage must name the lamp and the next check: '+i);}
-health(status);if(!view('headline-detail').textContent.includes('Lamp scene storage not ready'))throw Error('stuck scene storage must reach the attention summary');
+health(status);if(!heroText().includes('Lamp scene storage not ready'))throw Error('stuck scene storage must reach the attention summary');
 if(sceneCacheIssue({...latestNative,scene_cache_ready:true})||sceneCacheIssue({}))throw Error('ready or missing scene storage is not flagged');
 latestNative=null;health(status);
 if(overflowRow(160,900000)[1]||overflowRow(160,960000)[1])throw Error('a settled overflow count is not flagged');
@@ -76,13 +77,13 @@ for(const test of [
   {...status,monitoring:{age_s:9,delayed:false}}, {...status,monitoring:{age_s:0,delayed:true}}
 ])assertNotSafe(test,'unsafe or unavailable telemetry');
 health(safetyPatch({phase:'listening',may_send:false,prefix_status:255,ext_pan_ok:false,active_timestamp_valid:false,mesh_local_prefix:'0000:0000:0000:0000::/64'},{ }));
-if(!view('headline-detail').textContent.includes('waiting'))throw Error('startup should be shown as waiting');
+if(!heroText().includes('waiting'))throw Error('startup should be shown as waiting');
 health(safetyPatch({phase:'operator-stopped',may_send:false,prefix_status:255,ext_pan_ok:false,active_timestamp_valid:false,mesh_local_prefix:'0000:0000:0000:0000::/64'},{enabled:false,hold_requested:true}));
-if(!view('headline-detail').textContent.includes('reports operator stop')||!view('headline-detail').textContent.includes('No physical hold is available')||!view('headline-detail').textContent.includes('power state is not verified'))throw Error('operator stop must be reported as telemetry, without promising physical power off');
+if(!heroText().includes('reports operator stop')||!heroText().includes('No physical hold is available')||!heroText().includes('power state is not verified'))throw Error('operator stop must be reported as telemetry, without promising physical power off');
 health(safetyPatch({}, {enabled:false,hold_requested:true}));
-if(!view('headline-detail').textContent.includes('has not reported operator stop'))throw Error('a gateway disable is not proof that the endpoint stopped');
+if(!heroText().includes('has not reported operator stop'))throw Error('a gateway disable is not proof that the endpoint stopped');
 health({...safetyPatch({}, {hold_requested:true,boot_hold_remaining_s:30}),endpoint_online:false});
-if(!view('headline-detail').textContent.includes('startup hold'))throw Error('a held endpoint can be offline during startup');
+if(!heroText().includes('startup hold'))throw Error('a held endpoint can be offline during startup');
 health({...status,monitoring:{age_s:0,delayed:false}});statusReceivedAt-=6000;health(latestStatus);
 if(!view('headline').textContent.includes('Monitoring delayed')||view('node-thread').className.includes('good')||view('summary').children.some(c=>c.className.includes('good')))throw Error('a snapshot must age out even while a refresh is pending');
 const deviceSnapshot={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};
@@ -91,9 +92,10 @@ const matchZone={zone:1,name:'Office',lutron:{on:true,state:'on',level_x100:5000
   checks:[{key:'lutron',status:'good',title:'Lamp matches Lutron'}],verdict:{tone:'good',title:'In sync'}};
 const zoneSnapshot={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[matchZone],home_assistant:true};
 const zoneCard=()=>view('zones').children[0];
-const cardVerdict=()=>zoneCard().children[0].children[1];
+const cardVerdict=()=>zoneCard().children[0].children[1].children.at(-1);
 health({...status});deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
 if(!view('hero').className.includes('good')||!zoneCard().className.includes('good'))throw Error('fresh readback with complete comparisons should show in sync');
+if(view('headline').textContent!=='Everything is working'||!heroText().includes('1 of 1 lamps in sync'))throw Error('a healthy bridge says so plainly: '+view('headline').textContent+' / '+view('headline-detail').textContent);
 health({...status,endpoint_safety:undefined,endpoint_power:undefined});
 if(view('hero').className.includes('good')||view('node-thread').className.includes('good'))throw Error('green lamp comparisons must not hide unavailable endpoint safety');
 health({...status,monitoring:{age_s:9,delayed:true}});
@@ -293,7 +295,7 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   if(view('label-n4').textContent!=='N4 output'||text(view('health')).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
   if(text(view('summary')).includes('Zigbee member'))throw Error('no Zigbee member tile without a reported link');
   health({...status,zigbee_uart:{enabled:true,online:false,bidirectional:false,timeouts:3}});
-  if(!view('headline-detail').textContent.includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
+  if(!heroText().includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
   health({...status,zigbee_uart:{enabled:true,online:true,bidirectional:true,role:'end_device',state:'disarmed',radio:'off',identity_authenticated:false,rf_membership_verified:false,build_elf_sha256:'a'.repeat(64)}});
   const member=view('summary').children.find(c=>text(c).includes('Zigbee member'));
   if(!member?.className.includes('good')||!text(member).includes('not RF membership'))throw Error('a responding member is a serial link, not RF membership');
@@ -480,13 +482,13 @@ const mappingChecks=`
   if(backendHold(older)!==null||'Output owner' in routingRows(older))throw Error('gateways without the fields must be unchanged');
   for(const bad of [{hold_reason:7},{hold_reason:'none'},null,'x',{}])if(backendHold({...status,backend:bad})!==null)throw Error('malformed or absent hold data must be ignored');
   health(heldStatus);
-  if(!view('headline-detail').textContent.includes('Lighting is not being delivered yet: the gateway is not yet admitting endpoint commands'))throw Error('the overview must warn while no path owns output');
+  if(!heroText().includes('Lighting is not being delivered yet: the gateway is not yet admitting endpoint commands'))throw Error('the overview must warn while no path owns output');
   health(owned);
-  if(view('headline-detail').textContent.includes('Lighting is not being delivered yet'))throw Error('the warning must clear once a path owns output');
+  if(heroText().includes('Lighting is not being delivered yet'))throw Error('the warning must clear once a path owns output');
   health(heldStatus);
-  if(view('headline-detail').textContent.includes('N4 is carrying lighting')||!view('headline').textContent.length)throw Error('during the hold the fallback line must not claim N4 is carrying lighting');
+  if(heroText().includes('N4 is carrying lighting')||!view('headline').textContent.length)throw Error('during the hold the fallback line must not claim N4 is carrying lighting');
   health({...heldStatus,backend:{...heldStatus.backend,hold_reason:'none',output_owner:'n4',phase:'n4'}});
-  if(!view('headline-detail').textContent.includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
+  if(!heroText().includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
   if(backendHold({...heldStatus,backend:{...heldStatus.backend,hold_reason:'constructor'}}).text!=='constructor')throw Error('reason names must not resolve through object prototypes');
   // Startup sequence on the overview.
   const startup=()=>{const all=n=>[n,...(n.children||[]).flatMap(all)],g=all(view('health')).find(c=>c.children?.[0]?.textContent==='Startup sequence'&&c.children?.[1]?.className==='list');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
@@ -544,7 +546,36 @@ const mappingChecks=`
   if(!nodes.some(n=>n.className==='rail-mk mk-lutron hi')||!nodes.some(n=>(n.className||'').startsWith('rail-mk mk-show'))||!nodes.some(n=>n.className==='rail-mk mk-sent'))throw Error('the rail marks Lutron, the bridge and the show');
   if(!nodes.some(n=>n.tag==='stop'&&n.getAttribute('stop-color')===kelvinRGB(1800)))throw Error('the show chart is coloured by the show colour temperature');
   if(!nodes.some(n=>n.className==='show-readout'))throw Error('the show chart has a readout');
-  if(view('zones-glance').children.length!==2||!text(view('zones-glance')).includes('Den'))throw Error('two or more lamps get a glance strip');
+  if(view('zones').children.length!==2||!text(view('zones').children[1].children[0]).includes('Den')||card.tag!=='details')throw Error('each lamp is one compact row that opens for details');
+  // Direct Zigbee: lamp readings count for 7 minutes and are compared like N4 readings.
+  {const z={...matchZone,output:'direct_zigbee',stale_ms:420000,lamp:{...matchZone.lamp,age_ms:300000},checks:[{key:'output',status:'info',title:'Direct Zigbee output'},...matchZone.checks]};
+    deviceView(deviceSnapshot);zonesView({...zoneSnapshot,zones:[z]});
+    if(!zoneCard().className.includes('good')||cardVerdict().textContent!=='In sync')throw Error('a direct Zigbee reading must be compared with Lutron: '+cardVerdict().textContent);
+    zonesView({...zoneSnapshot,zones:[{...z,lamp:{...z.lamp,age_ms:430000}}]});
+    if(zoneCard().className.includes('good')||cardVerdict().textContent!=='No recent lamp reading')throw Error('an old Zigbee reading is not current: '+cardVerdict().textContent);
+    zonesView({...zoneSnapshot,zones:[{...z,lamp:null,verdict:{tone:'wait',title:'Waiting for a lamp reading'}}]});
+    if(cardVerdict().textContent!=='Waiting for a lamp reading')throw Error('a direct lamp without a reading waits for one');
+    zonesView({...zoneSnapshot,zones:[{...z,lutron:{...z.lutron,level_x100:7000},verdict:{tone:'warn',title:'Lamp at 50%, Lutron shows 70%'},checks:[{key:'lutron',status:'warn',title:'Lamp at 50%, Lutron shows 70%'}]}]});
+    if(!zoneCard().className.includes('warn')||!cardVerdict().textContent.includes('Lutron shows 70%'))throw Error('a lamp out of step shows both levels in its row')}
+  // Response times on direct Zigbee: no N4 figures, Zigbee labels, routing counters, and a reason when nothing can be timed.
+  {const direct={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:40,applied:12,observed:30,unrouted:0,unreachable:0},puts_ok:99,puts_failed:1,diagnostics:{maintenance:false,accepted_count:5,acceptance_last_ms:150}};
+    latestStatus=direct;eventView({boot_id:'zb',boot_epoch_ms:Date.now()-100000,next:5,next_sequence:5,oldest:1,lost:0,events:[
+      {id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2},{id:2,ts_ms:4000,stage:'observed',zone:1,confirmed:5000,requested:5000},
+      {id:3,ts_ms:4500,stage:'report-sent',zone:1,reported:5000,command_seq:1,report_seq:1,schema_version:2}]});
+    const z=text(view('perf-stats'));
+    if(!z.includes('Lutron → lamp reading')||!z.includes('3.00')||!z.includes('Round trip back to Lutron')||!z.includes('Direct Zigbee delivery')||!z.includes('40 frames sent')||z.includes('Hub API response')||z.includes('Gateway queue'))throw Error('direct Zigbee performance: '+z);
+    eventView({boot_id:'zb2',boot_epoch_ms:Date.now()-100000,next:2,next_sequence:2,oldest:1,lost:0,events:[{id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2}]});
+    if(!text(view('perf-stats')).includes('reported no later step'))throw Error('an untimeable feed must say why: '+text(view('perf-stats')));
+    latestStatus=status}
+  // Programming sync: rejected transfers, re-reading after a transfer, N4 lamps need nothing.
+  {deviceView(deviceSnapshot);latestNative=null;const now=Date.now();
+    zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-installed',wall_ms:now-60000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:30}}]});health(status);
+    let st=syncState();if(st.tone!=='good'||!st.steps[0][2].includes('Last transfer received')||!st.steps[3][2].includes('Nothing to sync'))throw Error('a current copy after a transfer is up to date: '+JSON.stringify(st.steps));
+    zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-installed',wall_ms:now-10000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:30}}]});
+    st=syncState();if(st.tone!=='wait'||!st.steps[2][2].includes('re-reading Office'))throw Error('a copy older than the transfer is catching up: '+JSON.stringify(st.steps));
+    zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-rejected',wall_ms:now-10000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:5}}]});health(status);
+    if(syncState().tone!=='bad'||!heroText().includes('Programming from Lutron was rejected')||!view('program-badge').textContent)throw Error('a rejected transfer reaches the overview and the tab');
+    zonesView(zoneSnapshot);health(status)}
 })()
 `;
 await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

@@ -1,3 +1,13 @@
+## 0.14.0
+
+- **Direct Zigbee lamps are compared again.** 0.13.3 taught the add-on to report direct Zigbee readings, but the dashboard still discarded them ("Lamp state unavailable on this output", or "comparison incomplete") and aged them out after 2 minutes instead of 7. Direct Zigbee readings are now compared with Lutron like N4 readings.
+- **In sync allows small differences**: within 2 percentage points of brightness and 10 mired of colour temperature (about 70 K at 2700 K), for both Lutron and the Natural Show. Colour is compared only when both sides report it, so a zone whose Lutron light has no colour temperature is in sync on brightness instead of "incomplete" forever.
+- **Response times work on direct Zigbee.** Lamp reading and round-trip times no longer need an N4 `applied` step; labels say "sent to lamps" and "lamp reading"; N4-only figures are hidden; a **Direct Zigbee delivery** figure shows the gateway's routing counters. When nothing can be timed the card says why.
+- **Reorganised.** Diagnostics is now **Health** (Components, Response times, How commands flow). The Overview keeps the headline, status tiles (each opens its details; a new **Programming** tile) and **Lights** as compact rows that open for details. A healthy bridge reads "Everything is working"; one problem reads as the problem plus what to do. Lamps waiting for a first reading no longer raise a warning; lamps whose readings stopped do.
+- **Programming sync** (Programming tab): Lutron Designer → endpoint → zone mapping → the gateway's copy of each zone → scenes on the Ketra lamps, with a per-zone table. The add-on keeps the newest programming event per zone for seven days, across restarts (`/api/zones` `programming.events`), and each zone reports the gateway's latest programming read (`program`).
+- **Setup** is grouped (Everyday controls, Configuration, Zigbee node and firmware) and every card says when to use it. Endpoint and Zigbee node firmware uploads sit together in **Firmware updates**, each describing which file it takes.
+- Activity steps say "To lamps" and "Lamp reading" on direct Zigbee.
+
 ## 0.13.5
 
 - Stop two false warnings in Diagnostics. Remove "Qualified for deployment" and the three rows after it (security continuity, authenticated readback, endpoint cache epoch): the gateway reports them as fixed `false` constants that say nothing about readiness. Flag **UART overflows** only while the count is still rising in normal running (after the first 2 minutes of gateway uptime, within the last 10 minutes); the burst while the Zigbee node restarts after a gateway update is shown as a total, not a warning.

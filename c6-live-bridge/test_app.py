@@ -826,6 +826,23 @@ def bridged(level,source="observed",seq=1,requested=None,at_ms=99_000,color=None
             "requested":requested,"confirmed":confirmed,"last_command_ms":last_command_ms,"last_confirmed_ms":at_ms}
 
 
+class ProgramEventTests(unittest.TestCase):
+    def test_newest_programming_event_per_zone(self):
+        latest={}
+        app.note_program_event(latest,{"stage":"program-installed","zone":3,"wall_ms":1000})
+        app.note_program_event(latest,{"stage":"program-rejected","zone":3,"wall_ms":500})
+        app.note_program_event(latest,{"stage":"requested","zone":3,"wall_ms":2000})
+        app.note_program_event(latest,{"stage":"program-rejected","zone":4,"ha_received_at":"2026-11-01T00:00:00+00:00"})
+        self.assertEqual(latest[3],{"stage":"program-installed","wall_ms":1000})
+        self.assertEqual(latest[4]["stage"],"program-rejected")
+
+    def test_archive_remembers_programming_across_restarts(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive=app.EventArchive(root)
+            archive.record({"boot_id":"a","events":[{"id":1,"stage":"program-installed","zone":7,"wall_ms":1234},{"id":2,"stage":"requested","zone":7}]})
+            self.assertEqual(app.EventArchive(root).program_events(),{7:{"stage":"program-installed","wall_ms":1234}})
+
+
 class ZoneSummaryTests(unittest.TestCase):
     def program(self,selected=True,override=None):
         return app.show_program({"selected":selected,"show":31779 if selected else 0,"programmed":True,
@@ -833,6 +850,28 @@ class ZoneSummaryTests(unittest.TestCase):
 
     def statuses(self,summary):
         return {c["key"]:c["status"] for c in summary["checks"]}
+
+    def test_small_differences_count_as_in_sync(self):
+        # Within 2 points of brightness and 10 mired of colour is in sync; beyond is flagged.
+        near=app.zone_summary(bridged(5000,color={"cct":2700}),self.program(False),10,at(14,28),light("on",130,2750),100_000)
+        self.assertEqual(self.statuses(near)["lutron"],"good")
+        self.assertEqual(near["verdict"]["tone"],"good")
+        dim=app.zone_summary(bridged(5000,color={"cct":2700}),self.program(False),10,at(14,28),light("on",135,2700),100_000)
+        self.assertEqual(self.statuses(dim)["lutron"],"warn")
+        warm=app.zone_summary(bridged(5000,color={"cct":2700}),self.program(False),10,at(14,28),light("on",128,3000),100_000)
+        self.assertEqual(self.statuses(warm)["lutron"],"warn")
+        self.assertTrue(app.cct_close(5000,5240))
+        self.assertFalse(app.cct_close(2700,2800))
+
+    def test_direct_zigbee_readings_are_compared_for_seven_minutes(self):
+        direct={"backend":"direct_zigbee","admitted":True,"reason":None,"fallback":False}
+        old=bridged(5000,color={"cct":2700},at_ms=100_000-300_000+400_000)
+        s=app.zone_summary(dict(old,confirmed=dict(old["confirmed"],at_ms=100_000)),self.program(False),10,at(14,28),light("on",128,2700),400_000,direct)
+        self.assertEqual(s["verdict"]["tone"],"good")
+        self.assertEqual(s["stale_ms"],420_000)
+        self.assertEqual(s["checks"][0]["key"],"output")
+        none=app.zone_summary(dict(old,confirmed=None),self.program(False),10,at(14,28),light("on",128,2700),400_000,direct)
+        self.assertEqual(none["verdict"]["title"],"Waiting for a lamp reading")
 
     def test_lamp_on_while_lutron_off_is_out_of_sync(self):
         # Office after the 12:32 power cut: N4 at 100%, Lutron off, no command since boot.
@@ -912,11 +951,12 @@ class ZoneSummaryTests(unittest.TestCase):
         self.assertIsNone(result["lamp"])
         self.assertEqual(self.statuses(result)["show"],"wait")
         no_color=app.zone_summary(bridged(8840,"observed",16,sent),self.program(),10,local,light("on",255),100_000)
-        self.assertEqual(self.statuses(no_color)["show"],"unknown")
-        self.assertNotEqual(no_color["verdict"]["tone"],"good")
+        # Brightness is compared everywhere; colour only when both sides report it.
+        self.assertEqual(self.statuses(no_color)["show"],"good")
+        self.assertIn("colour not compared",next(c for c in no_color["checks"] if c["key"]=="show")["detail"])
         fixed_no_color=app.zone_summary(bridged(5000),self.program(False),10,local,light("on",128,2800),100_000)
-        self.assertEqual(self.statuses(fixed_no_color)["lutron"],"unknown")
-        self.assertNotEqual(fixed_no_color["verdict"]["tone"],"good")
+        self.assertEqual(self.statuses(fixed_no_color)["lutron"],"good")
+        self.assertIn("colour not compared",next(c for c in fixed_no_color["checks"] if c["key"]=="lutron")["detail"])
         no_brightness=app.zone_summary(bridged(8840,"observed",16,sent,color={"cct":2803}),self.program(),10,local,light("on"),100_000)
         self.assertEqual(self.statuses(no_brightness)["lutron"],"unknown")
         self.assertNotEqual(no_brightness["verdict"]["tone"],"good")

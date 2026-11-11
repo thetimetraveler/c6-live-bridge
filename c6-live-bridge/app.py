@@ -211,6 +211,24 @@ class HomeAssistant:
             return clean_text((self.core_config or {}).get("time_zone"), 64)
 
 
+PROGRAM_STAGES = ("program-installed", "program-rejected")
+
+
+def note_program_event(latest, event):
+    """Keep the newest programming event per zone, placed in time by wall_ms or archive receipt."""
+    if not isinstance(event, dict) or event.get("stage") not in PROGRAM_STAGES or type(event.get("zone")) is not int or event["zone"] < 0:
+        return
+    at = event.get("wall_ms")
+    if type(at) not in (int, float) or not math.isfinite(at):
+        try:
+            at = datetime.fromisoformat(str(event.get("ha_received_at"))).timestamp() * 1000
+        except ValueError:
+            at = time.time() * 1000
+    previous = latest.get(event["zone"])
+    if previous is None or at >= previous["wall_ms"]:
+        latest[event["zone"]] = {"stage": event["stage"], "wall_ms": round(at)}
+
+
 class EventArchive:
     """Best-effort append-only daily event snapshots with seven-day retention."""
     def __init__(self, root):
@@ -228,6 +246,23 @@ class EventArchive:
                     path.unlink()
             except OSError:
                 LOG.warning("Could not prune event archive %s", path.name)
+
+    def program_events(self):
+        """The newest program-installed / program-rejected event per zone in the archive."""
+        latest = {}
+        for path in sorted(self.root.glob("*.jsonl")):
+            try:
+                with open(path, encoding="utf-8") as lines:
+                    for line in lines:
+                        if '"program-' not in line:
+                            continue
+                        try:
+                            note_program_event(latest, json.loads(line))
+                        except ValueError:
+                            continue
+            except OSError:
+                continue
+        return latest
 
     def record(self, payload):
         events = payload.get("events", []) if isinstance(payload, dict) else payload
@@ -373,8 +408,17 @@ def zone_show_state(zone, program, program_age_s, local_ms):
     return state
 
 
-# Zone sync check tolerances. Lutron/HA brightness is 0-255 or whole percent, so allow 1%.
-SYNC_LEVEL_TOL, SHOW_LEVEL_TOL, SHOW_CCT_TOL, SYNC_CCT_TOL = 100, 50, 15, 60
+# Zone sync tolerances. A difference of 2 percentage points of brightness or 10 mired
+# of colour temperature (about 70 K at 2700 K, 250 K at 5000 K) is hard to see on a
+# single lamp, and covers Home Assistant's 0-255 brightness steps, Zigbee level
+# rounding and show keyframe interpolation between readings.
+SYNC_LEVEL_TOL = SHOW_LEVEL_TOL = 200
+SYNC_MIRED_TOL = 10
+
+
+def cct_close(a, b, tol=SYNC_MIRED_TOL):
+    """True when two colour temperatures (K) are within tol mired of each other."""
+    return abs(1_000_000 / a - 1_000_000 / b) <= tol
 CONFIRM_STALE_MS = 120_000
 # Direct Zigbee reads a steady lamp every 5 minutes (every 30 s during a Natural Show),
 # so its readings stay current for the refresh period plus a margin.
@@ -596,12 +640,15 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
                              f"Lutron reports {_pct_text(lutron['level_x100'])} while the show fades the lamp there; see the show check."))
     elif lutron["level_x100"] is not None and abs(lutron["level_x100"] - lamp["level_x100"]) > SYNC_LEVEL_TOL:
         checks.append(_check("lutron", "warn", f"Lamp at {_pct_text(lamp['level_x100'])}, Lutron shows {_pct_text(lutron['level_x100'])}", REFERENCE_NOTE))
-    elif lutron["cct"] and lamp["cct"] and abs(lutron["cct"] - lamp["cct"]) > SYNC_CCT_TOL:
+    elif lutron["cct"] and lamp["cct"] and not cct_close(lutron["cct"], lamp["cct"]):
         checks.append(_check("lutron", "warn", f"Lamp colour {lamp['cct']} K, Lutron shows {lutron['cct']} K", REFERENCE_NOTE))
     elif lutron["cct"] is None or lamp["cct"] is None:
-        checks.append(_check("lutron", "unknown", "Brightness matches; colour unavailable"))
+        # Brightness is what Lutron commands everywhere; colour is compared only when both sides report it.
+        missing = "Lutron doesn't report colour for this zone" if lutron["cct"] is None else f"the {reader} reading has no colour"
+        checks.append(_check("lutron", "good", "Lamp matches Lutron",
+                             f"Both on at about {_pct_text(lamp['level_x100'])}; colour not compared ({missing})."))
     else:
-        checks.append(_check("lutron", "good", "Lamp matches Lutron", f"Both on at {_pct_text(lamp['level_x100'])}."))
+        checks.append(_check("lutron", "good", "Lamp matches Lutron", f"Both on at about {_pct_text(lamp['level_x100'])}."))
 
     # 2. Natural Show.
     if show["status"] == "unknown":
@@ -618,14 +665,15 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
             checks.append(_check("show", "wait", "Waiting for the lamp to report"))
         elif abs(level - target["level_x100"]) > SHOW_LEVEL_TOL:
             checks.append(_check("show", "warn", f"Show calls for {_pct_text(target['level_x100'])}, lamp at {_pct_text(level)}"))
-        elif level and (cct is None or target["cct"] is None):
-            checks.append(_check("show", "unknown", "Show brightness matches; colour unavailable"))
-        elif level and abs(cct - target["cct"]) > SHOW_CCT_TOL:
+        elif level and (cct is None or not target["cct"]):
+            checks.append(_check("show", "good", f"Following Natural Show {show['id']}",
+                                 f"The {reader} reading matches the show's brightness; colour not compared."))
+        elif level and not cct_close(cct, target["cct"]):
             checks.append(_check("show", "warn", f"Show calls for {target['cct']} K, lamp at {cct} K"))
         else:
             what = "manual brightness override" if show["override_x100"] is not None else "the show's brightness"
             checks.append(_check("show", "good", f"Following Natural Show {show['id']}",
-                                 f"Hub reading matches {what}{' and colour' if level else ''} for this minute."))
+                                 f"The {reader} reading matches {what}{' and colour' if level else ''} for this minute."))
 
     # 3. Lamp against the bridge's last command.
     if output["backend"] not in ("n4", "direct_zigbee") or (direct and held):
@@ -653,7 +701,7 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
     elif output["backend"] not in ("n4", "direct_zigbee"):
         verdict = {"tone": "wait", "title": "Lamp state unavailable on this output"}
     elif lamp is None:
-        verdict = {"tone": "wait", "title": "Waiting for a hub reading"}
+        verdict = {"tone": "wait", "title": f"Waiting for a {reader} reading"}
     elif lutron is None or lutron["on"] is None:
         verdict = {"tone": "info", "title": "Lamp reporting; Lutron state unknown"}
     elif worst["status"] in ("wait", "unknown"):
@@ -663,7 +711,11 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
     return {"zone": zone.get("zone"), "zone_id": zone.get("zone_id"), "name": zone.get("name"),
             "n4_group": zone.get("n4_group"), "serial": zone.get("serial"),
             "lutron": lutron, "sent": sent, "lamp": reported_lamp, "show": show, "checks": checks, "verdict": verdict,
-            "output": output["backend"]}
+            "output": output["backend"], "stale_ms": stale_ms,
+            # The gateway's latest programming read for the zone, for the Programming sync view.
+            "program": None if program is None else {
+                "programmed": program["programmed"], "selected": program["selected"], "shows": len(program["shows"]),
+                "age_s": None if program_age_s is None else round(program_age_s, 1)}}
 
 
 def show_clock(gateway_zone, ha_time_zone, now):
@@ -695,6 +747,11 @@ class Panel:
         self.cache = {}
         self.events = deque(maxlen=2048)
         self.programs = OrderedDict()
+        # Newest programming event per zone, kept across gateway restarts.
+        try:
+            self.program_events = archive.program_events()
+        except (AttributeError, OSError):
+            self.program_events = {}
         self.cursor = self.archive_cursor = 0
         self.boot_id = self.archive_boot_id = None
         self.boot_epoch_ms = None
@@ -757,6 +814,7 @@ class Panel:
                     event["wall_ms"] = round(self.boot_epoch_ms + ts)
                 self.events.append(event)
                 self.cursor = self.archive_cursor = event["id"]
+                note_program_event(self.program_events, event)
 
     def _program_zone(self, now):
         """The bridged zone whose programming was read least recently, if one is due."""
@@ -812,6 +870,7 @@ class Panel:
             zones.append(summary)
         return {"zones": zones, "config_hash": device_hash, "time_zone": tz_name, "local_ms": local_ms,
                 "home_assistant": lights is not None, "age_s": inputs["age_s"], "output": output,
+                "programming": {"events": [{"zone": z, **e} for z, e in sorted(self.program_events.items())]},
                 "monitoring": {"age_s": max(status_age, inputs["age_s"]) if status_age is not None and inputs["age_s"] is not None else None,
                                "status_age_s": status_age, "device_age_s": inputs["age_s"],
                                "delayed": inputs["delayed"] or not current}}

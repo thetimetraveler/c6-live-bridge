@@ -1,3 +1,8 @@
+## 0.14.2
+
+- The Overview shows no banner while everything is working; the banner appears only when something needs a look (or monitoring is delayed). The tiles still show each part's state.
+- **How commands flow** is renamed **Command flow**.
+
 ## 0.14.1
 
 - **Direct Zigbee commands are recognised in Activity and Response times.** Gateways with the native Ketra engine start a command with `native-requested`, not `requested`, so the dashboard never saw these commands start and had nothing to time. Commands now group from either start through the Ketra engine and Zigbee node steps (`native-pickup`, `selection-*`, `native-stream`, `native-queued`, `ketra-dispatch`, `ketra-uart`) to `applied`, `confirmed` and the report to Lutron. Each step has a readable name, and steps whose fields carry phases, ids or flags no longer show them as levels.

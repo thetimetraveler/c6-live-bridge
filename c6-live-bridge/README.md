@@ -125,13 +125,13 @@ The dashboard has five tabs, each answering one question:
 | Tab | Question | What's there |
 |---|---|---|
 | **Overview** | Is everything working? | Headline (one problem: what it is and what to do), status tiles, Lights |
-| **Activity** | What happened to a command? | How commands flow (live diagram, explained under its **?**), then one row per command and its steps |
+| **Activity** | What happened to a command? | Command flow (live diagram, explained under its **?**), then one row per command and its steps |
 | **Health** | Which part needs a look, and how fast is it? | Components (was Diagnostics), Response times (was Performance) |
 | **Programming** | Has new programming reached the lamps? | Programming sync, per-zone shows and presets |
 | **Setup** | Change something | Everyday controls, Configuration, Zigbee node and firmware |
 
-Each Overview tile opens the place that explains it. A healthy bridge reads
-**Everything is working**; the endpoint's hardware caveats (no physical hold)
+Each Overview tile opens the place that explains it. A healthy bridge shows
+no banner, only the tiles; the endpoint's hardware caveats (no physical hold)
 stay in Health, where they belong.
 
 **Lights.** One compact row per lamp: the lamp's glow, name, its reading and

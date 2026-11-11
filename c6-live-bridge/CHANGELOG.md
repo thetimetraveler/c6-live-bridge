@@ -1,3 +1,7 @@
+## 0.15.1
+
+- A lamp without a current reading listed "Hub observation unavailable" once for every passing check. It now shows one line, "No recent hub reading (or lamp reading on direct Zigbee), so nothing is compared", with how old the last reading is and how long readings count for; checks that already need a look stay listed.
+
 ## 0.15.0
 
 - **Names from the Lutron processor.** The app reads Home Assistant's Lutron Caséta/RA3 integration diagnostics (every 10 minutes, through the Supervisor) for the processor's area tree, zones and keypads. Zone programming's **Answers to** names each ID: *Area: Second Floor › Office*, another zone, a keypad, *This lamp's device or load* (the IDs the processor numbers just after the zone), or *Group*. Lamp rows and the zone summary show the processor's area path and fixture type (for example *SpectrumTune · 1400–10000 K · warm dim*). Health → Home Assistant reports how many areas, zones and keypads were read, or why not. Without the diagnostics everything works as before.

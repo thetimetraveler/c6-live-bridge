@@ -1119,6 +1119,10 @@ function showBlock(z,current,observed){const s=z.show||{},held=s.override_x100!=
   return box}
 /* Informational show/hub notes repeat what the show block and "Bridge sent" column already say. */
 function checkList(checks){const ul=el('ul','checks');for(const c of (Array.isArray(checks)?checks:[]).filter(c=>c&&typeof c==='object'&&!(c.status==='info'&&['show','hub'].includes(c.key)))){const li=el('li',CHECK_TONE[c.status]||'wait');li.append(el('span','ic',CHECK_ICON[c.status]||'?'),el('span','',c.title));if(c.detail)li.append(el('small','',c.detail));ul.append(li)}return ul}
+/* Without a current lamp reading, the passing checks can't be trusted: drop them and say once why. */
+function staleChecks(z,checks){const kept=checks.filter(c=>c.status!=='good');if(kept.length===checks.length)return checks;
+  const reader=isDirect(z)?'lamp':'hub',l=z?.lamp;
+  return [{status:'unknown',title:l&&['observed','correction'].includes(l.source)?`No recent ${reader} reading, so nothing is compared`:`No ${reader} reading yet, so nothing is compared`,detail:l&&Number.isFinite(l.age_ms)?`Last reading ${duration(l.age_ms+Math.max(0,Date.now()-zonesReceivedAt))} ago; readings count for ${Math.round(lampStaleMs(z)/60000)} minutes.`:''},...kept]}
 /* Lamp rows stay open across the one-second refresh. */
 const openLamps=new Set();
 function lampRowLevel(z,observed){const box=el('span','lamp-level'),l=observed?z.lamp:null,lu=z.lutron;
@@ -1135,7 +1139,7 @@ function zonesView(data,receivedAt){if(data!==lastZones||receivedAt!==undefined)
     const delta=['warn','bad'].includes(tone)?lampDelta(z,observed):'';
     name.append(el('span','lamp-state',v.title+(delta&&!v.title.includes('Lutron shows')?' · '+delta:'')));sm.append(bulb(zoneLight(z),true),name,lampRowLevel(z,observed));
     const rawChecks=Array.isArray(z.checks)?z.checks.filter(c=>c&&typeof c==='object'):[];
-    const checks=!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:rawChecks.map(c=>c.status==='good'?{status:'unknown',title:isDirect(z)?'Lamp reading unavailable':'Hub observation unavailable'}:c);
+    const checks=!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:staleChecks(z,rawChecks);
     const body=el('div','lamp-body'),sub=[z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null,isDirect(z)?'Direct Zigbee':null,fixtureText(lz)||null].filter(Boolean).join(' · ');if(sub)body.append(el('p','zone-sub',sub));
     const trio=el('div','trio flow');trio.append(lutronSide(z.lutron),el('span','flow-arrow','→'),sentSide(z.sent,elapsed),el('span','flow-arrow','→'),lampSide(z.lamp,elapsed,z.output));body.append(levelRail(z),trio,showBlock(z,current,observed),checkList(checks));
     card.append(sm,body);card.open=openLamps.has(key);card.addEventListener('toggle',()=>{if(card.open)openLamps.add(key);else openLamps.delete(key)});cards.push(card)}

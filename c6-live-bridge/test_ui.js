@@ -112,6 +112,7 @@ zonesView({...zoneSnapshot,zones:[{...matchZone,lamp:{...matchZone.lamp,source:'
 if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('hub reading'))throw Error('accepted commands must not masquerade as lamp readback');
 zonesView({...zoneSnapshot,zones:[{...matchZone,lamp:{...matchZone.lamp,age_ms:120001}}]});
 if(zoneCard().className.includes('good'))throw Error('an old hub reading must not be displayed as a current comparison');
+{const walk=n=>[n,...(n.children||[]).flatMap(walk)],lis=walk(zoneCard()).filter(n=>n.tag==='li'&&n.className==='wait');const txt=n=>[n.textContent||'',...(n.children||[]).map(txt)].join(' ');if(lis.length!==1||!txt(lis[0]).includes('No recent hub reading'))throw Error('a stale reading is explained once, not per check: '+lis.map(txt).join(' | '))}
 zonesView({...zoneSnapshot,zones:[{...matchZone,checks:[{status:'unknown',title:'Colour unavailable'}]}]});
 if(zoneCard().className.includes('good'))throw Error('incomplete checks must not be counted as in sync');
 deviceView({...deviceSnapshot,zones:[{zone:1},{zone:2},{zone:3}]});

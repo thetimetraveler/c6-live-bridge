@@ -1,3 +1,9 @@
+## 0.15.2
+
+- Direct Zigbee response times require a lamp confirmation associated with that command. Periodic Natural Show readings no longer appear as roughly 30-second command latency or mark an unrelated command's lamp-reading step as complete. Corrections remain warnings.
+- Routing counters identify verified zone commands, send requests including polls, and zone readbacks. Native Shows are excluded from the verified-command count; these counters do not establish a delivery success rate.
+- The timing count distinguishes commands with recorded timing from requests without it. The Health page explains why Show updates may have no command confirmation.
+
 ## 0.15.1
 
 - A lamp without a current reading listed "Hub observation unavailable" once for every passing check. It now shows one line, "No recent hub reading (or lamp reading on direct Zigbee), so nothing is compared", with how old the last reading is and how long readings count for; checks that already need a look stay listed.

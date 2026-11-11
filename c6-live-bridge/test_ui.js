@@ -542,7 +542,12 @@ const mappingChecks=`
   const wf=view('perf-waterfall').children;
   if(wf.length!==2||!text(wf[0]).includes('Failed')||!text(wf[1]).includes('1.10 s'))throw Error('the waterfall lists recent commands newest first with their totals');
   if(tree(wf[1]).filter(n=>/^seg-/.test(n.className)).map(n=>n.className).join()!=='seg-hub,seg-lamp,seg-back')throw Error('waterfall segments follow the hops in time order');
-  if(view('perf-count').textContent!=='2 commands timed')throw Error('performance counts timed commands');
+  if(view('perf-count').textContent!=='1 command timed · 1 without timing')throw Error('performance counts only commands with a timed hop: '+view('perf-count').textContent);
+  {const n4=groupEvents([
+    {id:1,ts_ms:1000,stage:'requested',zone:1,command_seq:7,schema_version:2},
+    {id:2,ts_ms:1100,stage:'applied',zone:1,command_seq:7,schema_version:2},
+    {id:3,ts_ms:1400,stage:'correction',zone:1,command_seq:7,schema_version:2}]);
+    if(commandTimings(n4)[0].ms('lamp')!==400)throw Error('N4 corrections retain their existing timing behavior')}
   // Lights: level rail markers, show chart coloured by CCT, glance strip.
   zonesView({config_hash:1,zones:[sitting,{...sitting,zone:2,name:'Den'}],time_zone:'America/Los_Angeles',home_assistant:true,monitoring:{age_s:0,delayed:false}});
   const card=view('zones').children[0],nodes=tree(card);
@@ -561,14 +566,43 @@ const mappingChecks=`
     zonesView({...zoneSnapshot,zones:[{...z,lutron:{...z.lutron,level_x100:7000},verdict:{tone:'warn',title:'Lamp at 50%, Lutron shows 70%'},checks:[{key:'lutron',status:'warn',title:'Lamp at 50%, Lutron shows 70%'}]}]});
     if(!zoneCard().className.includes('warn')||!cardVerdict().textContent.includes('Lutron shows 70%'))throw Error('a lamp out of step shows both levels in its row')}
   // Response times on direct Zigbee: no N4 figures, Zigbee labels, routing counters, and a reason when nothing can be timed.
-  {const direct={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:40,applied:12,observed:30,unrouted:0,unreachable:0},puts_ok:99,puts_failed:1,diagnostics:{maintenance:false,accepted_count:5,acceptance_last_ms:150}};
+  {const direct={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:40,applied:12,observed:30,unrouted:9,unreachable:3},puts_ok:99,puts_failed:1,diagnostics:{maintenance:false,accepted_count:5,acceptance_last_ms:150}};
     latestStatus=direct;eventView({boot_id:'zb',boot_epoch_ms:Date.now()-100000,next:5,next_sequence:5,oldest:1,lost:0,events:[
       {id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2},{id:2,ts_ms:4000,stage:'observed',zone:1,confirmed:5000,requested:5000},
       {id:3,ts_ms:4500,stage:'report-sent',zone:1,reported:5000,command_seq:1,report_seq:1,schema_version:2}]});
     const z=text(view('perf-stats'));
-    if(!z.includes('Lutron → lamp reading')||!z.includes('3.00')||!z.includes('Round trip back to Lutron')||!z.includes('Direct Zigbee delivery')||!z.includes('40 frames sent')||z.includes('Hub API response')||z.includes('Gateway queue'))throw Error('direct Zigbee performance: '+z);
+    if(z.includes('Lutron → lamp reading')||!z.includes('Round trip back to Lutron')||!z.includes('Verified zone commands')||!z.includes('40 send requests, including polls')||!z.includes('30 zone readbacks')||!z.includes('9 without lamps')||!z.includes('3 lamps unreachable')||!z.includes('Command count excludes native Shows')||z.includes('Hub API response')||z.includes('Gateway queue'))throw Error('direct Zigbee performance: '+z);
+    const aggregate=view('perf-stats').children.find(n=>text(n).includes('Verified zone commands'));
+    if(aggregate.className!=='stat wait'||text(aggregate).includes('%'))throw Error('routing counts must be neutral, without a delivery ratio');
+    if(commandSteps(groupEvents(eventRows).find(g=>g.kind==='command'))[2][1]!=='pending')throw Error('an uncorrelated reading is not a direct command readback');
     eventView({boot_id:'zb2',boot_epoch_ms:Date.now()-100000,next:2,next_sequence:2,oldest:1,lost:0,events:[{id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2}]});
-    if(!text(view('perf-stats')).includes('reported no later step'))throw Error('an untimeable feed must say why: '+text(view('perf-stats')));
+    if(!text(view('perf-stats')).includes('no command hop can be timed')||!text(view('perf-stats')).includes('Shows are sampled periodically')||text(view('perf-stats')).includes('firmware'))throw Error('an untimeable feed explains sampled Shows without implying a firmware problem: '+text(view('perf-stats')));
+    if(view('perf-count').textContent!=='0 commands timed · 1 without timing'||!view('perf-note').textContent.includes('Missing confirmation does not imply a delay or failure'))throw Error('missing timing is counted and explained neutrally');
+    latestStatus=status}
+  // Show retags have no per-command lamp readback, even when a later periodic reading has the same zone.
+  {latestStatus={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:1,applied:1,observed:1,unrouted:0}};
+    const c=(id,ts,stage,seq,zone=1)=>({id,ts_ms:ts,stage,zone,requested:5000,confirmed:-1,command_seq:seq,schema_version:2});
+    const show=[c(1,1000,'native-requested',41),c(2,1000,'native-pickup',41),c(3,1005,'selection-ready',41),
+      {id:4,ts_ms:30672,stage:'observed',zone:1,requested:-1,confirmed:5000}];
+    eventView({boot_id:'show',next:5,oldest:1,lost:0,events:show});
+    let g=groupEvents(eventRows).find(x=>x.kind==='command'),t=commandTimings([g])[0],steps=commandSteps(g);
+    if(t.marks.length||t.ms('lamp')!==null||steps[1][1]!=='pending'||steps[2][1]!=='pending'||commandSummary(g).label!=='Selection checked · lamp submission not recorded')throw Error('a 29.672 s Show sample must not imply lamp submission or confirmation');
+    if(view('perf-count').textContent!=='0 commands timed · 1 without timing'||!text(view('perf-stats')).includes('their readbacks do not measure per-command latency'))throw Error('a Show sample is not timed as a command');
+    eventView({boot_id:'show-multiple',next:20,oldest:1,lost:0,events:[...show.slice(0,3),
+      c(4,2000,'native-requested',42),c(5,2000,'native-pickup',42),c(6,2005,'selection-ready',42),{...show[3],id:7},
+      c(8,30680,'applied',null),c(9,30690,'applied',99),{...c(10,30700,'correction',42),confirmed:4000},
+      c(11,32000,'native-requested',43),c(12,32020,'ketra-dispatch',43),c(13,32250,'applied',43)]});
+    const groups=groupEvents(eventRows).filter(x=>x.kind==='command'&&x.events.some(e=>e.stage==='native-requested'));
+    const times=commandTimings(groups);
+    if(times.length!==3||times[0].ms('lamp')!==null||times[1].ms('lamp')!==null||times[2].ms('lamp')!==250)throw Error('only the matching applied confirms a same-zone request: '+times.map(x=>x.ms('lamp')));
+    if(commandSteps(groups[0])[2][1]!=='pending'||commandSteps(groups[1])[2][1]!=='warn'||commandSummary(groups[1]).tone!=='warn'||commandSteps(groups[2])[2][1]!=='good')throw Error('missing confirmations wait, corrections warn, and matched applied confirms');
+    if(view('perf-count').textContent!=='1 command timed · 2 without timing')throw Error('multiple Show commands count only marked timings: '+view('perf-count').textContent);
+    // Exercise the correlation checks directly as a defense against permissive event grouping or incomplete feeds.
+    const req=c(1,1000,'native-requested',5),valid=c(2,1200,'applied',5),group=(request,applied)=>({kind:'command',zone:1,events:[request,applied],stages:new Set([request.stage,applied.stage])});
+    for(const bad of [{...valid,command_seq:null},{...valid,command_seq:6},{...valid,zone:2},{...valid,ts_ms:999},{...valid,ts_ms:null}]){
+      g=group(req,bad);if(directApplied(g)||commandTimings([g])[0].ms('lamp')!==null||commandSteps(g)[2][1]==='good'||commandSummary(g).label.includes('Lamps at the commanded level'))throw Error('invalid applied event must not confirm a command: '+JSON.stringify(bad))}
+    g=group({...req,command_seq:null},valid);if(directApplied(g)||commandTimings([g])[0].ms('lamp')!==null)throw Error('the request must have a sequence too');
+    g=group(req,valid);if(directApplied(g)!==valid||commandTimings([g])[0].ms('lamp')!==200)throw Error('a correlated applied event remains a valid timing');
     latestStatus=status}
   // Native Ketra path (current direct gateways): native-requested starts the command; applied is the lamps' readback.
   {latestStatus={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:1,applied:1,observed:0,unrouted:0}};

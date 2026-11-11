@@ -332,7 +332,7 @@ code{overflow-wrap:anywhere}
 .pipeline strong{display:block}
 .pipeline span.d{display:block;color:var(--label2);font-size:.84rem}
 .pipeline .pill{align-self:center}
-.sync-table td{vertical-align:top}.sync-table tr.pick{cursor:pointer}.sync-table tr.pick:hover td{background:var(--fill)}
+.sync-table td{vertical-align:top}.presets td{vertical-align:top}.presets small{display:block;color:var(--label2);font-size:.78rem}.presets .swatch{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 1px var(--sep)}.good-text{color:var(--green)!important}.chip.member{cursor:default}.chip.member.good{background:var(--green-t)}.chip.member.info{background:var(--blue-t)}.sync-table tr.pick{cursor:pointer}.sync-table tr.pick:hover td{background:var(--fill)}
 .sync-table small{display:block;color:var(--label2);font-size:.78rem}
 .help{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:6px;padding:0;border-radius:50%;background:var(--fill);color:var(--label2);font-size:.72rem;font-weight:700;vertical-align:middle;position:relative;cursor:help}
 .help:hover,.help:focus-visible{background:var(--blue);color:#fff}
@@ -1188,7 +1188,9 @@ function scheduleView(shows,preferred){const wrap=el('div'),picker=el('div','chi
   const draw=()=>{for(const [b,s] of buttons)b.setAttribute('aria-pressed',String(s===current));wrap.replaceChildren(...(shows.length>1?[picker]:[]),...showChart(current))};
   if(shows.length>1)for(const s of shows){const b=el('button','chip');b.type='button';b.append(el('span','',`Show ${val(s.id)}`));if(String(s.id)===String(preferred))b.append(el('small','','zone show'));b.onclick=()=>{current=s;draw()};buttons.push([b,s]);picker.append(b)}
   draw();return wrap}
-function showChart(show){const knots=show.knots.map(k=>({...k,minute:Math.max(0,Math.min(1440,Number(k.minute)||0)),level:Number(k.level)||0})).sort((a,b)=>a.minute-b.minute);const first=knots[0],last=knots[knots.length-1];
+/* Lutron's 16-bit level (0xFEFF = full) to hundredths of a percent, as the endpoint converts it. */
+function level16(v){v=Number(v);if(!Number.isFinite(v)||v<=0)return 0;if(v>=0xFEFF)return 10000;return 100+Math.floor((v*9900+Math.floor(0xFEFF/2))/0xFEFF)}
+function showChart(show){const knots=show.knots.map(k=>({...k,minute:Math.max(0,Math.min(1440,Number(k.minute)||0)),level:level16(k.level)/100})).sort((a,b)=>a.minute-b.minute);const first=knots[0],last=knots[knots.length-1];
   const peak=Math.max(1,...knots.map(k=>k.level)),pct=peak<=100,mag=10**Math.floor(Math.log10(peak)),top=pct?100:[1,2,2.5,5,10].map(m=>m*mag).find(v=>v>=peak);const fmt=v=>pct?`${Math.round(v)}%`:String(Math.round(v*10)/10);
   const L=48,W=576,T=24,H=172,X=m=>L+m*W/1440,Y=v=>T+H-v*H/top,gid='cct-'+(++chartSeq);
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','chart schedule');svg.setAttribute('tabindex','0');svg.setAttribute('role','img');svg.setAttribute('aria-label',`Show ${val(show.id)}: brightness and color temperature over 24 hours. Use the arrow keys to move through the day.`);
@@ -1213,13 +1215,44 @@ function showChart(show){const knots=show.knots.map(k=>({...k,minute:Math.max(0,
   if(colored.length>1){const lo=colored.reduce((a,b)=>toKelvin(b.cct)<toKelvin(a.cct)?b:a),hi=colored.reduce((a,b)=>toKelvin(b.cct)>toKelvin(a.cct)?b:a);if(toKelvin(lo.cct)!==toKelvin(hi.cct))summary+=` Warmest at ${timeOfDay(lo.minute)} (${Math.round(toKelvin(lo.cct))} K), coolest at ${timeOfDay(hi.minute)} (${Math.round(toKelvin(hi.cct))} K).`}
   const list=el('div','list');for(const k of knots){const r=el('div','row kf'),lvl=el('span','kf-level'),bar=el('span','bar'),fill=el('i'),t=el('span','temp'),d=el('span','dotc');fill.style.width=Math.min(100,k.level/top*100)+'%';fill.style.setProperty('--c',cctColor(k.cct));bar.append(fill);lvl.append(bar,el('span','',fmt(k.level)));d.style.setProperty('--c',cctColor(k.cct));t.append(d,el('span','',cctLabel(k.cct)));r.append(el('span','kf-time',timeOfDay(k.minute)),lvl,t);list.append(r)}
   return [el('p','sched-summary',summary),head,svg,el('p','muted small',`Height shows brightness; color shows color temperature. Drag across the chart, or focus it and use ← →, to read any time of day. ${showZone()?`“Now”, sunrise and sunset use the show time zone (${showZone()}); shaded areas are night.`:'Show time zone unavailable; “Now” uses this device\'s clock.'}`),el('h3','',`Schedule points · ${knots.length}`),list]}
-function renderProgram(data){lastProgram=data;const viz=$('program-viz');const shows=(Array.isArray(data.shows)?data.shows:[]).filter(s=>Array.isArray(s.knots)&&s.knots.length);const presets=Array.isArray(data.presets)?data.presets:[];const out=[];
+/* Zone programming as Lutron Designer set it, from the endpoint's copy (a20 device database).
+   Members are the Lutron object IDs the lamp listens to; presets are its scene entries:
+   type 1 leaves the lamp alone, 72 sets a state, 73 starts a Natural Show. */
+const WARM_DIM={0:'default warm dim',1:'Halogen warm dim',2:'Finiré 2700 warm dim',3:'Finiré 3000 warm dim',4:'Generic Daylight warm dim',5:'Modified Halogen warm dim'};
+const qs=v=>{const s=Number(v)/4;return Number.isFinite(s)?(s%1?s.toFixed(2).replace(/0$/,''):String(s))+' s':'—'};
+function memberLabel(id,zone){const zid=Number(zone?.zone_id);if(id===zid)return ['This zone','good'];
+  const z=(configBase?.zones||[]).find(x=>Number(x?.zone_id)===id)||(lastZones?.zones||[]).find(x=>Number(x?.zone_id)===id);if(z)return [z.name||'Zone '+id,'info'];
+  const l=(haData?.lights||[]).find(x=>Number(x?.zone_id)===id);if(l)return [l.name,'info'];
+  return ['Area or group',''];}
+function presetRow(p,last){const tr=el('tr'),t=Number(p.type),what=el('td'),swatch=el('span','swatch');
+  const c1=cell(tr,'');c1.append(el('strong','',`Scene preset ${val(p.preset)}`));if(last)c1.append(el('small','good-text','last recalled'));
+  tr.append(what);
+  if(t===1){what.append(el('span','muted','Unaffected: leaves this lamp as it is'))}
+  else if(t===73){what.append(el('span','',`Starts Natural Show ${val(p.value)}`));if(Number.isFinite(Number(p.show_level))&&p.show_level!==null)what.append(el('small','',`brightness held at ${pct(level16(p.show_level))}`))}
+  else if(t===72){const lv=p.value===null||p.value===undefined?null:level16(p.value),bits=[];
+    const colour=Number.isFinite(Number(p.cct))&&p.cct!==null?{cct:Number(p.cct)}:Array.isArray(p.xy)?{xy:[p.xy[0]/10000,p.xy[1]/10000]}:null,col=colour?lampColour(colour):null;
+    const main=el('span','',lv===null?'Keeps brightness':lv===0?'Off':pct(lv));if(col&&lv!==0){swatch.style.background=col;what.append(swatch)}what.append(main);
+    if(colour?.cct)bits.push(colour.cct+' K');else if(colour?.xy)bits.push(`xy ${colour.xy[0].toFixed(3)}, ${colour.xy[1].toFixed(3)}`);
+    if(p.field2!==null&&p.field2!==undefined&&Number(p.field2)<=100)bits.push('vibrancy '+p.field2);
+    if(p.field5!==null&&p.field5!==undefined)bits.push(WARM_DIM[p.field5]||'warm-dim curve '+p.field5);
+    if(lv===0&&bits.length)bits.unshift('colour applies when turned on:');
+    if(bits.length)what.append(el('small','',bits.join(' · ')))}
+  else what.append(el('span','muted',`Type ${val(p.type)} (not interpreted)`));
+  const timing=cell(tr,'');if(t!==1){timing.append(el('span','',`${qs(p.fade_qs??8)} fade`));if(Number(p.delay_qs)>0)timing.append(el('small','',`after ${qs(p.delay_qs)} delay`))}
+  tr.title=`Raw: ${JSON.stringify(p)}`;return tr}
+function renderProgram(data){lastProgram=data;const viz=$('program-viz');const shows=(Array.isArray(data.shows)?data.shows:[]).filter(s=>Array.isArray(s.knots)&&s.knots.length);const presets=(Array.isArray(data.presets)?data.presets:[]).slice().sort((a,b)=>Number(a.preset)-Number(b.preset));const out=[];
   const facts=el('div','metrics');const fact=(k,v,sub)=>{const b=el('div','metric');b.append(el('span','',k),el('strong','',v));if(sub)b.append(el('span','',sub));facts.append(b)};
-  const zi=zoneInfo(data.zone??$('program-zone').value);fact('Zone',zi.title,[zi.area,'Zone '+val(data.zone??$('program-zone').value)].filter(Boolean).join(' · '));fact('Shows',String(shows.length),shows.length?'daily level schedules':'none programmed');fact('Presets',String(presets.length),presets.length?'stored scenes':'none programmed');
-  if(data.selected!==undefined)fact('Selection',data.selected?'Selected':'Not selected',data.show===undefined||data.show===null?'':`Show ${val(data.show)}`);
-  if(data.members!==undefined)fact('Members',Array.isArray(data.members)&&data.members.length?data.members.join(', '):'None');out.push(facts);
+  const zid=data.zone??$('program-zone').value,zi=zoneInfo(zid),zone=zoneById(zid);fact('Zone',zi.title,[zi.area,'Zone '+val(zid)].filter(Boolean).join(' · '));
+  if(data.selected!==undefined)fact('Natural Show',data.selected&&data.show?`Show ${val(data.show)} running`:'None running',data.selected&&data.brightness_override_x100!==null&&data.brightness_override_x100!==undefined?`brightness held at ${pct(data.brightness_override_x100)}`:shows.length?`${shows.length} installed`:'none installed');
+  const used=presets.filter(p=>Number(p.type)!==1).length;fact('Scenes',String(presets.length),presets.length?`${used} change this lamp · ${presets.length-used} leave it alone`:'none programmed');
+  if(data.programmed===false)fact('Programming','Not received','transfer from Designer to program this lamp');out.push(facts);
+  const members=Array.isArray(data.members)?data.members.map(Number).filter(Number.isFinite):[];
+  if(members.length){const chips=el('div','chips');for(const m of members){const [label,tone]=memberLabel(m,zone),c=el('span','chip member'+(tone?' '+tone:''));c.append(el('span','',label),el('small','',String(m)));chips.append(c)}
+    out.push(section('Answers to',el('p','muted small','The Lutron IDs this lamp listens to. A command or scene sent to any of them reaches it: its own zone, its load, and any area or group that includes it.'),chips))}
   if(shows.length)out.push(section('Daily schedule',scheduleView(shows,data.show)));
-  if(presets.length){const grid=el('div','metrics');for(const p of presets){const box=el('div','metric');const extra=[p.type,p.field2===null||p.field2===undefined?null:'field 2: '+p.field2,p.field5===null||p.field5===undefined?null:'field 5: '+p.field5].filter(x=>x!==null&&x!==undefined).join(' · ');box.append(el('span','',`Preset ${val(p.preset)}`),el('strong','',val(p.value)));if(extra)box.append(el('span','',extra));grid.append(box)}out.push(section('Presets',grid))}
+  if(presets.length){const last=Number(latestNative?.last_scene_event?.valid?latestNative.last_scene_event.preset:NaN),table=el('table','activity presets'),head=el('thead'),hr=el('tr');for(const h of ['Scene','What it does','Timing']){const th=el('th','',h);hr.append(th)}head.append(hr);const body=el('tbody');
+    for(const p of presets)body.append(presetRow(p,Number(p.preset)===last));table.append(head,body);const wrap=el('div','scroll');wrap.append(table);
+    out.push(section('Scenes',el('p','muted small','How this lamp responds to each Lutron scene (preset) it belongs to. Lutron sends scene numbers, not names; hover a row for its raw values.'),wrap))}
   if(!shows.length&&!presets.length)out.push(el('p','empty-state','This zone has no shows or presets programmed.'));viz.replaceChildren(...out)}
 async function loadProgram(force=false){const z=Number($('program-zone').value),btn=$('load-program'),viz=$('program-viz');markProgramZone();btn.disabled=true;btn.textContent='Loading…';viz.setAttribute('aria-busy','true');
   try{const data=await req(`program?zone=${z}&page=0&refresh=${force?1:0}`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;viz.replaceChildren(el('p','empty-state',`Couldn't load zone ${z}: ${e.message}`))}finally{btn.disabled=false;btn.textContent='Load snapshot';viz.setAttribute('aria-busy','false')}}

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 class Element {
-  constructor(tag='div') { this.tag=tag; this.children=[]; this.attrs={}; this.style={}; this.value=''; this.textContent=''; this.className=''; this.onclick=null; }
+  constructor(tag='div') { this.tag=tag; this.children=[]; this.attrs={}; this.style={setProperty(k,v){this[k]=v;}}; this.value=''; this.textContent=''; this.className=''; this.onclick=null; }
   append(...nodes) { this.children.push(...nodes); }
   replaceChildren(...nodes) { this.children=[...nodes]; }
   setAttribute(key,value) { this.attrs[key]=String(value); if(key==='class') this.className=String(value); }
@@ -587,6 +587,14 @@ const mappingChecks=`
     for(const want of ['Lutron → sent to lamps','150','Lutron → lamp reading','900','Round trip back to Lutron','1.30'])if(!z.includes(want))throw Error('native timings should show '+want+': '+z);
     if(stageInfo('applied')[0]!=='Every lamp at the commanded level')throw Error('applied means lamp readback on direct Zigbee');
     latestStatus=status}
+  // Zone programming: members get names, presets read as what they do, show levels as percentages.
+  {renderProgram({zone:1,programmed:true,selected:true,show:31779,members:[2710,30861],brightness_override_x100:null,
+    presets:[{preset:4261,type:72,value:15826,field2:25,field5:null,fade_qs:8,delay_qs:0,xy:null,cct:2700,show_level:null},{preset:4262,type:72,value:0,fade_qs:40,delay_qs:0},
+      {preset:4263,type:73,value:31779,fade_qs:8,delay_qs:4,show_level:null},{preset:4264,type:72,value:65279,field5:1,fade_qs:8,delay_qs:0},{preset:4270,type:1}],
+    shows:[{id:31779,knots:[{minute:0,level:6000,cct:1900},{minute:720,level:65279,cct:4500}]}]});
+    const v=text(view('program-viz'));
+    for(const want of ['Answers to','Area or group','Scene preset 4261','25%','2700 K · vibrancy 25','Off','10 s fade','Starts Natural Show 31779','after 1 s delay','Halogen warm dim','Unaffected','100%','4 change this lamp · 1 leave it alone'])if(!v.includes(want))throw Error('zone programming should read '+want+': '+v);
+    if(level16(15826)!==2500||level16(65279)!==10000||level16(0)!==0)throw Error('16-bit levels convert as the endpoint does')}
   // Programming sync: rejected transfers, re-reading after a transfer, N4 lamps need nothing.
   {deviceView(deviceSnapshot);latestNative=null;const now=Date.now();
     zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-installed',wall_ms:now-60000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:30}}]});health(status);

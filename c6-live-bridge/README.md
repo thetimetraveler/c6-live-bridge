@@ -172,6 +172,16 @@ problem.
 
 Select a zone row to show its programming below.
 
+**Zone programming** shows the endpoint's copy of a zone's Designer
+programming. **Answers to** lists `members`, the Lutron object IDs the lamp
+listens to (its zone, its load, and areas or groups that include it), named
+where the mapping or Home Assistant knows them. **Scenes** lists `presets` by
+what they do: type 1 *Unaffected*; type 72 sets brightness (`value`, Lutron's
+16-bit level), colour (`cct` or `xy`), vibrancy (`field2`) and warm-dim curve
+(`field5`: 1 Halogen, 2 Finiré 2700, 3 Finiré 3000, 4 Generic Daylight,
+5 Modified Halogen); type 73 starts the Natural Show in `value`, optionally at
+`show_level`. Fade and delay are in quarter-seconds (default fade 2 s).
+
 **Setup** groups its cards as Everyday controls (maintenance, endpoint control,
 show time zone), Configuration (zone mapping, Ketra lamps) and Zigbee node and
 firmware. Every card says when to use it. **Firmware updates** holds both

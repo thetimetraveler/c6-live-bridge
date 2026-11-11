@@ -1,3 +1,8 @@
+## 0.14.3
+
+- **Zone programming is readable.** *Members* becomes **Answers to**: the Lutron IDs the lamp listens to, each labelled (this zone, another mapped zone, or an area or group), with a line explaining that a command sent to any of them reaches the lamp. *Presets* become a **Scenes** table saying what each scene does to the lamp: its brightness (converted from Lutron's 16-bit level), colour temperature or xy with a swatch, vibrancy, warm-dim curve, "Starts Natural Show …", or "Unaffected", with fade and delay in seconds. The scene last recalled is marked, and each row's raw values are in its tooltip. The summary shows the running Natural Show and how many scenes change the lamp.
+- The daily schedule chart plots show levels as percentages; it showed Lutron's raw 16-bit values.
+
 ## 0.14.2
 
 - The Overview shows no banner while everything is working; the banner appears only when something needs a look (or monitoring is delayed). The tiles still show each part's state.

@@ -1,3 +1,11 @@
+## 0.14.1
+
+- **Direct Zigbee commands are recognised in Activity and Response times.** Gateways with the native Ketra engine start a command with `native-requested`, not `requested`, so the dashboard never saw these commands start and had nothing to time. Commands now group from either start through the Ketra engine and Zigbee node steps (`native-pickup`, `selection-*`, `native-stream`, `native-queued`, `ketra-dispatch`, `ketra-uart`) to `applied`, `confirmed` and the report to Lutron. Each step has a readable name, and steps whose fields carry phases, ids or flags no longer show them as levels.
+- On direct Zigbee, **Lutron → sent to lamps** is timed to `ketra-dispatch` (the frame handed to the Zigbee node) and **Lutron → lamp reading** to `applied`, which on this path means every lamp in the zone read the commanded level back. This matches the gateway's own latency benchmark.
+- Gateway-side drops (`epoch-dropped`, `endpoint-safety-dropped`, `update-dropped`, `config-busy`) end a command as a problem and say why. `ketra-unrouted` reads "No Ketra lamps for this zone". Repeated lamp read requests collapse into one row.
+- Programming sync's **Ketra lamps** step uses the Ketra engine's status: a failed scene sync or show start needs a look, zones that are not ready are named, and it shows lamp storage use and whether the last scene recall came from storage on the lamps or was sent as ordinary commands (and why).
+- The flow diagram animates for direct Zigbee sends.
+
 ## 0.14.0
 
 - **Direct Zigbee lamps are compared again.** 0.13.3 taught the add-on to report direct Zigbee readings, but the dashboard still discarded them ("Lamp state unavailable on this output", or "comparison incomplete") and aged them out after 2 minutes instead of 7. Direct Zigbee readings are now compared with Lutron like N4 readings.

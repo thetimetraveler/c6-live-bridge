@@ -147,6 +147,14 @@ the checks. Readings through the N4 hub are current for 2 minutes; direct
 Zigbee readings for 7, because the gateway reads each lamp after a command and
 every 5 minutes (30 s during a show).
 
+**Direct Zigbee events.** Gateways with the native Ketra engine start a
+command with `native-requested` and log the engine and Zigbee node steps
+(`native-pickup`, `selection-get`/`-ready`, `native-stream`, `native-queued`,
+`ketra-dispatch`, `ketra-uart`, then `applied`, `confirmed`). Activity groups
+them into one command with readable step names; `epoch-dropped`,
+`endpoint-safety-dropped`, `update-dropped` and `config-busy` end it as a
+problem.
+
 **Programming sync** follows a Designer transfer step by step:
 
 1. *Lutron Designer → endpoint*: the newest `program-installed` or
@@ -174,11 +182,13 @@ only on gateways that host the node).
 **Response times.** Per-hop latency, as the median, p95 and maximum of recent
 commands (up to 60), from the event feed's gateway timestamps:
 
-- *Lutron → hub accepted* (on direct Zigbee, *Lutron → sent to lamps*):
-  `requested` to `applied`;
-- *Lutron → lamp reading*: `requested` to the zone's first `observed` reading
-  (or `correction`) within 15 s on N4, 30 s on direct Zigbee; it no longer
-  needs an `applied` step first;
+- *Lutron → hub accepted*: `requested` to `applied`. On direct Zigbee,
+  *Lutron → sent to lamps*: `requested` or `native-requested` to
+  `ketra-dispatch` (the frame handed to the Zigbee node);
+- *Lutron → lamp reading*: to the zone's first `observed` reading (or
+  `correction`) within 15 s on N4. On direct Zigbee, to `applied`, which there
+  means every lamp in the zone read the commanded level back (else the first
+  reading within 30 s);
 - *Round trip back to Lutron*: `requested` to `report-sent`.
 
 Only measurements with data are shown. When nothing can be timed, the card says

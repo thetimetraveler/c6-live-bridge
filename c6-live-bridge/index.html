@@ -860,7 +860,17 @@ function endpointHealth(s){
   if(q.prefix_status!==0||!q.ext_pan_ok||!q.active_timestamp_valid||!prefix.startsWith('fd')||prefix==='fdde:ad00:beef:0000::/64')return {tone:'warn',label:'Unverified',title:'Endpoint safety checks incomplete',detail:`The reported prefix, extended PAN, or active timestamp is not verified. ${hold}`};
   return {tone:'good',label:'Child',title:'Safety checks reported ready',detail:`The endpoint reports a child with safety checks passing. ${hold}`};
 }
-function stageInfo(stage){return STAGES[stage]||[typeof stage==='string'?stage:'Unknown event','info']}
+/* Direct Zigbee stages from the gateway's Ketra engine and Zigbee node. */
+Object.assign(STAGES,{'native-requested':['Command from Lutron','good'],'native-busy':['Ketra engine busy · queued','info'],'native-pickup':['Ketra engine picked it up','info'],
+  'selection-get':['Asked the endpoint what Lutron selected','info'],'selection-sent':['Selection request sent','info'],'selection-ready':['Lutron selection read','info'],'selection-rx':['Selection reply','info'],'selection-detail':['Selection detail','info'],
+  'native-stream':['Streaming the level to the lamps','info'],'native-queued':['Queued for the Zigbee node','info'],'readback-policy':['Readback plan chosen','info'],
+  'ketra-dispatch':['Handed to the Zigbee node','good'],'ketra-uart':['Sent to the lamps','good'],'ketra-query':['Lamp reading requested','info'],'ketra-unrouted':['No Ketra lamps for this zone','warn'],'ketra-zone-mixed':['Lamps in the zone disagree','warn'],
+  'epoch-dropped':['Dropped · endpoint handshake not ready','bad'],'endpoint-safety-dropped':['Dropped · endpoint safety gate closed','bad'],'update-dropped':['Dropped · firmware update in progress','bad'],'config-busy':['Dropped · mapping change in progress','bad'],
+  'native-output-held':['Ketra engine held · direct output not admitted','warn'],'native-unavailable':['Ketra engine unavailable','bad'],'native-start-failed':['Ketra send could not start','bad'],'native-tx-full-failed':['Ketra send failed','bad'],'native-tx-other-failed':['Ketra send failed','bad'],
+  'native-lock-timeout':['Ketra engine timed out','bad'],'native-memory-failed':['Ketra engine out of memory','bad'],'native-inventory-failed':['Lamp inventory read failed','bad'],'native-mapping-changed':['Ketra engine reloading (mapping changed)','info']});
+const DROP_TEXT={'epoch-dropped':'Dropped: the endpoint handshake was not ready','endpoint-safety-dropped':'Dropped: the endpoint safety gate was closed','update-dropped':'Dropped: a firmware update was in progress','config-busy':'Dropped: a mapping change was in progress'};
+Object.assign(HOPS,{'native-requested':['Lutron','Bridge','Thread → endpoint → UART → gateway'],'ketra-dispatch':['Bridge','Lamps','gateway → Zigbee node (UART)'],'ketra-uart':['Bridge','Lamps','Zigbee node → lamps'],'native-stream':['Bridge','Lamps','Ketra engine → Zigbee node']});
+function stageInfo(stage){if(stage==='applied'&&perfDirect())return ['Every lamp at the commanded level','good'];return STAGES[stage]||[typeof stage==='string'?stage:'Unknown event','info']}
 function hopChip(stage){const h=HOPS[stage];if(!h)return null;const c=el('span','hop',h[1]?`${h[0]} → ${h[1]}`:'At '+h[0]);c.title=(h[1]?`From ${h[0]} to ${h[1]}`:`Handled by the ${h[0]}`)+` (${h[2]})`;return c}
 function pill(text,tone){return el('span','pill '+tone,text)}
 function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$('detail-'+id).setAttribute('class','detail '+kind);$('detail-'+id).textContent=label}
@@ -871,7 +881,7 @@ function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-ua
   if(outputHeld(out))node('n4',out.kind==='direct'?'bad':'warn',out.kind==='direct'?'held · not admitted':'backend unknown');
   const latest=eventRows[eventRows.length-1],stage=latest?.stage;const snapshotSeconds=snapshotAge(s),atSnapshot=typeof s.gateway_uptime_ms==='number'&&typeof latest?.ts_ms==='number'?s.gateway_uptime_ms-latest.ts_ms:NaN;const age=Number.isFinite(atSnapshot)&&atSnapshot>=0&&snapshotSeconds!==null?atSnapshot+snapshotSeconds*1000:NaN;const fresh=current&&!!stage&&Number.isFinite(age)&&age<=10000;
   let note=stage?`Last event: ${stageInfo(stage)[0]}${latest.zone>=0?` · zone ${latest.zone}`:''}${Number.isFinite(age)?` · ${duration(age)} ago`:Number.isFinite(atSnapshot)&&atSnapshot>=0?` · ${duration(atSnapshot)} before the last snapshot`:''}.`:'No event outcome has been observed yet.';
-  if(stage==='applied'){node('n4','good',out.kind==='direct'?'sent':'PUT applied');if(fresh)pulse(['edge-gateway-n4'])}else if(['failed','delivery-failed','retrying'].includes(stage)){const bad=stage==='delivery-failed';node('n4',bad?'bad':'warn',bad?'Delivery failed':'Retry / unconfirmed');if(fresh)pulse(['edge-gateway-n4'],bad?'bad':'warn')}else if(['observed','correction'].includes(stage)){node('n4',stage==='correction'?'warn':'good',stage);if(fresh)pulse(['return-n4-gateway','return-gateway-uart','return-uart-endpoint'],stage==='correction'?'warn':'')}else if(stage==='confirmed'){if(fresh)pulse(['return-gateway-uart','return-uart-endpoint'])}else if(stage==='requested'){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'])}else if(stage==='ketra-held'){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'warn')}else if(stage==='command-dropped'){if(state.tone==='good')node('endpoint','warn','command dropped');if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'bad')}
+  if(stage==='applied'){node('n4','good',out.kind==='direct'?'sent':'PUT applied');if(fresh)pulse(['edge-gateway-n4'])}else if(['failed','delivery-failed','retrying'].includes(stage)){const bad=stage==='delivery-failed';node('n4',bad?'bad':'warn',bad?'Delivery failed':'Retry / unconfirmed');if(fresh)pulse(['edge-gateway-n4'],bad?'bad':'warn')}else if(['observed','correction'].includes(stage)){node('n4',stage==='correction'?'warn':'good',stage);if(fresh)pulse(['return-n4-gateway','return-gateway-uart','return-uart-endpoint'],stage==='correction'?'warn':'')}else if(stage==='confirmed'){if(fresh)pulse(['return-gateway-uart','return-uart-endpoint'])}else if(REQUEST_STAGES.has(stage)){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'])}else if(['ketra-dispatch','ketra-uart','native-stream','native-queued'].includes(stage)){node('n4','good','sending');if(fresh)pulse(['edge-gateway-n4'])}else if(stage==='ketra-unrouted'||DROP_STAGES.includes(stage)){node('n4',stage==='ketra-unrouted'?'warn':'bad',stageInfo(stage)[0].toLowerCase());if(fresh)pulse(['edge-uart-gateway'],stage==='ketra-unrouted'?'warn':'bad')}else if(stage==='ketra-held'){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'warn')}else if(stage==='command-dropped'){if(state.tone==='good')node('endpoint','warn','command dropped');if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'bad')}
   if(['report-sent','report-failed'].includes(stage)){node('report',stage==='report-sent'?'good':'bad',stage);if(fresh)pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='report-failed'?'bad':'')}else if(['program-installed','program-rejected'].includes(stage)){node('report',stage==='program-installed'?'good':'bad',stage);if(fresh)pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='program-rejected'?'bad':'')}
   if(stage&&!fresh)note+=' Arrows are still because the event or monitoring snapshot is not recent.';$('flow-note').textContent=note}
 /* Programming sync: Lutron Designer → endpoint → gateway's copy → lamps. */
@@ -879,6 +889,14 @@ const PROGRAM_FRESH_S=600;
 function programEvents(){const latest=new Map();for(const e of lastZones?.programming?.events||[])if(Number.isInteger(e?.zone)&&Number.isFinite(e?.wall_ms))latest.set(e.zone,e);
   for(const e of eventRows)if(['program-installed','program-rejected'].includes(e.stage)&&Number.isInteger(e.zone)){const at=wallTime(e);if(at!==null&&!(latest.get(e.zone)?.wall_ms>at))latest.set(e.zone,{zone:e.zone,stage:e.stage,wall_ms:at})}
   return latest}
+/* What the Ketra engine adds (/api/ketra/native): zones not ready, lamp storage, and how the last scene recall went. */
+const SCENE_REASON={scene_cache_not_ready:'scenes were still loading',direct_output_held:'direct output was held',missing_scene_event:'the scene event was missing'};
+function nativeExtra(n){if(!n||typeof n!=='object')return '';const out=[];
+  const notReady=(Array.isArray(n.zones)?n.zones:[]).filter(z=>z&&z.ready===false).map(z=>{const hit=(lastZones?.zones||[]).find(x=>x?.zone_id===z.zone_id);return hit?.name||'zone '+z.zone_id});
+  if(notReady.length)out.push(`Not ready yet: ${notReady.slice(0,4).join(', ')}${notReady.length>4?', …':''}.`);
+  if(Number(n.capacity_bytes)>0)out.push(`Lamp storage ${Math.round(Number(n.used_bytes)/1024*10)/10} of ${Math.round(Number(n.capacity_bytes)/1024)} KB used.`);
+  const d=n.last_scene_event;if(d?.valid&&['native','streamed'].includes(d.decision))out.push(d.decision==='native'?'Last scene recall: from storage on the lamps.':`Last scene recall: sent as ordinary commands${d.reason?` because ${SCENE_REASON[d.reason]||String(d.reason).replace(/_/g,' ')}`:''}.`);
+  return out.length?' '+out.join(' '):''}
 function syncState(){const s=latestStatus,current=!!s&&snapshotFresh(s),zones=Array.isArray(lastZones?.zones)?lastZones.zones:[],events=programEvents(),steps=[],now=Date.now();
   const zname=id=>zones.find(z=>z?.zone===id)?.name||zoneInfo(id).title;
   const all=[...events.values()].sort((a,b)=>b.wall_ms-a.wall_ms),rejected=all.filter(e=>e.stage==='program-rejected');
@@ -895,8 +913,9 @@ function syncState(){const s=latestStatus,current=!!s&&snapshotFresh(s),zones=Ar
   if(!r&&out.kind==='n4')steps.push(['info','Ketra lamps','Nothing to sync: on N4 the hub receives each command as it happens, and nothing is stored on the lamps.']);
   else if(r&&r.table_committed===false)steps.push(['warn','Ketra lamps',"The gateway's lamp table isn't synced with the Zigbee node yet; check Setup → Ketra lamps and Zigbee node."]);
   else if(scene)steps.push(['warn','Ketra lamps',scene[1]+'.']);
-  else if(n?.scene_cache_ready===false)steps.push(['wait','Ketra lamps','Loading Lutron scenes onto the lamps; until it finishes, scenes are sent as ordinary commands.']);
-  else if(n?.scene_cache_ready===true)steps.push([Number(r?.unreachable)>0?'warn':'good','Ketra lamps',`Lutron scenes are stored on every lamp${r?` · lamp table synced${r.inventory_generation!==undefined&&r.inventory_generation!==null?` (inventory generation ${val(r.inventory_generation)})`:''}`:''}${Number(r?.unreachable)>0?` · ${num(r.unreachable)} lamp${Number(r.unreachable)===1?'':'s'} unreachable`:''}.`]);
+  else if(['sync_failed','show_failed'].includes(n?.state))steps.push(['warn','Ketra lamps',`The Ketra engine could not ${n.state==='sync_failed'?'store Lutron scenes on the lamps':'start a Natural Show on the lamps'}${n.error||n.scene_cache_error?` (${String(n.error||n.scene_cache_error).replace(/_/g,' ')})`:''}; commands are sent as ordinary levels meanwhile.${nativeExtra(n)}`]);
+  else if(n?.scene_cache_ready===false)steps.push(['wait','Ketra lamps','Loading Lutron scenes onto the lamps; until it finishes, scenes are sent as ordinary commands.'+nativeExtra(n)]);
+  else if(n?.scene_cache_ready===true)steps.push([Number(r?.unreachable)>0?'warn':'good','Ketra lamps',`Lutron scenes are stored on every lamp${r?` · lamp table synced${r.inventory_generation!==undefined&&r.inventory_generation!==null?` (inventory generation ${val(r.inventory_generation)})`:''}`:''}${Number(r?.unreachable)>0?` · ${num(r.unreachable)} lamp${Number(r.unreachable)===1?'':'s'} unreachable`:''}.${nativeExtra(n)}`]);
   else steps.push(['wait','Ketra lamps',r?`Lamp table ${r.table_committed?'synced':'state unknown'}; scene storage not reported by this gateway.`:'Not reported by this gateway.']);
   const tones=steps.map(x=>x[0]),tone=tones.includes('bad')?'bad':tones.includes('warn')?'warn':tones.includes('wait')?'wait':'good';
   return {tone,steps,rows,current,label:tone==='bad'?'Needs attention':tone==='warn'?'Out of sync':tone==='wait'?'Catching up':'Up to date'}}
@@ -1200,7 +1219,19 @@ function renderProgram(data){lastProgram=data;const viz=$('program-viz');const s
   if(!shows.length&&!presets.length)out.push(el('p','empty-state','This zone has no shows or presets programmed.'));viz.replaceChildren(...out)}
 async function loadProgram(force=false){const z=Number($('program-zone').value),btn=$('load-program'),viz=$('program-viz');markProgramZone();btn.disabled=true;btn.textContent='Loading…';viz.setAttribute('aria-busy','true');
   try{const data=await req(`program?zone=${z}&page=0&refresh=${force?1:0}`);$('program').textContent=JSON.stringify(data,null,2);renderProgram(data)}catch(e){$('program').textContent='Programming data unavailable: '+e.message;viz.replaceChildren(el('p','empty-state',`Couldn't load zone ${z}: ${e.message}`))}finally{btn.disabled=false;btn.textContent='Load snapshot';viz.setAttribute('aria-busy','false')}}
-const PACIFIC='America/Los_Angeles',COMMAND_STAGES=new Set(['requested','ketra-held','applied','failed','retrying','superseded','delivery-failed','confirmed','command-dropped','report-sent','report-failed','correction']),FINAL_STAGES=['superseded','delivery-failed','command-dropped','report-sent','report-failed'];
+/* Direct Zigbee commands (gateway firmware with the native Ketra runtime) start with native-requested instead of
+   requested, and pass through the Ketra engine and the Zigbee node before "applied", which on this path means every
+   lamp in the zone read the commanded level back. Gateway-side drops end a command before it reaches any lamp. */
+const REQUEST_STAGES=new Set(['requested','native-requested']),
+  DIRECT_STAGES=new Set(['native-requested','native-busy','native-pickup','native-stream','native-queued','selection-get','selection-sent','selection-ready','selection-rx','selection-detail','readback-policy','ketra-dispatch','ketra-uart','ketra-unrouted','ketra-held']),
+  DROP_STAGES=['epoch-dropped','endpoint-safety-dropped','update-dropped','config-busy'],
+  /* Stages whose "requested" field is a level; the others carry ids, phases or flags there. */
+  LEVEL_STAGES=new Set(['requested','native-requested','native-pickup','native-stream','native-queued','selection-get','selection-sent','selection-ready','ketra-dispatch','ketra-uart','ketra-unrouted','ketra-held','applied','failed','retrying','superseded','delivery-failed','command-dropped',...DROP_STAGES]),
+  READING_STAGES=new Set(['applied','observed','correction','confirmed']),
+  /* Stages whose level fields hold phases, ages, ids or flags. */
+  NO_LEVEL_STAGES=new Set(['native-busy','selection-rx','selection-detail','readback-policy','state-log-us']);
+const PACIFIC='America/Los_Angeles',COMMAND_STAGES=new Set(['requested','ketra-held','applied','failed','retrying','superseded','delivery-failed','confirmed','command-dropped','report-sent','report-failed','correction',...DIRECT_STAGES,...DROP_STAGES]),FINAL_STAGES=['superseded','delivery-failed','command-dropped','report-sent','report-failed',...DROP_STAGES];
+const directCmd=g=>[...g.stages].some(x=>DIRECT_STAGES.has(x))||perfDirect();
 let eventAnchor=null,statusAnchor=null,eventLost=0,eventOldest=NaN,expandedEvents=new Set();
 function activityZone(){const tz=haData?.time_zone;if(tz){try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return tz}catch{}}return PACIFIC}
 function zoned(ms,opts){return new Intl.DateTimeFormat('en-US',{timeZone:activityZone(),...opts}).format(new Date(ms))}
@@ -1221,7 +1252,7 @@ function levelValue(v,cls){if(isLevel(v)){const b=el('strong',cls||'',pct(v));b.
 function levelLine(label,v,cls){const line=el('span','lvl');line.append(el('span','lvl-k',label),levelValue(v,cls));return line}
 // One row per command: by (zone, seq) when the gateway sends seq, otherwise each "requested" opens a new command for its zone.
 // A command ends once it is reported, dropped, undeliverable or replaced; reports after that are status updates, not part of it.
-const CLOSING_STAGES=['report-sent','command-dropped','delivery-failed','superseded'],REPORT_STAGES=new Set(['report-sent','report-failed']);
+const CLOSING_STAGES=['report-sent','command-dropped','delivery-failed','superseded',...DROP_STAGES],REPORT_STAGES=new Set(['report-sent','report-failed']);
 const closed=g=>CLOSING_STAGES.some(s=>g.stages.has(s));
 function commandSeq(e){const seq=e.schema_version>=2?e.command_seq:e.seq;return Number.isInteger(seq)&&seq>=0?seq:null}
 function reportSeq(e){const seq=e.schema_version>=2?e.report_seq:e.requested;return Number.isInteger(seq)&&seq>=0?seq:null}
@@ -1230,16 +1261,16 @@ const REPORT_REASONS={'command-settled':'Command settled','observed-brightness-c
 function reportReason(e){return REPORT_REASONS[e.reason]||e.reason||null}
 function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),solo=new Map();
   const single=(z,e)=>{const mine=solo.get(z)||new Map(),prev=mine.get(e.stage),p=prev?.events[0];solo.set(z,mine);
-    if(p&&(REPORT_STAGES.has(e.stage)&&z!==null&&p.reason===e.reason||e.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested)){prev.events.push(e);return}
+    if(p&&(REPORT_STAGES.has(e.stage)&&z!==null&&p.reason===e.reason||e.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested||e.stage==='ketra-query')){prev.events.push(e);return}
     const g={kind:'single',zone:z,events:[e]};groups.push(g);mine.set(e.stage,g)};
   for(const e of rows){const z=Number.isInteger(e.zone)&&e.zone>=0?e.zone:null,seq=commandSeq(e);
     if(z===null||!COMMAND_STAGES.has(e.stage)){single(z,e);continue}
     // Explicitly uncorrelated v2 reports (including queries) cannot finish a command.
     if(REPORT_STAGES.has(e.stage)&&e.schema_version>=2&&seq===null){single(z,e);continue}
     const list=commands.get(z)||[];commands.set(z,list);let g=null;
-    if(seq!==null){g=bySeq.get(z+':'+seq)||null;if(g&&e.stage==='requested'&&g.stages.has('requested'))g=null}
+    if(seq!==null){g=bySeq.get(z+':'+seq)||null;if(g&&REQUEST_STAGES.has(e.stage)&&[...g.stages].some(x=>REQUEST_STAGES.has(x)))g=null}
     else if(e.stage==='superseded')g=list.slice(0,-1).reverse().find(c=>!FINAL_STAGES.some(s=>c.stages.has(s)))||list[list.length-1]||null;
-    else if(e.stage!=='requested')g=list[list.length-1]||null;
+    else if(!REQUEST_STAGES.has(e.stage))g=list[list.length-1]||null;
     if(g&&closed(g)&&e.stage!=='superseded')g=null;
     if(!g&&REPORT_STAGES.has(e.stage)&&(seq===null||bySeq.has(z+':'+seq))){single(z,e);continue}
     solo.delete(z);
@@ -1247,22 +1278,27 @@ function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),so
     g.events.push(e);g.stages.add(e.stage)}
   return groups}
 function commandSummary(g){const has=x=>g.stages.has(x),ev=g.events,last=ev[ev.length-1];
-  const asked=ev.filter(e=>!REPORT_STAGES.has(e.stage)).map(e=>e.requested).filter(known),lights=ev.map(e=>REPORT_STAGES.has(e.stage)?reportLevel(e):e.confirmed).filter(known);
+  const asked=ev.filter(e=>!NO_LEVEL_STAGES.has(e.stage)&&!REPORT_STAGES.has(e.stage)).map(e=>e.requested).filter(known),lights=ev.filter(e=>!NO_LEVEL_STAGES.has(e.stage)).map(e=>REPORT_STAGES.has(e.stage)?reportLevel(e):e.confirmed).filter(known);
+  const zb=directCmd(g),drop=DROP_STAGES.find(has);
   const req=asked.find(isLevel)??asked[0],conf=lights.slice().reverse().find(isLevel)??lights[lights.length-1];
-  let [label,tone]=has('command-dropped')?['Dropped by the endpoint','bad']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Reported to Lutron · hub corrected the level','warn']:['Reported to Lutron','info']):has('ketra-held')?['Held at the bridge · direct Zigbee output not admitted','warn']:has('confirmed')?['Result reported · forwarding to Lutron','info']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:has('applied')?['Accepted · awaiting report','info']:['Sent · waiting for hub','info'];
+  let [label,tone]=drop?[DROP_TEXT[drop],'bad']:has('command-dropped')?['Dropped by the endpoint','bad']:has('ketra-unrouted')&&!has('applied')?['No Ketra lamps for this zone · held until one is added','warn']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Reported to Lutron · hub corrected the level','warn']:['Reported to Lutron','info']):has('ketra-held')?['Held at the bridge · direct Zigbee output not admitted','warn']:has('confirmed')?['Result reported · forwarding to Lutron','info']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:has('applied')?[zb?'Lamps at the commanded level · awaiting report':'Accepted · awaiting report','info']:zb&&(has('ketra-dispatch')||has('ketra-uart'))?['Sent to lamps · waiting for readback','info']:zb&&has('native-stream')?['Queued for the Zigbee node','info']:zb&&has('selection-ready')?['Recalled as a Ketra scene','info']:zb?['Received · waiting for the Ketra engine','info']:['Sent · waiting for hub','info'];
   const age=Number(latestStatus?.gateway_uptime_ms)-Number(last.ts_ms);if(!FINAL_STAGES.some(has)&&!has('confirmed')&&!has('ketra-held')&&Number.isFinite(age)&&age>120000)[label,tone]=[`No progress for ${duration(age)}`,'warn'];
-  const title=isLevel(req)?(req===0?'Turn off':'Set to '+pct(req)):has('requested')?'Command':'Command (start no longer in feed)';
+  const title=isLevel(req)?(req===0?'Turn off':'Set to '+pct(req)):[...g.stages].some(x=>REQUEST_STAGES.has(x))?'Command':'Command (start no longer in feed)';
   return {title,label,tone,req,conf,corrected:has('correction')}}
-function commandSteps(g){const has=x=>g.stages.has(x),stopped=has('superseded')||has('command-dropped')||has('delivery-failed'),held=has('ketra-held'),zb=held||perfDirect();
-  const hub=held&&!stopped?['warn','Held at the bridge: direct Zigbee output is not admitted']:has('applied')?['good',zb?'Sent to the lamps over Zigbee':'Accepted by the Ketra hub (N4)']:has('command-dropped')?['bad','Dropped before reaching the hub']:has('delivery-failed')?['bad','Never reached the hub']:has('correction')?['warn','The hub reported a different level']:has('retrying')||has('failed')?['warn','Retrying the hub']:stopped?['skip','Skipped']:['pending','Waiting for the hub'];
+function commandSteps(g){const has=x=>g.stages.has(x),drop=DROP_STAGES.find(has),stopped=has('superseded')||has('command-dropped')||has('delivery-failed')||!!drop,held=has('ketra-held'),zb=held||directCmd(g),sent=has('ketra-dispatch')||has('ketra-uart');
+  const hub=drop?['bad',DROP_TEXT[drop]]:held&&!stopped?['warn','Held at the bridge: direct Zigbee output is not admitted']:zb&&has('ketra-unrouted')&&!sent&&!has('applied')?['warn','No Ketra lamps are listed for this zone (Setup → Ketra lamps)']:zb&&(sent||has('applied'))?['good','Sent to the lamps through the Zigbee node']:zb&&has('selection-ready')&&!has('native-stream')?['good','Recalled as a Ketra scene stored on the lamps']:zb&&(has('native-stream')||has('native-queued'))?['pending','Queued for the Zigbee node']:has('applied')?['good','Accepted by the Ketra hub (N4)']:has('command-dropped')?['bad','Dropped before reaching the hub']:has('delivery-failed')?['bad','Never reached the hub']:has('correction')?['warn','The hub reported a different level']:has('retrying')||has('failed')?['warn','Retrying the hub']:stopped?['skip','Skipped']:['pending','Waiting for the hub'];
   const read=!held&&zb&&eventRows.find(e=>e.stage==='observed'&&e.zone===g.zone&&Number(e.ts_ms)>Number(g.events[0].ts_ms)&&Number(e.ts_ms)-Number(g.events[0].ts_ms)<=30000);
-  return [['From Lutron',...(has('requested')?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],[zb?'To lamps':'To hub',...hub],
-    [zb?'Lamp reading':'Hub reading',...(held?['skip','The gateway takes no lamp readings while direct Zigbee output is held']:has('correction')?['warn',zb?'The lamp reports a different level':'The hub reports the lights at a different level']:read?['good','The gateway read the lamp over Zigbee']:has('confirmed')?['pending',`A command result was reported; ${zb?'lamp':'hub'} readback is not established`]:stopped?['skip','Skipped']:['pending',zb?'Waiting for a lamp reading':'Waiting for a hub reading'])],
+  return [['From Lutron',...([...g.stages].some(x=>REQUEST_STAGES.has(x))?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],[zb?'To lamps':'To hub',...hub],
+    [zb?'Lamp reading':'Hub reading',...(held?['skip','The gateway takes no lamp readings while direct Zigbee output is held']:has('correction')?['warn',zb?'The lamp reports a different level':'The hub reports the lights at a different level']:zb&&has('applied')?['good','Every lamp in the zone read back the commanded level']:read?['good','The gateway read the lamp over Zigbee']:has('confirmed')?['pending',`A command result was reported; ${zb?'lamp':'hub'} readback is not established`]:stopped?['skip','Skipped']:['pending',zb?'Waiting for a lamp reading':'Waiting for a hub reading'])],
     ['To Lutron',...(has('report-sent')?['good','Reported back to Lutron']:has('report-failed')?['bad','The report to Lutron failed']:stopped?['skip','Skipped']:['pending','Not reported yet'])]]}
 function stepTrack(steps){const ol=el('ol','track');for(const [name,state,tip] of steps){const li=el('li',state);li.title=`${name}: ${tip}`;li.append(el('i'),el('span','',name));ol.append(li)}return ol}
 // Each step shows only the level that step carried: what Lutron asked, what went to the hub, what the hub says the lights are at.
 function stepLevels(e,asked){const s=e.stage,out=[],add=(k,v,cls)=>{if(!known(v))return null;const l=levelLine(k,v,cls);out.push(l);return l};
-  if(s==='requested')add('Asked',e.requested);
+  if(REQUEST_STAGES.has(s))add('Asked',e.requested);
+  else if(s==='applied'&&e.confirmed!==undefined&&e.confirmed!==-1&&perfDirect())add('Lamps',e.confirmed);
+  else if(LEVEL_STAGES.has(s)&&DIRECT_STAGES.has(s)&&s!=='ketra-held')add('Level',e.requested);
+  else if(DROP_STAGES.includes(s))add('Level',e.requested);
+  else if(!LEVEL_STAGES.has(s)&&!READING_STAGES.has(s)&&!REPORT_STAGES.has(s)&&s!=='ketra-query'&&/^(native|selection|readback|state-log|ketra)-/.test(s))return out;
   else if(s==='ketra-held')add('Held',e.requested);
   else if(['applied','failed','retrying','delivery-failed'].includes(s))add('Sent',e.requested);
   else if(s==='superseded'||s==='command-dropped')add('Level',e.requested);
@@ -1314,10 +1350,12 @@ function quantile(xs,q){if(!xs.length)return NaN;const v=xs.slice().sort((a,b)=>
 const perfDirect=()=>outputBackend(latestStatus).kind==='direct';
 const markLabel=k=>k==='hub'&&perfDirect()?'Sent to lamps':k==='lamp'&&perfDirect()?'First lamp reading':MARK_LABEL[k];
 function commandTimings(groups){const readings=eventRows.filter(e=>e.stage==='observed'&&Number.isInteger(e.zone)&&Number.isFinite(Number(e.ts_ms))),out=[],window=perfDirect()?30000:15000;
-  for(const g of groups){if(g.kind!=='command')continue;const at=st=>{const e=g.events.find(e=>e.stage===st),t=Number(e?.ts_ms);return e&&Number.isFinite(t)?t:null},start=at('requested');if(start===null)continue;
-    const hub=at('applied'),has=x=>g.stages.has(x);let lamp=at('correction');if(lamp===null&&!has('ketra-held')){const after=hub??start,o=readings.find(e=>e.zone===g.zone&&Number(e.ts_ms)>after&&Number(e.ts_ms)-start<=window);if(o)lamp=Number(o.ts_ms)}
+  for(const g of groups){if(g.kind!=='command')continue;const at=st=>{const e=g.events.find(e=>e.stage===st),t=Number(e?.ts_ms);return e&&Number.isFinite(t)?t:null},start=at('requested')??at('native-requested');if(start===null)continue;
+    const has=x=>g.stages.has(x),zb=directCmd(g),hub=zb?at('ketra-dispatch')??at('ketra-uart'):at('applied');
+    /* On direct Zigbee "applied" is the lamps' own readback of the commanded level. */
+    let lamp=(zb?at('applied'):null)??at('correction');if(lamp===null&&!has('ketra-held')){const after=hub??start,o=readings.find(e=>e.zone===g.zone&&Number(e.ts_ms)>after&&Number(e.ts_ms)-start<=window);if(o)lamp=Number(o.ts_ms)}
     const marks=[['hub',hub],['confirmed',at('confirmed')],['lamp',lamp],['back',at('report-sent')]].filter(m=>m[1]!==null&&m[1]>=start).map(([k,t])=>[k,t-start]).sort((a,b)=>a[1]-b[1]);
-    out.push({g,start,marks,ms:k=>marks.find(m=>m[0]===k)?.[1]??null,fail:has('command-dropped')?'Dropped':has('delivery-failed')?'Not delivered':has('report-failed')?'Report failed':null,replaced:has('superseded'),held:has('ketra-held'),span:Math.max(0,Number(g.events[g.events.length-1].ts_ms)-start)})}
+    out.push({g,start,marks,ms:k=>marks.find(m=>m[0]===k)?.[1]??null,fail:DROP_STAGES.some(has)?'Dropped':has('command-dropped')?'Dropped':has('delivery-failed')?'Not delivered':has('report-failed')?'Report failed':null,replaced:has('superseded'),held:has('ketra-held'),span:Math.max(0,Number(g.events[g.events.length-1].ts_ms)-start)})}
   return out}
 function spark(series,k){const NS='http://www.w3.org/2000/svg',svg=document.createElementNS(NS,'svg'),W=120,H=28,top=Math.max(...series,LAT_BUDGET[k][1]),n=Math.max(series.length,12),bw=W/n;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','spark');svg.setAttribute('aria-hidden','true');
@@ -1358,7 +1396,7 @@ function perfView(groups=groupEvents(eventRows)){const timings=commandTimings(gr
     total.title=end?`${markLabel(end[0])} after ${msText(end[1])}`:'';r.append(name,track,total);rows.push(r)}
   $('perf-waterfall').replaceChildren(...(rows.length?rows:[el('p','empty','No commands from Lutron in the feed yet. Change a light to see its timing.')]));
   $('perf-count').textContent=timings.length?`${timings.length} command${timings.length===1?'':'s'} timed`:'';
-  $('perf-note').textContent=`Times come from the gateway's clock, so they leave out Home Assistant and browser delays; Thread transit into the endpoint isn't included because the endpoint keeps its own clock. "Lutron → lamp reading" uses the zone's first ${direct?'Zigbee lamp reading within 30':'hub reading within 15'} seconds.${pollMs===null?'':` This dashboard's last poll of the gateway took ${msText(pollMs)}.`}`}
+  $('perf-note').textContent=`Times come from the gateway's clock, so they leave out Home Assistant and browser delays; Thread transit into the endpoint isn't included because the endpoint keeps its own clock. ${direct?'On direct Zigbee, "sent to lamps" is when the gateway hands the frame to the Zigbee node, and "lamp reading" is when every lamp in the zone has read the commanded level back (or the first Zigbee reading within 30 seconds).':'"Lutron → lamp reading" uses the zone\'s first hub reading within 15 seconds.'}${pollMs===null?'':` This dashboard's last poll of the gateway took ${msText(pollMs)}.`}`}
 let configAutoPoll=true,configPollAfter=0,configMatch=null,configBase=null,draftFrom=null,draftZones=[],jsonError='';
 function configPill(text,tone){$('config-pill').className='pill '+tone;$('config-pill').textContent=text}
 const ZONE_FIELDS=[['zone_id','e.g. 1','numeric'],['name','Name',''],['n4_group','Group ID',''],['serial','Lutron serial',''],['warm_dim_curve','Optional','']];

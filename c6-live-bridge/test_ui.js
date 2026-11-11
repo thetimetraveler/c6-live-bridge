@@ -567,6 +567,24 @@ const mappingChecks=`
     eventView({boot_id:'zb2',boot_epoch_ms:Date.now()-100000,next:2,next_sequence:2,oldest:1,lost:0,events:[{id:1,ts_ms:1000,stage:'requested',zone:1,requested:5000,command_seq:1,schema_version:2}]});
     if(!text(view('perf-stats')).includes('reported no later step'))throw Error('an untimeable feed must say why: '+text(view('perf-stats')));
     latestStatus=status}
+  // Native Ketra path (current direct gateways): native-requested starts the command; applied is the lamps' readback.
+  {latestStatus={...status,output_backend:'direct_zigbee',direct_zigbee:{output_admitted:true},direct_routing:{sends:1,applied:1,observed:0,unrouted:0}};
+    const c=(id,ts,stage,requested,confirmed)=>({id,ts_ms:ts,stage,zone:1,requested,confirmed,command_seq:5,schema_version:2});
+    eventView({boot_id:'native',boot_epoch_ms:Date.now()-100000,next:20,next_sequence:20,oldest:1,lost:0,events:[
+      c(1,1000,'native-requested',5000,-1),c(2,1010,'native-busy',3,40),c(3,1012,'native-pickup',5000,-1),c(4,1015,'selection-get',5000,-1),c(5,1100,'selection-ready',5000,-1),
+      c(6,1105,'native-stream',5000,-1),c(7,1110,'native-queued',5000,-1),c(8,1115,'readback-policy',1,3),c(9,1150,'ketra-dispatch',5000,-1),c(10,1160,'ketra-uart',5000,-1),
+      {id:11,ts_ms:1200,stage:'ketra-query',zone:1,requested:-1,confirmed:-1},c(12,1900,'applied',5000,5000),c(13,1950,'confirmed',-1,5000),
+      {id:14,ts_ms:2300,stage:'report-sent',zone:1,reported:5000,command_seq:5,report_seq:9,schema_version:2},
+      {id:15,ts_ms:5000,stage:'native-requested',zone:2,requested:2000,command_seq:6,schema_version:2},{id:16,ts_ms:5001,stage:'epoch-dropped',zone:2,requested:2000,command_seq:6,schema_version:2}]});
+    const groups=groupEvents(eventRows).filter(g=>g.kind==='command');
+    if(groups.length!==2||groups[0].events.length!==13)throw Error('a native command and all its steps form one row: '+groups.map(g=>g.events.length));
+    const sum=commandSummary(groups[0]);if(sum.label!=='Reported to Lutron'||sum.req!==5000||sum.title!=='Set to 50%')throw Error('native command summary: '+JSON.stringify(sum));
+    const steps=commandSteps(groups[0]).map(x=>x[1]).join();if(steps!=='good,good,good,good')throw Error('every native step is done: '+steps);
+    const drop=commandSummary(groups[1]);if(drop.tone!=='bad'||!drop.label.includes('handshake'))throw Error('a gateway drop ends the command as a problem: '+drop.label);
+    const z=text(view('perf-stats'));
+    for(const want of ['Lutron → sent to lamps','150','Lutron → lamp reading','900','Round trip back to Lutron','1.30'])if(!z.includes(want))throw Error('native timings should show '+want+': '+z);
+    if(stageInfo('applied')[0]!=='Every lamp at the commanded level')throw Error('applied means lamp readback on direct Zigbee');
+    latestStatus=status}
   // Programming sync: rejected transfers, re-reading after a transfer, N4 lamps need nothing.
   {deviceView(deviceSnapshot);latestNative=null;const now=Date.now();
     zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-installed',wall_ms:now-60000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:30}}]});health(status);
@@ -575,7 +593,12 @@ const mappingChecks=`
     st=syncState();if(st.tone!=='wait'||!st.steps[2][2].includes('re-reading Office'))throw Error('a copy older than the transfer is catching up: '+JSON.stringify(st.steps));
     zonesView({...zoneSnapshot,programming:{events:[{zone:1,stage:'program-rejected',wall_ms:now-10000}]},zones:[{...matchZone,program:{programmed:true,selected:false,shows:1,age_s:5}}]});health(status);
     if(syncState().tone!=='bad'||!heroText().includes('Programming from Lutron was rejected')||!view('program-badge').textContent)throw Error('a rejected transfer reaches the overview and the tab');
-    zonesView(zoneSnapshot);health(status)}
+    latestNative={state:'ready',scene_cache_ready:true,used_bytes:2048,capacity_bytes:65536,last_scene_event:{valid:true,decision:'streamed',reason:'scene_cache_not_ready'},zones:[{zone_id:31467,ready:true}]};
+    health({...status,direct_routing:{table_committed:true,unreachable:0}});st=syncState();
+    if(st.steps[3][0]!=='good'||!st.steps[3][2].includes('2 of 64 KB')||!st.steps[3][2].includes('because scenes were still loading'))throw Error('the lamps step adds storage and the last recall: '+st.steps[3][2]);
+    latestNative={...latestNative,state:'sync_failed',error:'bulb_timeout'};st=syncState();
+    if(st.steps[3][0]!=='warn'||!st.steps[3][2].includes('bulb timeout'))throw Error('a failed scene sync needs a look: '+st.steps[3][2]);
+    latestNative=null;zonesView(zoneSnapshot);health(status)}
 })()
 `;
 await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

@@ -125,8 +125,8 @@ The dashboard has five tabs, each answering one question:
 | Tab | Question | What's there |
 |---|---|---|
 | **Overview** | Is everything working? | Headline (one problem: what it is and what to do), status tiles, Lights |
-| **Activity** | What happened to a command? | One row per command and its steps |
-| **Health** | Which part needs a look, and how fast is it? | Components (was Diagnostics), Response times (was Performance), How commands flow |
+| **Activity** | What happened to a command? | How commands flow (live diagram, explained under its **?**), then one row per command and its steps |
+| **Health** | Which part needs a look, and how fast is it? | Components (was Diagnostics), Response times (was Performance) |
 | **Programming** | Has new programming reached the lamps? | Programming sync, per-zone shows and presets |
 | **Setup** | Change something | Everyday controls, Configuration, Zigbee node and firmware |
 

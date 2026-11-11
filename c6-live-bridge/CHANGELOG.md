@@ -4,7 +4,7 @@
 - On direct Zigbee, **Lutron → sent to lamps** is timed to `ketra-dispatch` (the frame handed to the Zigbee node) and **Lutron → lamp reading** to `applied`, which on this path means every lamp in the zone read the commanded level back. This matches the gateway's own latency benchmark.
 - Gateway-side drops (`epoch-dropped`, `endpoint-safety-dropped`, `update-dropped`, `config-busy`) end a command as a problem and say why. `ketra-unrouted` reads "No Ketra lamps for this zone". Repeated lamp read requests collapse into one row.
 - Programming sync's **Ketra lamps** step uses the Ketra engine's status: a failed scene sync or show start needs a look, zones that are not ready are named, and it shows lamp storage use and whether the last scene recall came from storage on the lamps or was sent as ordinary commands (and why).
-- The flow diagram animates for direct Zigbee sends.
+- The flow diagram animates for direct Zigbee sends. **How commands flow** moves to the top of the Activity tab; its explanation is behind the **?** next to the title.
 
 ## 0.14.0
 

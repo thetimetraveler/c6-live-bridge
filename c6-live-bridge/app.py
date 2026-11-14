@@ -176,16 +176,26 @@ class SidecarMonitor:
         self.lock, self.upload_lock, self.poll_lock = threading.Lock(), threading.Lock(), threading.Lock()
         self.wake = threading.Event()
         self.data, self.at, self.error = None, 0, None
+        self.poll_attempts, self.collector_yields = 0, 0
+        self.poll_state = "not yet polled"
         self.in_flight, self.awaiting_status = False, False
         self.finished_at, self.watch_until = 0, 0
         self.feed, self.feed_paused = None, False
 
     def poll_once(self, timeout=None):
         if not self.poll_lock.acquire(blocking=False):
+            with self.lock:
+                self.poll_state = "another sidecar poll in progress"
             return None
         if not self.upstream.acquire(blocking=False):
+            with self.lock:
+                self.collector_yields += 1
+                self.poll_state = "gateway collector busy"
             self.poll_lock.release()
             return None
+        with self.lock:
+            self.poll_attempts += 1
+            self.poll_state = "request in progress"
         started = time.monotonic()
         try:
             if timeout is None:
@@ -214,6 +224,7 @@ class SidecarMonitor:
         except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
             with self.lock:
                 self.error = str(exc)
+                self.poll_state = "request failed"
             return False
         finally:
             self.upstream.release()
@@ -230,7 +241,9 @@ class SidecarMonitor:
     def status(self):
         with self.lock:
             if self.data is None:
-                return Panel.result({"error": "Waiting for sidecar status"}, 503)
+                return Panel.result({"error": "Waiting for sidecar status", "reason": self.poll_state,
+                                     "last_error": self.error, "poll_attempts": self.poll_attempts,
+                                     "collector_yields": self.collector_yields}, 503)
             data = dict(self.data)
             data["monitoring"] = {"age_s": max(0, time.monotonic() - self.at),
                                   "delayed": self.error is not None,

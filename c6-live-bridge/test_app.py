@@ -335,14 +335,47 @@ class AddonTests(unittest.TestCase):
             self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409,change)
 
     def test_sidecar_status_yields_to_collector_without_queueing(self):
+        code,_,raw=self.panel.proxy("sidecar_status")
+        self.assertEqual(code,503)
+        self.assertEqual(json.loads(raw),{"error":"Waiting for sidecar status","reason":"not yet polled",
+                                          "last_error":None,"poll_attempts":0,"collector_yields":0})
         self.panel.upstream.acquire()
         try:
             self.assertIsNone(self.panel.sidecar.poll_once())
+            self.assertIsNone(self.panel.sidecar.poll_once())
             self.assertEqual(self.gateway.calls,[])
+            waiting=json.loads(self.panel.proxy("sidecar_status")[2])
+            self.assertEqual((waiting["reason"],waiting["poll_attempts"],waiting["collector_yields"]),
+                             ("gateway collector busy",0,2))
         finally:
             self.panel.upstream.release()
+        self.gateway.fail=True
+        self.assertFalse(self.panel.sidecar.poll_once())
+        waiting=json.loads(self.panel.proxy("sidecar_status")[2])
+        self.assertEqual((waiting["reason"],waiting["last_error"],waiting["poll_attempts"],waiting["collector_yields"]),
+                         ("request failed","offline",1,2))
+        self.gateway.fail=False
         self.assertTrue(self.panel.sidecar.poll_once())
+        self.assertEqual(self.panel.proxy("sidecar_status")[0],200)
         self.assertEqual(self.gateway.calls[-1][1],"/api/sidecar/status")
+
+    def test_sidecar_status_reports_request_in_progress(self):
+        started,release=threading.Event(),threading.Event()
+        def request(*args,**kwargs):
+            started.set();release.wait(2)
+            return 200,"application/json",json.dumps(self.sidecar_status()).encode()
+        self.gateway.request=request
+        worker=threading.Thread(target=self.panel.sidecar.poll_once);worker.start()
+        try:
+            self.assertTrue(started.wait(1))
+            waiting=json.loads(self.panel.proxy("sidecar_status")[2])
+            self.assertEqual((waiting["reason"],waiting["poll_attempts"]),("request in progress",1))
+            self.assertIsNone(self.panel.sidecar.poll_once())
+            waiting=json.loads(self.panel.proxy("sidecar_status")[2])
+            self.assertEqual(waiting["reason"],"another sidecar poll in progress")
+        finally:
+            release.set();worker.join(2)
+        self.assertEqual(self.panel.proxy("sidecar_status")[0],200)
 
     def test_sidecar_never_uploads_if_feed_has_not_stopped(self):
         data=self.sidecar_status();starts=[]

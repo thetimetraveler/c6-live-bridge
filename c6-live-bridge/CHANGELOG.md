@@ -1,3 +1,7 @@
+## 0.17.1
+
+- Show the sidecar status reader's last polling outcome while its first status is still unavailable.
+
 ## 0.17.0
 
 - Add a separate Sidecar firmware card for the passive B1 and signed updates through the S3 gateway. It shows the board, external antenna, running slot and full ELF hash, transfer progress and confirmation. Sidecar input pauses during an update; other bridge lighting continues.

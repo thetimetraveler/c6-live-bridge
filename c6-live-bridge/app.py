@@ -19,6 +19,7 @@ import threading
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from ccx_events import CcxEventPublisher, CcxFeed
 
 LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
@@ -52,6 +53,8 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "config": ("GET", "/api/config"), "config_put": ("PUT", "/api/config"),
           "timezone": ("GET", "/api/timezone"), "timezone_put": ("PUT", "/api/timezone"),
           "ketra": ("GET", "/api/ketra"), "ketra_put": ("PUT", "/api/ketra"),
+          "ccx_status": ("GET", "/api/ccx/status"), "ccx_clock": ("GET", "/api/ccx/clock"),
+          "ccx_rules": ("GET", "/api/ccx/rules"), "ccx_rules_put": ("PUT", "/api/ccx/rules"),
           "native": ("GET", "/api/ketra/native"),
           "update": ("POST", "/api/endpoint/update"),
           "zigbee_update": ("POST", "/api/zigbee/update"), "zigbee_enroll": ("POST", "/api/zigbee/enroll"),
@@ -87,6 +90,41 @@ def bounded_int(value, label, maximum=0xffffffff):
     if not isinstance(value, str) or not SAFE_INT.fullmatch(value) or int(value) > maximum:
         raise ValueError(f"invalid {label}")
     return int(value)
+
+
+def validate_ccx_rules(payload):
+    """Validate the public shape; the gateway owns persistence and rule semantics."""
+    if not isinstance(payload, dict) or set(payload) != {"rules"} or not isinstance(payload["rules"], list) or len(payload["rules"]) > 16:
+        raise ValueError("expected a list of at most 16 CCX rules")
+    ids = set()
+    for rule in payload["rules"]:
+        if not isinstance(rule, dict) or set(rule) != {"id", "enabled", "match", "action"}:
+            raise ValueError("each rule needs id, enabled, match and action")
+        name, match, action = rule["id"], rule["match"], rule["action"]
+        if not isinstance(name, str) or "\x00" in name or not 1 <= len(name.encode("utf-8")) <= 24 or name in ids or type(rule["enabled"]) is not bool:
+            raise ValueError("invalid or duplicate rule ID or enabled state")
+        ids.add(name)
+        if not isinstance(match, dict) or set(match) - {"kind", "message_type", "serial", "zone_id"}:
+            raise ValueError("invalid CCX rule match")
+        if "kind" in match and (not isinstance(match["kind"], str) or "\x00" in match["kind"] or len(match["kind"].encode("utf-8")) >= 64):
+            raise ValueError("invalid CCX event kind")
+        for key, maximum in (("message_type", 65535), ("serial", 0xffffffff), ("zone_id", 65535)):
+            if key in match and (type(match[key]) is not int or not 0 <= match[key] <= maximum):
+                raise ValueError(f"invalid CCX match {key}")
+        if not isinstance(action, dict) or action.get("type") not in ("set_level", "select_show"):
+            raise ValueError("invalid CCX action")
+        allowed = {"type", "target_zone", "level"} | ({"show_id"} if action["type"] == "select_show" else set())
+        if set(action) - allowed or type(action.get("target_zone")) is not int or not 0 <= action["target_zone"] <= 65535:
+            raise ValueError("invalid CCX target zone")
+        if action["type"] == "select_show" and (type(action.get("show_id")) is not int or not 1 <= action["show_id"] <= 0xffffffff):
+            raise ValueError("invalid CCX show ID")
+        if action["type"] == "set_level" and "level" not in action:
+            raise ValueError("set level requires a level")
+        if "level" in action:
+            level = action["level"]
+            if level != "event" and (type(level) is not int or not 0 <= level <= 10000):
+                raise ValueError("level must be event or 0–10000")
+    return payload
 
 
 class Gateway:
@@ -827,6 +865,8 @@ class Panel:
         self.config_due = 0
         self.timezone_due = 0
         self.ketra_due = 0
+        self.ccx_status_due = time.monotonic() + 15
+        self.ccx_clock_due = time.monotonic() + 20
         self.legacy_index = 0
         # Programming reads for show sensors; off unless sensors are publishing.
         self.track_programs = False
@@ -865,8 +905,12 @@ class Panel:
             self.config_due = 0
             self.timezone_due = time.monotonic() + 5
             self.ketra_due = time.monotonic() + 10
+            self.ccx_status_due = time.monotonic() + 15
+            self.ccx_clock_due = time.monotonic() + 20
             self.cache.pop("timezone", None)
             self.cache.pop("ketra", None)
+            self.cache.pop("ccx_status", None)
+            self.cache.pop("ccx_clock", None)
         if status is not None:
             self._anchor(status)
         for event in data["events"]:
@@ -952,6 +996,10 @@ class Panel:
                 route, path = "timezone", "/api/timezone"
             elif self.cache and now >= self.ketra_due:
                 route, path = "ketra", "/api/ketra"
+            elif self.cache and now >= self.ccx_status_due:
+                route, path = "ccx_status", "/api/ccx/status"
+            elif self.cache and now >= self.ccx_clock_due:
+                route, path = "ccx_clock", "/api/ccx/clock"
             elif program_zone is not None:
                 route, path = "program", "/api/program?" + urlencode({"zone": program_zone, "page": 0})
                 with self.lock:
@@ -990,6 +1038,13 @@ class Panel:
                     if code in (404, 405):
                         self.cache["ketra"] = ({"unsupported": True}, now)
                     self.ketra_due = now + (300 if code in (404, 405) else max(30, getattr(self.gateway, "retry_after", 0)))
+                    self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
+                return None
+            if route in ("ccx_status", "ccx_clock") and code != 200:
+                with self.lock:
+                    if code in (404, 405):
+                        self.cache[route] = ({"unsupported": True}, now)
+                    setattr(self, route + "_due", now + (300 if code in (404, 405) else max(30, getattr(self.gateway, "retry_after", 0))))
                     self.next_poll = now + max(1, getattr(self.gateway, "retry_after", 0))
                 return None
             if route == "program" and code != 200:
@@ -1035,6 +1090,8 @@ class Panel:
                     self.timezone_due = now + 30
                 if route == "ketra":
                     self.ketra_due = now + 30
+                if route in ("ccx_status", "ccx_clock"):
+                    setattr(self, route + "_due", now + 30)
                 if route == "config":
                     previous = self.program_generation if hasattr(self, "program_generation") else None
                     generation = (data.get("generation"), data.get("hash"))
@@ -1062,6 +1119,11 @@ class Panel:
                 self.ketra_due = time.monotonic() + 30
                 self.next_poll = time.monotonic() + 1
                 LOG.warning("Optional Ketra inventory snapshot deferred: %s", exc)
+                return None
+            if route in ("ccx_status", "ccx_clock"):
+                setattr(self, route + "_due", time.monotonic() + 30)
+                self.next_poll = time.monotonic() + 1
+                LOG.warning("Optional CCX status snapshot deferred: %s", exc)
                 return None
             if route == "config":
                 self.config_due = time.monotonic() + 30
@@ -1109,7 +1171,7 @@ class Panel:
                 return self.result({"boot_id": self.boot_id, "reset": reset, "after": after, "next": self.cursor + 1,
                                     "oldest": oldest, "lost": lost, "boot_epoch_ms": self.boot_epoch_ms,
                                     "events": selected})
-        if route in ("status", "devices", "config", "timezone", "ketra"):
+        if route in ("status", "devices", "config", "timezone", "ketra", "ccx_status", "ccx_clock"):
             with self.lock:
                 entry = self.cache.get(route)
                 if entry is None:
@@ -1457,9 +1519,10 @@ class ShowSensors:
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, panel, ha=None):
+    def __init__(self, address, panel, ha=None, ccx=None):
         self.panel = panel
         self.ha = ha or HomeAssistant("", [])
+        self.ccx = ccx
         self.html = Path(__file__).with_name("index.html").read_bytes()
         super().__init__(address, Handler)
 
@@ -1505,10 +1568,11 @@ class Handler(BaseHTTPRequestHandler):
             ha = self.server.ha
             return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone",
-                 "/api/ketra": "ketra", "/api/ketra/native": "native"}.get(parts.path)
+                 "/api/ketra": "ketra", "/api/ketra/native": "native", "/api/ccx/status": "ccx_status",
+                 "/api/ccx/clock": "ccx_clock", "/api/ccx/rules": "ccx_rules", "/api/ccx/events": "ccx_events"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
-        allowed = {"events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
+        allowed = {"events": {"after", "boot_id"}, "ccx_events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
         if len(parts.query) > 256: return self.reply(400, {"error": "query is too long"})
         try: query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=3)
         except ValueError as exc: return self.reply(400, {"error": str(exc)})
@@ -1516,6 +1580,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {"error": "unknown endpoint"})
         try:
             if route in allowed and len(dict(query)) != len(query): raise ValueError("duplicate query parameter")
+            if route == "ccx_events":
+                params = dict(query)
+                after = bounded_int(params.get("after", "0"), "CCX event cursor")
+                boot = bounded_int(params["boot_id"], "CCX boot ID") if "boot_id" in params else None
+                if self.server.ccx is None:
+                    return self.reply(503, {"error": "CCX event stream unavailable"})
+                return self.reply(200, self.server.ccx.read(after, boot))
             code, ctype, raw = self.server.panel.proxy(route, query)
             return self.send(code, raw, ctype)
         except ValueError as exc: return self.reply(400, {"error": str(exc)})
@@ -1534,13 +1605,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self.authorized(): return
         route = {"/api/config": "config_put", "/api/timezone": "timezone_put", "/api/endpoint/power": "power_put",
-                 "/api/ketra": "ketra_put"}.get(self.path)
+                 "/api/ketra": "ketra_put", "/api/ccx/rules": "ccx_rules_put"}.get(self.path)
         if route is None: return self.reply(404, {"error": "unknown endpoint"})
         try:
             if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
-            body = self.read_body(65536 if route == "config_put" else 16384 if route == "ketra_put" else 128)
+            body = self.read_body(65536 if route == "config_put" else 16384 if route in ("ketra_put", "ccx_rules_put") else 128)
             payload = json.loads(body)
-            if route == "timezone_put":
+            if route == "ccx_rules_put":
+                validate_ccx_rules(payload)
+            elif route == "timezone_put":
                 if not isinstance(payload, dict) or set(payload) != {"timezone"} or payload["timezone"] not in SHOW_TIME_ZONES:
                     raise ValueError("expected a supported time zone")
             elif route == "power_put":
@@ -1625,20 +1698,31 @@ def main():
     integrations = options.get("lutron_integrations")
     supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")
     ha = HomeAssistant(supervisor_token, integrations if isinstance(integrations, list) else DEFAULT_INTEGRATIONS)
-    server = Server(("0.0.0.0", 8099), panel, ha)
+    def mqtt_connect(client_id, will_topic):
+        broker = supervisor_mqtt(supervisor_token)
+        return MqttClient(broker["host"], broker["port"], broker["username"], broker["password"],
+                          client_id, will_topic).connect()
+
+    ccx_publisher = CcxEventPublisher(lambda: mqtt_connect("ccx-bridge-ccx-events", CcxEventPublisher.AVAILABILITY)) if supervisor_token else None
+    ccx = CcxFeed(gateway, ccx_publisher)
+    server = Server(("0.0.0.0", 8099), panel, ha, ccx)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
+    if ccx_publisher:
+        ccx_publisher.start()
+    ccx.start()
     sensors = sensor_thread = None
     if options.get("show_sensors", True) is True and supervisor_token:
         def connect():
-            broker = supervisor_mqtt(supervisor_token)
-            return MqttClient(broker["host"], broker["port"], broker["username"], broker["password"],
-                              "ccx-bridge-show-sensors", ShowSensors.AVAILABILITY).connect()
+            return mqtt_connect("ccx-bridge-show-sensors", ShowSensors.AVAILABILITY)
         sensors = ShowSensors(panel, ha, connect)
         sensor_thread = threading.Thread(target=sensors.run, name="show-sensors", daemon=True)
         sensor_thread.start()
     try: server.serve_forever()
     finally:
         panel.stop.set()
+        ccx.stop()
+        if ccx_publisher:
+            ccx_publisher.stop()
         if sensors:
             sensors.stop.set()
             sensor_thread.join(timeout=10)

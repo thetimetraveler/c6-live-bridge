@@ -1,3 +1,9 @@
+## 0.16.0
+
+- Add a dedicated CCX live stream, generic event inspector, gateway rule editor and separately timed source/gateway stages. Existing local rule state is preserved when it is read.
+- Publish new CCX events as nonretained QoS 0 MQTT messages through the existing broker service; show stream gaps and publisher drops. The publisher is independent of Show sensors and never blocks the lighting path or the app's snapshot collector.
+- Label the browser's cache-request duration correctly instead of calling it a gateway poll.
+
 ## 0.15.2
 
 - Direct Zigbee response times require a lamp confirmation associated with that command. Periodic Natural Show readings no longer appear as roughly 30-second command latency or mark an unrelated command's lamp-reading step as complete. Corrections remain warnings.

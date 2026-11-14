@@ -36,6 +36,8 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `GET /api/ketra`, `PUT /api/ketra` (Ketra lamp inventory for direct Zigbee output, when supported)
 - `POST /api/zigbee/enroll`, `POST /api/zigbee/update` (gateway-hosted Zigbee node: enrollment and signed firmware, maintenance only)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
+- `GET /api/ccx/events?after=N&boot_id=N` (CCX live-feed cache, served by the app)
+- `GET /api/ccx/status`, `GET /api/ccx/clock`, `GET /api/ccx/rules`, `PUT /api/ccx/rules` (gateway listener, clock and local rules when supported)
 - `GET /api/zones` (per-zone sync summary served by the add-on: Lutron state, the bridge's last command,
   the lamp's confirmed state, the current Natural Show target, and the checks behind each verdict; built
   from cached data and never adds gateway requests). Lutron's level is the reference: it is the zone
@@ -52,6 +54,62 @@ Configuration writes must contain exactly `generation`, `hash`, and `zones`; the
 The add-on deliberately has no third-party Python dependencies. It lives in its own Git repository and does not replace the passive recorder app.
 
 Run the add-on checks with `python3 -m unittest -v test_app.py` and `node test_ui.js` from this directory.
+
+## CCX events and local rules (0.16.0)
+
+The Activity tab has a CCX event inspector separate from lighting-command
+activity. It shows the listener connection, missed events, the source, decoded
+fields, the rule decision and the original event JSON, including raw CBOR. The
+inspector keeps up to 500 recent events in the browser. The app keeps 2,048 in
+memory; these are live observations, not an archive. Gateway firmware without
+this feature is shown as unsupported and the rest of the dashboard continues to
+work.
+
+In Setup, **CCX local rules** reads and edits the gateway's rules. A rule matches
+an event kind, CCX message type, source serial and/or source zone; a blank field
+matches any value, and a completely blank match accepts every event. The gateway
+can apply up to 16 rules: set a target zone to the event's level or a constant
+from 0 to 10000 (0 is off), or select a Natural Show with an optional level.
+The target is a Lutron zone ID, not the app's bridge-zone index. New rules start
+disabled. Reading rules never changes an existing rule; applying a change saves
+the whole list, and enabled rules may change lighting immediately. Rule actions
+run on the gateway without the app or MQTT.
+
+One independent authenticated stream from the gateway feeds the app's cache;
+browser tabs and MQTT subscribers do not open their own gateway streams. The
+stream begins with an empty baseline at its current cursor, so reconnecting or
+starting the app does not turn old events into fresh triggers. Cursor resets,
+ring gaps and app publisher drops are reported. The app's ingress-only
+`/api/ccx/events` accepts an exclusive `after` cursor and optional `boot_id`.
+Its response contains `events`, `cursor` (last examined event ID), `next` and
+`producer_next` (the gateway's next event ID), plus `reset` and `lost`. Continue
+from `cursor`, not `next`, and restart the cursor on boot change. The gateway
+also has authenticated `/api/ccx/events` and `/api/ccx/stream` endpoints;
+the app consumes the latter in one dedicated worker.
+
+With the existing Supervisor-discovered MQTT broker, the app publishes each new
+event as nonretained QoS 0 JSON on **`ccx_bridge/ccx/events`**, independently of
+the `show_sensors` setting. The separate retained **`ccx_bridge/ccx/status`**
+is `online` or `offline` for the MQTT publisher connection; it does not prove
+the gateway stream is current. Subscribers use their existing broker access;
+the app does not open another listening port. Ordinary CCX event JSON includes
+`gateway_boot_id`, `id` and `source_event` for correlation. `ccx.stream_gap`
+messages identify detected feed gaps, and `app_mqtt_dropped` is the app's
+cumulative count of events discarded when the broker or bounded queue could not
+accept them. `app_mqtt_queue_us` measures time inside the app's publish queue.
+The `sent_to_socket` counter is not a delivery receipt. MQTT publication is
+best effort: disconnected subscribers miss events, failed sends can be lost,
+and queued events are discarded on a broker disconnect rather than replayed.
+Subscribers that act on events should account for missing or duplicate records.
+
+The inspector shows source-side and gateway-side durations separately. A
+source-to-gateway duration is shown only when the gateway provides a mapped
+measurement and its uncertainty. Gateway-to-app latency is unknown without an
+app-to-gateway clock mapping; MQTT queue and browser cache-fetch durations are
+separate. When a current gateway UTC anchor covers an event, its gateway time
+is shown; otherwise the row labels its app receipt time. Submission means that the gateway accepted a rule action, not that a
+lamp physically responded. Correlated action-stage events provide later
+observations when available.
 
 ## Lighting-first monitoring (0.4.0)
 

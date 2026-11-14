@@ -387,6 +387,39 @@ const mappingChecks=`
   // Settle the initial background loads before simulating an independent editor.
   for(let i=0;i<30;i++)await Promise.resolve();
   if(refreshing)throw Error('initial refresh did not settle');
+  {
+    const observed={id:1,kind:'ccx.local_level',source:{serial:71839249,zone_id:1594},source_event:{boot_id:3,sequence:4},
+      fields:{level_x100:0},gateway_received_us:7000,timing:{source_rf_sfd_us:100,source_decode_done_us:300,source_uart_tx_us:500,
+      source_to_gateway_us:900,gateway_decided_us:7300,gateway_submitted_us:7500}};
+    ccxEventView({schema_version:1,boot_id:5,cursor:1,next:99,events:[observed],stream:{state:'online',missed:0},mqtt:{online:true,sent_to_socket:1,dropped:0,last_queue_us:100}});
+    if(ccxCursor!==1||ccxRows.length!==1||view('ccx-stream-pill').textContent!=='Live')throw Error('CCX pagination follows delivered cursor, never producer next');
+    let timing=view('ccx-latency').textContent;
+    if(!timing.includes('C6 RF → decode 200 µs')||!timing.includes('Gateway receive → decision 300 µs')||timing.includes('C6 RF → gateway'))throw Error('clock domains are kept separate and mapped timing needs uncertainty: '+timing);
+    observed.timing.clock_uncertainty_us=50;
+    timing=ccxTiming(observed,null);
+    if(!timing.includes('C6 RF → gateway 900 µs ± 50 µs'))throw Error('aligned latency requires and shows uncertainty: '+timing);
+    ccxClock={boot_id:5,utc_anchor:{synced:true,mono_us:6000,unix_us:1700000000000000},monitoring:{age_s:1}};ccxClockAt=Date.now();
+    if(ccxEventWall(observed)!==1700000000001||ccxEventWall({...observed,gateway_received_us:5999})!==null||ccxEventWall({...observed,gateway_received_us:null,stage_at_us:7000})!==1700000000001)throw Error('gateway wall time uses only a current, same-boot UTC anchor covering the event');
+    ccxClock.boot_id=6;if(ccxEventWall(observed)!==null)throw Error('a clock from another boot cannot date an event');
+    if(!text(view('ccx-events')).includes('71839249')||!text(view('ccx-events')).includes('level_x100'))throw Error('the generic inspector preserves decoded and raw fields');
+    ccxEventView({schema_version:1,boot_id:6,cursor:0,next:1,events:[],stream:{state:'unsupported'}});
+    if(ccxRows.length||view('ccx-stream-pill').textContent!=='Not supported')throw Error('new boot resets the CCX view and old gateways remain usable');
+    {const prior=replies.status;replies.status={listener:{online:true},clock:{synced:true,uncertainty_us:12},monitoring:{age_s:100}};replies.clock={boot_id:6,utc_anchor:{synced:true},monitoring:{age_s:1}};ccxHealthAt=0;await loadCcxHealth();
+      if(!view('ccx-clock-note').textContent.includes('stale'))throw Error('stale listener status must not claim the clock is currently aligned');
+      replies.status.monitoring.age_s=1;ccxHealthAt=0;await loadCcxHealth();if(!view('ccx-clock-note').textContent.includes('aligned ± 12 µs'))throw Error('fresh listener status shows measured clock uncertainty');replies.status=prior}
+    replies.rules={rules:[{id:'dining-touchbar',enabled:false,match:{kind:'ccx.local_level',serial:71839249},action:{type:'set_level',target_zone:38138,level:'event'}}]};
+    await loadCcxRules();
+    if(ccxRules[0].enabled||view('ccx-save-rules').disabled!==true)throw Error('loading a disabled rule must not enable it or create a change');
+    ccxRules.push(ccxDraftRule({id:'show',enabled:false,match:{},action:{type:'select_show',target_zone:38138,show_id:31779}}));
+    const candidate=ccxRulePayload();
+    if(candidate.errors.length||candidate.rules[1].action.show_id!==31779||'level' in candidate.rules[1].action||Object.keys(candidate.rules[1].match).length)throw Error('Show default level and match-all rules must round trip');
+    {const prior=ccxRules;ccxRules=[ccxDraftRule({id:'odd',enabled:false,match:{kind:''},action:{type:'set_level',target_zone:1,level:0}})];if(ccxRulePayload().rules[0].match.kind!=='')throw Error('an exact empty kind from the gateway must not silently become match-all');ccxRules=prior}
+    ccxRules[1].show_id='0';if(!ccxRulePayload().errors.length)throw Error('Show ID zero must be rejected');
+    ccxRules[1].show_id='31779';renderCcxRules();requests.length=0;await view('ccx-save-rules').onclick();
+    const put=requests.find(r=>r.key==='rules'&&r.opts?.method==='PUT');
+    if(!put||JSON.parse(put.opts.body).rules[0].enabled!==false||JSON.parse(put.opts.body).rules[1].action.show_id!==31779)throw Error('saving multiple rules preserves the disabled Dining rule');
+    if(!view('perf-note').textContent.includes('cache requests')&&pollMs!==null)throw Error('browser cache duration must not be labelled gateway latency');
+  }
   const realNow=Date.now;let now=realNow();Date.now=()=>now;
   try{
     const devices={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[{zone:1,confirmed:{at_ms:9999,level_x100:5000}}]};

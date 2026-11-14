@@ -126,6 +126,7 @@ class CcxFeed:
         self.gateway, self.publisher = gateway, publisher
         self.events = deque(maxlen=capacity)
         self.lock = threading.Lock()
+        self.lifecycle_lock = threading.Lock()
         self.connection_lock = threading.Lock()
         self.connection = None
         self.stream_socket = None
@@ -141,23 +142,45 @@ class CcxFeed:
         self.missed = self.reconnects = 0
 
     def start(self):
-        self.thread = threading.Thread(target=self.run, name="ccx-live-feed", daemon=True)
-        self.thread.start()
+        with self.lifecycle_lock:
+            if self.thread and self.thread.is_alive():
+                return False
+            self.stop_event.clear()
+            with self.lock:
+                self.state, self.error = "connecting", None
+            self.thread = threading.Thread(target=self.run, name="ccx-live-feed", daemon=True)
+            self.thread.start()
+            return True
+
+    def _stop(self, paused):
+        with self.lifecycle_lock:
+            self.stop_event.set()
+            if paused:
+                with self.lock:
+                    self.state, self.error = "pausing", None
+            with self.connection_lock:
+                conn = self.connection
+                if conn:
+                    try:
+                        sock = self.stream_socket or conn.sock
+                        if sock:
+                            sock.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    conn.close()
+            if self.thread:
+                self.thread.join(timeout=8)
+            stopped = not self.thread or not self.thread.is_alive()
+            if paused and stopped:
+                with self.lock:
+                    self.state = "paused"
+            return stopped
+
+    def pause(self):
+        return self._stop(True)
 
     def stop(self):
-        self.stop_event.set()
-        with self.connection_lock:
-            conn = self.connection
-            if conn:
-                try:
-                    sock = self.stream_socket or conn.sock
-                    if sock:
-                        sock.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                conn.close()
-        if self.thread:
-            self.thread.join(timeout=8)
+        return self._stop(False)
 
     @staticmethod
     def _uint(value):

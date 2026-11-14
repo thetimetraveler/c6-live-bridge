@@ -1,7 +1,7 @@
 ## 0.17.0
 
 - Add a separate Sidecar firmware card for the passive B1 and signed updates through the S3 gateway. It shows the board, external antenna, running slot and full ELF hash, transfer progress and confirmation. Sidecar input pauses during an update; other bridge lighting continues.
-- A shared status reader remains independent of dashboard monitoring and the CCX event feed. Uploads are never retried automatically; a lost response is reconciled through fresh status. Older gateways show sidecar updates as unsupported.
+- A shared status reader coordinates with dashboard monitoring while uploads leave it running. The CCX event reader pauses for the update and reconciliation, then resumes with a live baseline; the MQTT publisher stays running and missed events are not replayed. Uploads are never retried automatically; a lost response is reconciled through fresh status. Older gateways show sidecar updates as unsupported.
 
 ## 0.16.0
 

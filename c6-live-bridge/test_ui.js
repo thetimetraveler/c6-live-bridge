@@ -389,7 +389,7 @@ const mappingChecks=`
   for(let i=0;i<30;i++)await Promise.resolve();
   if(refreshing)throw Error('initial refresh did not settle');
   {
-    const monitor={age_s:0,delayed:false,upload_in_flight:false,awaiting_fresh_status:false};
+    const monitor={age_s:0,delayed:false,upload_in_flight:false,awaiting_fresh_status:false,event_feed_paused:false};
     const initial={schema_version:1,supported:true,online:true,mac:SIDECAR_MAC,antenna:'external',version:'v1',boot_id:12,slot:0,
       elf_sha256:'a'.repeat(64),confirmed:true,pending_verify:false,monitoring:monitor,
       update:{state:'idle',busy:false,retry_allowed:true,offset:0,total:0,expected_elf_sha256:''}};
@@ -398,17 +398,23 @@ const mappingChecks=`
     sidecarStatus=initial;renderSidecar(initial);
     const img=(n,magic)=>({name:'sidecar.signed.bin',size:n,slice(){return {async arrayBuffer(){return Uint8Array.of(magic).buffer}}}});
     await pickSidecar(img(SIDECAR_LIMIT+1,0xe9));if(!view('sidecar-upload').disabled)throw Error('oversized images must be refused');
-    await pickSidecar(img(10,0));if(!view('sidecar-upload').disabled||!view('sidecar-file-note').textContent.includes('0xE9'))throw Error('the ESP image header is required');
-    const file=img(100,0xe9);await pickSidecar(file);if(view('sidecar-upload').disabled)throw Error('a valid image and ready external-antenna B1 enable update');
+    for(const size of [1,8191,8193]){await pickSidecar(img(size,0xe9));if(!view('sidecar-upload').disabled||!view('sidecar-file-note').textContent.includes('4,096-byte'))throw Error('undersized and unaligned images must be refused')}
+    await pickSidecar(img(8192,0));if(!view('sidecar-upload').disabled||!view('sidecar-file-note').textContent.includes('0xE9'))throw Error('the ESP image header is required');
+    const file=img(8192,0xe9);await pickSidecar(file);if(view('sidecar-upload').disabled)throw Error('a valid image and ready external-antenna B1 enable update');
     if(!text(view('sidecar-facts')).includes('a'.repeat(64)))throw Error('the entire running ELF hash is displayed');
     for(const unsafe of [{...initial,mac:'10:bd:a3:b2:17:80'},{...initial,antenna:'onboard'},
       {...initial,pending_verify:true},{...initial,boot_id:'12'},{...initial,monitoring:{...monitor,awaiting_fresh_status:true}},
+      {...initial,monitoring:{...monitor,event_feed_paused:true}},
       {...initial,update:{...initial.update,busy:true}},{...initial,update:{...initial.update,retry_allowed:false}}])
       if(sidecarReady(unsafe))throw Error('unsafe or uncertain sidecar status enabled update');
     replies['sidecar/status']={...initial,update:{...initial.update,state:'uncertain',retry_allowed:false}};
     requests.length=0;failKeys.add('sidecar/update');await view('sidecar-upload').onclick();failKeys.delete('sidecar/update');
     if(requests.filter(r=>r.key==='sidecar/update').length!==1||requests.some(r=>r.key==='maintenance'))throw Error('sidecar upload sends once and never enters global maintenance');
     if(!view('sidecar-upload').disabled||!view('sidecar-fw-note').textContent.includes('uncertain'))throw Error('lost response remains uncertain with resend disabled');
+    renderSidecar({...initial,monitoring:{...monitor,event_feed_paused:true}});
+    if(!view('sidecar-feed-note').textContent.includes('paused')||!view('sidecar-feed-note').textContent.includes('not replayed'))throw Error('sidecar card explains the paused event feed and live baseline');
+    ccxEventView({schema_version:1,boot_id:7,cursor:0,events:[],stream:{state:'paused'}});
+    if(view('ccx-stream-pill').textContent!=='Paused for sidecar update')throw Error('Activity identifies the intentional pause');
     const report={...initial,boot_id:13,slot:1,elf_sha256:'b'.repeat(64),update:{...initial.update,state:'confirmed',expected_elf_sha256:'b'.repeat(64)}};
     for(const wrong of [{...report,supported:false,online:false,mac:''},{...report,slot:0},{...report,boot_id:12},{...report,boot_id:'13'},{...report,elf_sha256:'c'.repeat(64)},{...report,pending_verify:true},{...report,mac:'10:bd:a3:b2:17:80'}]){
       renderSidecar(wrong);if(!sidecarCandidate||view('sidecar-fw-note').textContent.includes('does not expose'))throw Error('confirmation requires B1, a new boot and slot, complete matching ELF hash and confirmation; transient offline is not an unsupported gateway');

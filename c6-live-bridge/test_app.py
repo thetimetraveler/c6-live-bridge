@@ -272,6 +272,14 @@ class AddonTests(unittest.TestCase):
         for size,ctype,expected in ((app.MAX_SIDECAR_FIRMWARE+1,"application/octet-stream",413),(1,"text/plain",415)):
             h=self.handler(path="/api/sidecar/update");h.headers["Content-Type"]=ctype;h.headers["Content-Length"]=str(size)
             h.do_POST();self.assertEqual(h.results[0][0],expected)
+        before=len(self.gateway.calls)
+        self.panel.sidecar.feed=SimpleNamespace(pause=lambda:self.fail("invalid image paused the feed"))
+        for body in (b"\xe9"*8191,b"\xe9"*8193,b"x"*8192):
+            h=self.handler(path="/api/sidecar/update");h.headers["Content-Type"]="application/octet-stream"
+            h.headers["Content-Length"]=str(len(body));h.rfile=io.BytesIO(body);h.do_POST()
+            self.assertEqual(h.results[0][0],400)
+        self.assertEqual(len(self.gateway.calls),before)  # invalid images never reach the upload or pause the feed
+        self.panel.sidecar.feed=None
         blocked=self.handler(path="/api/sidecar/status?arbitrary=1");blocked.do_GET();self.assertEqual(blocked.results[0][0],404)
         self.gateway.request=lambda *a,**k:(404,"application/json",b'{}')
         self.panel.sidecar.poll_once()
@@ -325,6 +333,31 @@ class AddonTests(unittest.TestCase):
                        {"update":{"busy":True,"retry_allowed":True}},{"update":{"busy":False,"retry_allowed":False}}):
             data.clear();data.update(self.sidecar_status(**change));self.panel.sidecar.poll_once()
             self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409,change)
+
+    def test_sidecar_status_yields_to_collector_without_queueing(self):
+        self.panel.upstream.acquire()
+        try:
+            self.assertIsNone(self.panel.sidecar.poll_once())
+            self.assertEqual(self.gateway.calls,[])
+        finally:
+            self.panel.upstream.release()
+        self.assertTrue(self.panel.sidecar.poll_once())
+        self.assertEqual(self.gateway.calls[-1][1],"/api/sidecar/status")
+
+    def test_sidecar_never_uploads_if_feed_has_not_stopped(self):
+        data=self.sidecar_status();starts=[]
+        def request(path,method="GET",body=None,content_type=None):
+            self.gateway.calls.append((method,path,body,content_type))
+            return 200,"application/json",json.dumps(data).encode()
+        self.gateway.request=request
+        self.panel.sidecar.feed=SimpleNamespace(pause=lambda:False,start=lambda:starts.append(True) or True)
+        self.panel.sidecar.poll_once()
+        code,_,raw=self.panel.proxy("sidecar_update",body=b"\xe9"*8192)
+        self.assertEqual(code,503);self.assertIn("no image was sent",json.loads(raw)["error"])
+        self.assertFalse(any(c[1]=="/api/sidecar/update" for c in self.gateway.calls))
+        self.assertTrue(json.loads(self.panel.proxy("sidecar_status")[2])["monitoring"]["event_feed_paused"])
+        self.panel.sidecar.poll_once();self.panel.sidecar.poll_once()
+        self.assertEqual(starts,[True])
 
     def test_handler_transactional_config_put(self):
         doc={"generation":4,"hash":"abc123","zones":[{"zone_id":1,"name":"Kitchen","n4_group":"uuid","serial":"123","warm_dim_curve":1}]}

@@ -153,6 +153,88 @@ class CcxFeedTests(unittest.TestCase):
         self.assertTrue(interrupted.is_set())
         self.assertFalse(feed.thread.is_alive())
 
+    def test_sidecar_upload_closes_sse_and_resumes_once_after_uncertain_reconciliation(self):
+        readers = [threading.Event(), threading.Event()]
+        connections, calls = [], []
+        class Socket:
+            def __init__(self): self.closed = threading.Event()
+            def shutdown(self, how): self.closed.set(); calls.append("sse-closed")
+        class Response:
+            status = 200
+            def __init__(self, sock, index):
+                self.sock, self.index = sock, index
+                baseline=envelope(next_id=10 if index==0 else 15,baseline=True)
+                self.lines=iter([b"event: ccx_events\n", b"data: "+json.dumps(baseline).encode()+b"\n", b"\n"])
+            def getheader(self, name): return "text/event-stream"
+            def readline(self, limit):
+                try:return next(self.lines)
+                except StopIteration:
+                    readers[self.index].set();self.sock.closed.wait(3);return b""
+        class Connection:
+            def __init__(self, *args, **kwargs):
+                self.sock=Socket();self.index=len(connections);connections.append(self)
+            def request(self, *args, **kwargs): pass
+            def getresponse(self):
+                sock=self.sock;self.sock=None
+                return Response(sock,self.index)
+            def close(self): pass
+        data={"schema_version":1,"supported":True,"online":True,"mac":app.SIDECAR_MAC,"antenna":"external",
+              "boot_id":12,"slot":0,"elf_sha256":"a"*64,"pending_verify":False,"confirmed":True,
+              "update":{"state":"idle","busy":False,"retry_allowed":True}}
+        class Gateway:
+            scheme,hostname,port,token="http","gateway",80,"not-logged"
+            def __init__(self):self.posted=False;self.probes=0
+            def request(self,path,method="GET",body=None,content_type=None,timeout=None):
+                if path=="/api/sidecar/status":
+                    calls.append("status")
+                    if connections and connections[0].sock is None and "sse-closed" in calls and not self.posted:
+                        self.probes+=1
+                        if self.probes==1:return 503,"application/json",b'{}'
+                    return 200,"application/json",json.dumps(data).encode()
+                if path=="/api/sidecar/update":
+                    calls.append("post");self.posted=True
+                    self.assert_closed()
+                    data["update"]={"state":"reconciling","busy":True,"retry_allowed":False}
+                    raise OSError("response lost")
+                raise AssertionError(path)
+            def assert_closed(self):
+                if not connections[0].index==0 or "sse-closed" not in calls or self.probes<2 or feed.thread.is_alive():
+                    raise AssertionError("POST began before SSE closure, thread exit and gateway probe")
+        gateway=Gateway();feed=CcxFeed(gateway,self.sink)
+        panel=app.Panel(gateway,SimpleNamespace(program_events=lambda:{}));panel.sidecar.feed=feed
+        panel.sidecar.poll_once()
+        with patch("ccx_events.http.client.HTTPConnection",Connection):
+            feed.start();self.assertTrue(readers[0].wait(2))
+            try:
+                with self.assertRaises(OSError):panel.proxy("sidecar_update",body=b"\xe9signed")
+                self.assertEqual(calls.count("post"),1)
+                self.assertEqual(feed.read(0)["stream"]["state"],"paused")
+                self.assertTrue(json.loads(panel.proxy("sidecar_status")[2])["monitoring"]["event_feed_paused"])
+                panel.sidecar.poll_once()  # S3 still owns the update; keep the stream closed.
+                self.assertEqual(len(connections),1)
+                data["update"]={"state":"uncertain","busy":False,"retry_allowed":False}
+                panel.sidecar.poll_once()
+                self.assertTrue(readers[1].wait(2))
+                for _ in range(3):panel.sidecar.poll_once()
+                self.assertEqual(len(connections),2)
+                self.assertFalse(json.loads(panel.proxy("sidecar_status")[2])["monitoring"]["event_feed_paused"])
+                self.assertEqual([e["kind"] for e in self.sink.events],["ccx.stream_gap"])
+                feed.accept(envelope(next_id=16,events=[{"id":16,"kind":"ccx.message"}]))
+                self.assertEqual([e["kind"] for e in self.sink.events],["ccx.stream_gap","ccx.message"])
+                self.assertNotIn("maintenance",calls)
+            finally:
+                panel.stop.set();feed.stop()
+
+    def test_feed_start_cannot_clear_stop_event_while_old_reader_runs(self):
+        release=threading.Event()
+        self.feed.thread=threading.Thread(target=lambda:release.wait(2));self.feed.thread.start()
+        self.feed.stop_event.set()
+        try:
+            self.assertFalse(self.feed.start())
+            self.assertTrue(self.feed.stop_event.is_set())
+        finally:
+            release.set();self.feed.thread.join(2)
+
 
 class PublisherTests(unittest.TestCase):
     def test_mqtt_wire_message_is_not_retained(self):

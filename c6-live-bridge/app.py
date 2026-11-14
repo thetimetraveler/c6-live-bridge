@@ -26,6 +26,7 @@ MAX_RESPONSE = 1_048_576
 MAX_FIRMWARE = 786_432
 MAX_ZIGBEE_FIRMWARE = 0x180000
 MAX_SIDECAR_FIRMWARE = 720_896
+MIN_SIDECAR_FIRMWARE = 8192
 SIDECAR_MAC = "10:bd:a3:b1:5b:f0"
 # Show sensors: one programming read per collector slot, each zone at most every two minutes.
 PROGRAM_SLOT_S, PROGRAM_REFRESH_S, PROGRAM_STALE_S, PROGRAM_TIMEOUT_S = 30, 120, 600, 20
@@ -170,18 +171,27 @@ class Gateway:
 
 class SidecarMonitor:
     """One shared status reader and an independent, single-upload path."""
-    def __init__(self, gateway, stop):
-        self.gateway, self.stop = gateway, stop
-        self.lock, self.upload_lock = threading.Lock(), threading.Lock()
+    def __init__(self, gateway, stop, upstream):
+        self.gateway, self.stop, self.upstream = gateway, stop, upstream
+        self.lock, self.upload_lock, self.poll_lock = threading.Lock(), threading.Lock(), threading.Lock()
         self.wake = threading.Event()
         self.data, self.at, self.error = None, 0, None
         self.in_flight, self.awaiting_status = False, False
         self.finished_at, self.watch_until = 0, 0
+        self.feed, self.feed_paused = None, False
 
-    def poll_once(self):
+    def poll_once(self, timeout=None):
+        if not self.poll_lock.acquire(blocking=False):
+            return None
+        if not self.upstream.acquire(blocking=False):
+            self.poll_lock.release()
+            return None
         started = time.monotonic()
         try:
-            code, _, raw = self.gateway.request("/api/sidecar/status")
+            if timeout is None:
+                code, _, raw = self.gateway.request("/api/sidecar/status")
+            else:
+                code, _, raw = self.gateway.request("/api/sidecar/status", timeout=timeout)
             if code in (404, 405):
                 data = {"schema_version": 1, "supported": False, "gateway_unsupported": True}
             elif code == 200:
@@ -194,17 +204,28 @@ class SidecarMonitor:
                 self.data, self.at, self.error = data, time.monotonic(), None
                 if not self.in_flight and started > self.finished_at:
                     self.awaiting_status = False
+                update = data.get("update") if isinstance(data.get("update"), dict) else {}
+                resume = (self.feed_paused and not self.in_flight and not self.awaiting_status
+                          and update.get("busy") is False and self.feed is not None)
+            if resume and not self.stop.is_set() and self.feed.start():
+                with self.lock:
+                    self.feed_paused = False
+            return code == 200
         except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
             with self.lock:
                 self.error = str(exc)
+            return False
+        finally:
+            self.upstream.release()
+            self.poll_lock.release()
 
     def run(self):
         while not self.stop.is_set():
             self.wake.clear()
-            self.poll_once()
+            polled = self.poll_once()
             with self.lock:
-                active = self.in_flight or time.monotonic() < self.watch_until
-            self.wake.wait(2 if active else 30)
+                active = self.in_flight or self.feed_paused or time.monotonic() < self.watch_until
+            self.wake.wait(1 if polled is None else 2 if active else 30)
 
     def status(self):
         with self.lock:
@@ -214,29 +235,49 @@ class SidecarMonitor:
             data["monitoring"] = {"age_s": max(0, time.monotonic() - self.at),
                                   "delayed": self.error is not None,
                                   "upload_in_flight": self.in_flight,
-                                  "awaiting_fresh_status": self.awaiting_status}
+                                  "awaiting_fresh_status": self.awaiting_status,
+                                  "event_feed_paused": self.feed_paused}
             return Panel.result(data)
+
+    def _ready(self, preflight=False):
+        """Called with the monitor lock held; preflight already owns the upload."""
+        s = self.data or {}
+        u = s.get("update") if isinstance(s.get("update"), dict) else {}
+        return (self.error is None and time.monotonic() - self.at <= 45
+                and (preflight or (not self.awaiting_status and not self.feed_paused))
+                and s.get("schema_version") == 1 and s.get("supported") is True and s.get("online") is True
+                and isinstance(s.get("mac"), str) and s["mac"].lower() == SIDECAR_MAC
+                and s.get("antenna") == "external" and s.get("pending_verify") is False
+                and type(s.get("boot_id")) is int and 0 <= s["boot_id"] <= 0x1fffffffffffff
+                and type(s.get("slot")) is int and s["slot"] in (0, 1)
+                and isinstance(s.get("elf_sha256"), str) and re.fullmatch(r"[0-9a-fA-F]{64}", s["elf_sha256"])
+                and u.get("busy") is False and u.get("retry_allowed") is True)
 
     def upload(self, body):
         if not self.upload_lock.acquire(blocking=False):
             return Panel.result({"error": "A sidecar upload is already in progress"}, 409)
         try:
             with self.lock:
-                s = self.data or {}
-                u = s.get("update") if isinstance(s.get("update"), dict) else {}
-                ready = (self.error is None and time.monotonic() - self.at <= 45 and not self.awaiting_status
-                         and s.get("schema_version") == 1 and s.get("supported") is True and s.get("online") is True
-                         and isinstance(s.get("mac"), str) and s["mac"].lower() == SIDECAR_MAC
-                         and s.get("antenna") == "external" and s.get("pending_verify") is False
-                         and type(s.get("boot_id")) is int and 0 <= s["boot_id"] <= 0x1fffffffffffff
-                         and type(s.get("slot")) is int and s["slot"] in (0, 1)
-                         and isinstance(s.get("elf_sha256"), str) and re.fullmatch(r"[0-9a-fA-F]{64}", s["elf_sha256"])
-                         and u.get("busy") is False and u.get("retry_allowed") is True)
-                if not ready:
+                if not self._ready():
                     return Panel.result({"error": "Fresh sidecar status does not permit an update"}, 409)
                 self.in_flight = self.awaiting_status = True
+                self.feed_paused = self.feed is not None
             self.wake.set()
             try:
+                if self.feed:
+                    if not self.feed.pause():
+                        return Panel.result({"error": "CCX event reader did not stop; no image was sent"}, 503)
+                    # The gateway can need a moment to notice the closed SSE socket.
+                    deadline = time.monotonic() + 8
+                    while not self.stop.is_set() and time.monotonic() < deadline:
+                        if self.poll_once(timeout=2):
+                            break
+                        self.stop.wait(.2)
+                    else:
+                        return Panel.result({"error": "Gateway status unavailable after closing CCX feed; no image was sent"}, 503)
+                    with self.lock:
+                        if not self._ready(preflight=True):
+                            return Panel.result({"error": "Sidecar status changed; no image was sent"}, 409)
                 return self.gateway.request("/api/sidecar/update", "POST", body, "application/octet-stream")
             finally:
                 with self.lock:
@@ -941,7 +982,7 @@ class Panel:
         self.last_error = self.last_contact = None
         self.online = False
         self.stop = threading.Event()
-        self.sidecar = SidecarMonitor(gateway, self.stop)
+        self.sidecar = SidecarMonitor(gateway, self.stop, self.upstream)
         self.snapshot_supported = True
         self.snapshot_retry_at = 0
         self.failures = 0
@@ -1771,6 +1812,8 @@ class Handler(BaseHTTPRequestHandler):
         except OverflowError as exc: return self.reply(413, {"error": str(exc)})
         except EOFError as exc: return self.reply(400, {"error": str(exc)})
         except ValueError as exc: return self.reply(411, {"error": str(exc)})
+        if sidecar and (len(body) < MIN_SIDECAR_FIRMWARE or len(body) % 4096 or body[0] != 0xe9):
+            return self.reply(400, {"error": "Sidecar image must start with 0xE9 and be 8,192–720,896 bytes in 4,096-byte blocks"})
         try:
             code, out_type, raw = self.server.panel.proxy("sidecar_update" if sidecar else "zigbee_update" if zigbee else "update", body=body,
                                                           content_type="application/octet-stream")
@@ -1795,6 +1838,7 @@ def main():
 
     ccx_publisher = CcxEventPublisher(lambda: mqtt_connect("ccx-bridge-ccx-events", CcxEventPublisher.AVAILABILITY)) if supervisor_token else None
     ccx = CcxFeed(gateway, ccx_publisher)
+    panel.sidecar.feed = ccx
     server = Server(("0.0.0.0", 8099), panel, ha, ccx)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
     threading.Thread(target=panel.sidecar.run, name="sidecar-status", daemon=True).start()

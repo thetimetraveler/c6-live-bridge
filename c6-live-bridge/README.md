@@ -260,7 +260,8 @@ to 768 KB) and the Zigbee node (Ketra radio, a signed image up to 1.5 MB, shown
 only on gateways that host the node).
 
 **Sidecar firmware** is a separate card for the passive B1 with its external
-antenna. After the one-time USB bootstrap, signed images up to 704 KiB can be
+antenna. After the one-time USB bootstrap, signed images of 8,192–720,896 bytes
+in 4,096-byte blocks can be
 sent over the existing three-wire connection. The card displays the MAC, running
 version, slot, full ELF hash, confirmation and transfer progress. Sidecar input
 and actions pause during the update; other bridge lighting continues without
@@ -270,7 +271,11 @@ hash. If a response is lost, the card waits for fresh status and never resends
 automatically; a manual retry requires the gateway to permit it. USB remains the
 recovery path if the sidecar cannot run its updater. Older gateways show the
 feature as unsupported. One background reader shares status across browser tabs
-and runs independently of the normal snapshot collector and CCX feed.
+and coordinates its short reads with the normal snapshot collector, while the
+upload itself does not hold the collector's lock. The CCX event reader
+closes during an explicit sidecar update and reconciliation to free a management
+connection, then resumes from a live baseline; missed observations are not
+replayed. The MQTT publisher stays running throughout.
 
 **Response times.** Per-hop latency, as the median, p95 and maximum of recent
 commands (up to 60), from the event feed's gateway timestamps:

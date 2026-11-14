@@ -700,8 +700,9 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <div class="card-head"><h2>Sidecar firmware</h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
     <p class="lede">Update the passive B1 sidecar through the gateway using a signed <code>.bin</code> image. Only sidecar input and its actions pause during the update; other bridge lighting continues.</p>
     <p class="small muted">The sidecar needs its external antenna and a one-time USB bootstrap before it can update over the three wires. If it cannot run its updater, recover it over USB.</p>
+    <p id="sidecar-feed-note" class="small muted">The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.</p>
     <div id="sidecar-facts" class="groups"></div>
-    <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">Maximum 704 KiB (720,896 bytes)</span></label>
+    <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">8,192–720,896 bytes, in 4,096-byte blocks</span></label>
     <p id="sidecar-progress" class="muted small" role="status"></p>
     <div class="meter"><i id="sidecar-progress-bar" style="width:0"></i></div>
     <div class="actions"><button id="sidecar-upload" disabled>Update sidecar firmware</button></div>
@@ -1506,7 +1507,7 @@ function ccxEventView(data){if(data?.schema_version!==1||!Array.isArray(data.eve
   for(const e of data.events){if(!e||!Number.isInteger(e.id))continue;const key=String(ccxBoot)+':'+e.id;if(!ccxKeys.has(key)){ccxKeys.add(key);ccxRows.push(e);ccxCursor=Math.max(ccxCursor,e.id)}}
   if(Number.isInteger(data.cursor)&&data.cursor>=0)ccxCursor=Math.max(ccxCursor,data.cursor);
   if(ccxRows.length>500){ccxRows=ccxRows.slice(-500);ccxKeys=new Set(ccxRows.map(e=>String(ccxBoot)+':'+e.id))}
-  const stream=data.stream||{},mqtt=data.mqtt||{},state=stream.state||'connecting';$('ccx-stream-pill').textContent={online:'Live',unsupported:'Not supported',disconnected:'Disconnected',connecting:'Connecting'}[state]||state;
+  const stream=data.stream||{},mqtt=data.mqtt||{},state=stream.state||'connecting';$('ccx-stream-pill').textContent={online:'Live',unsupported:'Not supported',disconnected:'Disconnected',connecting:'Connecting',pausing:'Pausing for sidecar update',paused:'Paused for sidecar update'}[state]||state;
   $('ccx-stream-pill').className='pill '+(state==='online'?'good':state==='disconnected'?'warn':'wait');
   $('ccx-stream-note').textContent=`Stream ${state} · boot ${val(ccxBoot)} · cursor ${ccxCursor}`+(stream.missed?` · ${stream.missed} events missed`:'')+(data.lost?` · ${data.lost} missing from this view`:'')+(mqtt.online!==undefined?` · MQTT ${mqtt.online?'online':'offline'}, ${num(mqtt.sent_to_socket)} sent to socket, ${num(mqtt.dropped)} dropped`:' · MQTT unavailable');
   $('ccx-latency').textContent=ccxTiming([...ccxRows].reverse().find(e=>e.kind!=='ccx.action_stage')||ccxRows[ccxRows.length-1],mqtt)+' · Gateway → app is unknown without a clock mapping. App → MQTT and browser cache fetch are separate; submission is not lamp confirmation.';
@@ -1753,10 +1754,10 @@ $('zigbee-upload').onclick=async()=>{const f=zigbeeFile,note=$('zigbee-fw-note')
   $('zigbee-upload').disabled=true;note.textContent='Sending the image to the node…';
   try{if(!await ensureMaintenance())return;await req('zigbee/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});note.textContent='Accepted. The node is restarting into the new image; watch the session return to Running.'}
   catch(e){note.textContent='Node update failed: '+e.message}finally{$('zigbee-upload').disabled=!zigbeeFile}};
-const SIDECAR_LIMIT=720896,SIDECAR_MAC='10:bd:a3:b1:5b:f0',SIDE_HASH=/^[0-9a-f]{64}$/i;
+const SIDECAR_MIN=8192,SIDECAR_LIMIT=720896,SIDECAR_MAC='10:bd:a3:b1:5b:f0',SIDE_HASH=/^[0-9a-f]{64}$/i;
 let sidecarFile=null,sidecarFileValid=false,sidecarStatus=null,sidecarStatusAt=0,sidecarSending=false,sidecarCandidate=null,sidecarMessage='',sidecarFetching=false;
 function sidecarFresh(s){const m=s?.monitoring;return !!(m&&m.delayed===false&&!m.upload_in_flight&&!m.awaiting_fresh_status&&
-  Number.isFinite(m.age_s)&&m.age_s+(Date.now()-sidecarStatusAt)/1000<=45)}
+  !m.event_feed_paused&&Number.isFinite(m.age_s)&&m.age_s+(Date.now()-sidecarStatusAt)/1000<=45)}
 function sidecarReady(s){const u=s?.update;return !!(s?.schema_version===1&&s.supported===true&&s.online===true&&
   typeof s.mac==='string'&&s.mac.toLowerCase()===SIDECAR_MAC&&s.antenna==='external'&&s.pending_verify===false&&
   (s.slot===0||s.slot===1)&&Number.isSafeInteger(s.boot_id)&&s.boot_id>=0&&SIDE_HASH.test(s.elf_sha256||'')&&
@@ -1766,6 +1767,7 @@ function sidecarConfirmed(s,baseline){const u=s?.update,h=u?.expected_elf_sha256
   (s.slot===0||s.slot===1)&&Number.isSafeInteger(s.boot_id)&&s.boot_id>=0&&(!baseline||(s.boot_id!==baseline.boot&&s.slot!==baseline.slot)))}
 function renderSidecar(s){const pill=$('sidecar-pill'),facts=$('sidecar-facts'),u=s?.update||{},m=s?.monitoring||{};
   const supported=s?.schema_version===1&&s.supported===true,unknown=!s||m.delayed===true;
+  $('sidecar-feed-note').textContent=m.event_feed_paused?'The CCX event feed is pausing or paused for this update and reconciliation. It will resume from a live baseline; missed events are not replayed.':'The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.';
   pill.textContent=unknown?'Unavailable':s.gateway_unsupported?'Unsupported':!s.online?'Offline':!supported?'Updater unavailable':'Online';pill.className='pill '+(unknown?'wait':!supported||!s.online?'warn':'good');
   facts.replaceChildren(...(supported?[group('Running sidecar',[
     ['Board MAC',val(s.mac)],['Antenna',val(s.antenna),s.antenna==='external'?'good':'warn'],['Version',val(s.version)],['Slot',val(s.slot)],
@@ -1790,8 +1792,8 @@ function renderSidecar(s){const pill=$('sidecar-pill'),facts=$('sidecar-facts'),
 }
 async function loadSidecarStatus(){if(sidecarFetching)return;sidecarFetching=true;try{sidecarStatus=await req('sidecar/status');sidecarStatusAt=Date.now();renderSidecar(sidecarStatus)}catch(e){sidecarStatus=null;renderSidecar(null)}finally{sidecarFetching=false}}
 async function pickSidecar(f){sidecarFile=f||null;sidecarFileValid=false;$('sidecar-firmware-name').textContent=f?`${f.name} · ${f.size.toLocaleString()} bytes`:'Choose a signed sidecar image';
-  $('sidecar-file-note').textContent='Maximum 704 KiB (720,896 bytes)';renderSidecar(sidecarStatus);if(!f)return;
-  if(!f.size||f.size>SIDECAR_LIMIT){$('sidecar-file-note').textContent='Image must be between 1 and 720,896 bytes.';return}
+  $('sidecar-file-note').textContent='8,192–720,896 bytes, in 4,096-byte blocks';renderSidecar(sidecarStatus);if(!f)return;
+  if(f.size<SIDECAR_MIN||f.size>SIDECAR_LIMIT||f.size%4096){$('sidecar-file-note').textContent='Image must be 8,192–720,896 bytes in 4,096-byte blocks.';return}
   try{const b=new Uint8Array(await f.slice(0,1).arrayBuffer());if(sidecarFile!==f)return;
     sidecarFileValid=b[0]===0xe9;$('sidecar-file-note').textContent=sidecarFileValid?'ESP32 image header found; the sidecar verifies the signature.':'Invalid ESP32 app image: expected first byte 0xE9.'}
   catch{if(sidecarFile!==f)return;$('sidecar-file-note').textContent='Could not read the image header.'}renderSidecar(sidecarStatus)}

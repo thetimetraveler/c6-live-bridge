@@ -35,6 +35,7 @@ The cache and seven-day archive preserve new fields without extra polling.
 - `POST /api/endpoint/update` (binary firmware, maximum 786,432 bytes)
 - `GET /api/ketra`, `PUT /api/ketra` (Ketra lamp inventory for direct Zigbee output, when supported)
 - `POST /api/zigbee/enroll`, `POST /api/zigbee/update` (gateway-hosted Zigbee node: enrollment and signed firmware, maintenance only)
+- `GET /api/sidecar/status`, `POST /api/sidecar/update` (shared cached status and signed B1 firmware, maximum 720,896 bytes)
 - `GET /api/ha` (read-only Home Assistant lookup described above; served by the add-on, not the gateway)
 - `GET /api/ccx/events?after=N&boot_id=N` (CCX live-feed cache, served by the app)
 - `GET /api/ccx/status`, `GET /api/ccx/clock`, `GET /api/ccx/rules`, `PUT /api/ccx/rules` (gateway listener, clock and local rules when supported)
@@ -47,7 +48,7 @@ The cache and seven-day archive preserve new fields without extra polling.
 `/api/status` is forwarded as the gateway reports it, including `output_backend`,
 `direct_zigbee` and `zigbee_uart` on gateways that have them (see below).
 
-Only these methods and paths are accepted. Gateway responses are capped at 1 MiB; ordinary connections have finite timeouts, while firmware and programming transfers use a five-minute timeout. Firmware is forwarded byte-for-byte with a SHA-256 digest computed by the proxy and sent in `X-SHA256`. Query values are parsed as bounded integers. A gateway timeout or disconnect is shown as unavailable and retried by the dashboard. Event polling resumes from the latest delivered event ID, rewinds on a gateway boot ID change, and surfaces reported cursor gaps.
+Only these methods and paths are accepted. Gateway responses are capped at 1 MiB; ordinary connections have finite timeouts, while firmware and programming transfers use up to five minutes (ten minutes for Zigbee node and sidecar firmware). Firmware is forwarded byte-for-byte with a SHA-256 digest computed by the proxy and sent in `X-SHA256`. Query values are parsed as bounded integers. Dashboard reads resume after a gateway timeout or disconnect; uploads are never automatically retried. Event polling resumes from the latest delivered event ID, rewinds on a gateway boot ID change, and surfaces reported cursor gaps.
 
 Configuration writes must contain exactly `generation`, `hash`, and `zones`; the gateway owns validation and transaction semantics. Each zone mapping can include `zone_id`, `name`, `n4_group`, `serial`, and `warm_dim_curve`. Keep firmware images within the endpoint's supported format and size; the add-on does not transform firmware bytes.
 
@@ -257,6 +258,19 @@ firmware. Every card says when to use it. **Firmware updates** holds both
 uploads side by side: the endpoint board (CCX on Thread, an ESP32 app image up
 to 768 KB) and the Zigbee node (Ketra radio, a signed image up to 1.5 MB, shown
 only on gateways that host the node).
+
+**Sidecar firmware** is a separate card for the passive B1 with its external
+antenna. After the one-time USB bootstrap, signed images up to 704 KiB can be
+sent over the existing three-wire connection. The card displays the MAC, running
+version, slot, full ELF hash, confirmation and transfer progress. Sidecar input
+and actions pause during the update; other bridge lighting continues without
+entering maintenance. The add-on checks the image header and size; B1 verifies
+the signed image. The file's transfer SHA-256 is distinct from the running ELF
+hash. If a response is lost, the card waits for fresh status and never resends
+automatically; a manual retry requires the gateway to permit it. USB remains the
+recovery path if the sidecar cannot run its updater. Older gateways show the
+feature as unsupported. One background reader shares status across browser tabs
+and runs independently of the normal snapshot collector and CCX feed.
 
 **Response times.** Per-hop latency, as the median, p95 and maximum of recent
 commands (up to 60), from the event feed's gateway timestamps:

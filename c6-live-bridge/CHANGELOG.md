@@ -1,3 +1,8 @@
+## 0.17.0
+
+- Add a separate Sidecar firmware card for the passive B1 and signed updates through the S3 gateway. It shows the board, external antenna, running slot and full ELF hash, transfer progress and confirmation. Sidecar input pauses during an update; other bridge lighting continues.
+- A shared status reader remains independent of dashboard monitoring and the CCX event feed. Uploads are never retried automatically; a lost response is reconciled through fresh status. Older gateways show sidecar updates as unsupported.
+
 ## 0.16.0
 
 - Add a dedicated CCX live stream, generic event inspector, gateway rule editor and separately timed source/gateway stages. Existing local rule state is preserved when it is read.

@@ -264,7 +264,7 @@ class PublisherTests(unittest.TestCase):
             def __init__(self, *args): pass
             def serve_forever(self): pass
             def server_close(self): pass
-        panel = SimpleNamespace(run_event_archive=lambda: None, stop=threading.Event())
+        panel = SimpleNamespace(run_event_archive=lambda: None, stop=threading.Event(), sidecar=SimpleNamespace(run=lambda: None))
         options = {"gateway_host": "http://gateway", "gateway_token": "token", "show_sensors": False}
         with patch.dict(os.environ, {"SUPERVISOR_TOKEN": "test"}), \
              patch.object(app, "Path", return_value=SimpleNamespace(read_text=lambda: json.dumps(options))), \

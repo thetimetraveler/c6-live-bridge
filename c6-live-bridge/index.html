@@ -307,6 +307,7 @@ code{overflow-wrap:anywhere}
 .setup-h{font-size:.85rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);margin:26px 4px -4px}
 .fw-targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 20px}
 .fw-target h3{margin-top:10px}
+#sidecar-facts strong{overflow-wrap:anywhere;min-width:0}
 .explain{margin-top:8px}.explain p{max-width:75ch;color:var(--label2);font-size:.88rem}
 .tile[data-goto]{cursor:pointer}.tile[data-goto]:hover{transform:translateY(-1px)}.tile[data-goto]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .tile .go{grid-column:1/-1;font-size:.76rem;color:var(--blue);margin-top:4px}
@@ -607,8 +608,8 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
   <h2 class="setup-h">Everyday controls</h2>
   <section class="card" id="maintenance-card">
     <div class="card-head"><h2>Maintenance mode</h2></div>
-    <p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.</p>
-    <p class="when"><b>When to use:</b> you rarely need to turn it on yourself: Apply mapping, Apply lamps, Enroll node and the firmware uploads turn it on when they need it. Turn it off when you finish so lighting control resumes at once; it also ends by itself when idle.</p>
+    <p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and endpoint or Zigbee node firmware uploads require maintenance mode.</p>
+    <p class="when"><b>When to use:</b> you rarely need to turn it on yourself: Apply mapping, Apply lamps, Enroll node and endpoint or Zigbee node firmware uploads turn it on when needed. Turn it off when you finish so lighting control resumes at once; it also ends by itself when idle.</p>
     <div class="actions"><button id="maintenance-toggle" class="secondary">Enter maintenance</button></div>
   </section>
   <section class="card">
@@ -694,6 +695,17 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
         <p id="zigbee-fw-note" class="muted small" role="status"></p>
       </div>
     </div>
+  </section>
+  <section class="card" id="sidecar-firmware-card">
+    <div class="card-head"><h2>Sidecar firmware</h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
+    <p class="lede">Update the passive B1 sidecar through the gateway using a signed <code>.bin</code> image. Only sidecar input and its actions pause during the update; other bridge lighting continues.</p>
+    <p class="small muted">The sidecar needs its external antenna and a one-time USB bootstrap before it can update over the three wires. If it cannot run its updater, recover it over USB.</p>
+    <div id="sidecar-facts" class="groups"></div>
+    <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">Maximum 704 KiB (720,896 bytes)</span></label>
+    <p id="sidecar-progress" class="muted small" role="status"></p>
+    <div class="meter"><i id="sidecar-progress-bar" style="width:0"></i></div>
+    <div class="actions"><button id="sidecar-upload" disabled>Update sidecar firmware</button></div>
+    <p id="sidecar-fw-note" class="muted small" role="status">Waiting for sidecar status.</p>
   </section>
 </div>
 </main>
@@ -1048,7 +1060,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   perfView();
   if(!current)setHero('warn',age===null?'Monitoring unavailable':'Monitoring delayed','Showing the last gateway snapshot; current endpoint safety and network state are unknown.',false);
   const maintenance=!!s.diagnostics?.maintenance;
-  $('maintenance-note').textContent=maintenance?`Maintenance active · lighting output is paused; latest commands are retained. Idle session expires in ${Math.ceil((s.diagnostics?.maintenance_remaining_ms||0)/1000)} seconds.`:'Normal operation: lighting control has priority. Mapping changes and firmware uploads require maintenance mode.';
+  $('maintenance-note').textContent=maintenance?`Maintenance active · lighting output is paused; latest commands are retained. Idle session expires in ${Math.ceil((s.diagnostics?.maintenance_remaining_ms||0)/1000)} seconds.`:'Normal operation: lighting control has priority. Mapping changes and endpoint or Zigbee node firmware uploads require maintenance mode.';
   $('maintenance-toggle').textContent=maintenance?'End maintenance':'Enter maintenance';
   renderEndpointControl(s);
   renderFlow(s);if(lastZones)zonesView(lastZones)}
@@ -1741,8 +1753,58 @@ $('zigbee-upload').onclick=async()=>{const f=zigbeeFile,note=$('zigbee-fw-note')
   $('zigbee-upload').disabled=true;note.textContent='Sending the image to the node…';
   try{if(!await ensureMaintenance())return;await req('zigbee/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});note.textContent='Accepted. The node is restarting into the new image; watch the session return to Running.'}
   catch(e){note.textContent='Node update failed: '+e.message}finally{$('zigbee-upload').disabled=!zigbeeFile}};
+const SIDECAR_LIMIT=720896,SIDECAR_MAC='10:bd:a3:b1:5b:f0',SIDE_HASH=/^[0-9a-f]{64}$/i;
+let sidecarFile=null,sidecarFileValid=false,sidecarStatus=null,sidecarStatusAt=0,sidecarSending=false,sidecarCandidate=null,sidecarMessage='',sidecarFetching=false;
+function sidecarFresh(s){const m=s?.monitoring;return !!(m&&m.delayed===false&&!m.upload_in_flight&&!m.awaiting_fresh_status&&
+  Number.isFinite(m.age_s)&&m.age_s+(Date.now()-sidecarStatusAt)/1000<=45)}
+function sidecarReady(s){const u=s?.update;return !!(s?.schema_version===1&&s.supported===true&&s.online===true&&
+  typeof s.mac==='string'&&s.mac.toLowerCase()===SIDECAR_MAC&&s.antenna==='external'&&s.pending_verify===false&&
+  (s.slot===0||s.slot===1)&&Number.isSafeInteger(s.boot_id)&&s.boot_id>=0&&SIDE_HASH.test(s.elf_sha256||'')&&
+  sidecarFresh(s)&&u?.busy===false&&u.retry_allowed===true&&!sidecarSending)}
+function sidecarConfirmed(s,baseline){const u=s?.update,h=u?.expected_elf_sha256;return !!(s?.online===true&&typeof s.mac==='string'&&s.mac.toLowerCase()===SIDECAR_MAC&&
+  s.confirmed===true&&s.pending_verify===false&&u?.state==='confirmed'&&u.busy===false&&SIDE_HASH.test(h||'')&&typeof s.elf_sha256==='string'&&s.elf_sha256.toLowerCase()===h.toLowerCase()&&
+  (s.slot===0||s.slot===1)&&Number.isSafeInteger(s.boot_id)&&s.boot_id>=0&&(!baseline||(s.boot_id!==baseline.boot&&s.slot!==baseline.slot)))}
+function renderSidecar(s){const pill=$('sidecar-pill'),facts=$('sidecar-facts'),u=s?.update||{},m=s?.monitoring||{};
+  const supported=s?.schema_version===1&&s.supported===true,unknown=!s||m.delayed===true;
+  pill.textContent=unknown?'Unavailable':s.gateway_unsupported?'Unsupported':!s.online?'Offline':!supported?'Updater unavailable':'Online';pill.className='pill '+(unknown?'wait':!supported||!s.online?'warn':'good');
+  facts.replaceChildren(...(supported?[group('Running sidecar',[
+    ['Board MAC',val(s.mac)],['Antenna',val(s.antenna),s.antenna==='external'?'good':'warn'],['Version',val(s.version)],['Slot',val(s.slot)],
+    ['Full ELF SHA-256',val(s.elf_sha256)],['Boot ID',val(s.boot_id)],['Confirmed',s.confirmed===true?'Yes':s.pending_verify===true?'Pending verification':'No']])]:[]));
+  const total=Number(u.total),offset=Number(u.offset),pct=Number.isFinite(total)&&total>0&&Number.isFinite(offset)?Math.max(0,Math.min(100,100*offset/total)):0;
+  $('sidecar-progress').textContent=supported||typeof u.state==='string'?`Transfer: ${val(u.state)}${total>0?` · ${num(offset)} of ${num(total)} bytes`:''}`:'';$('sidecar-progress-bar').style.width=pct+'%';
+  if(sidecarCandidate&&!sidecarSending&&sidecarFresh(s)&&sidecarConfirmed(s,sidecarCandidate)){
+    sidecarCandidate=null;sidecarMessage='Update confirmed on the new boot and slot; the full ELF hash matches the gateway’s expected image.'}
+  let note=sidecarMessage;
+  if(!s)note='Sidecar status unavailable. Updates are disabled until fresh status returns.';
+  else if(m.delayed||m.awaiting_fresh_status)note='Waiting for fresh sidecar status. The outcome may be uncertain; the image will not be sent again automatically.';
+  else if(sidecarCandidate&&!sidecarSending){note=`Update outcome is uncertain (${val(u.state)}${u.error?': '+u.error:''}). The image will not be resent automatically. ${sidecarReady(s)?'The gateway permits a manual retry.':'Wait for the gateway to permit a retry; use USB recovery if the updater is unavailable.'}`}
+  else if(s.gateway_unsupported)note='This gateway does not expose sidecar updates. The sidecar also needs the one-time USB bootstrap before three-wire updates.';
+  else if(!supported&&!sidecarSending)note='The sidecar updater is unavailable or offline. It needs the one-time USB bootstrap; use USB recovery if its updater cannot run.';
+  else if(u.state==='uncertain'||u.state==='failed')note=`Update ${u.state}${u.error?': '+u.error:''}. The image will not be resent automatically. ${sidecarReady(s)?'The gateway permits a manual retry.':'Wait for the gateway to permit a retry; use USB recovery if the updater is unavailable.'}`;
+  else if(u.busy||m.upload_in_flight)note='A sidecar update is in progress; other bridge lighting continues.';
+  else if(!note&&s.antenna!=='external')note='The external antenna is required before updating.';
+  else if(!note&&s.online!==true)note='The sidecar is offline. If its updater cannot run, recover it over USB.';
+  else if(!note&&sidecarFresh(s)&&sidecarConfirmed(s,null))note='The gateway reports the running image confirmed, with a matching full ELF hash.';
+  $('sidecar-fw-note').textContent=note||'Choose a signed image when the gateway permits an update.';
+  $('sidecar-upload').disabled=!(sidecarFile&&sidecarFileValid&&sidecarReady(s));
+}
+async function loadSidecarStatus(){if(sidecarFetching)return;sidecarFetching=true;try{sidecarStatus=await req('sidecar/status');sidecarStatusAt=Date.now();renderSidecar(sidecarStatus)}catch(e){sidecarStatus=null;renderSidecar(null)}finally{sidecarFetching=false}}
+async function pickSidecar(f){sidecarFile=f||null;sidecarFileValid=false;$('sidecar-firmware-name').textContent=f?`${f.name} · ${f.size.toLocaleString()} bytes`:'Choose a signed sidecar image';
+  $('sidecar-file-note').textContent='Maximum 704 KiB (720,896 bytes)';renderSidecar(sidecarStatus);if(!f)return;
+  if(!f.size||f.size>SIDECAR_LIMIT){$('sidecar-file-note').textContent='Image must be between 1 and 720,896 bytes.';return}
+  try{const b=new Uint8Array(await f.slice(0,1).arrayBuffer());if(sidecarFile!==f)return;
+    sidecarFileValid=b[0]===0xe9;$('sidecar-file-note').textContent=sidecarFileValid?'ESP32 image header found; the sidecar verifies the signature.':'Invalid ESP32 app image: expected first byte 0xE9.'}
+  catch{if(sidecarFile!==f)return;$('sidecar-file-note').textContent='Could not read the image header.'}renderSidecar(sidecarStatus)}
+$('sidecar-firmware').onchange=e=>pickSidecar(e.target.files[0]||null);
+$('sidecar-upload').onclick=async()=>{const f=sidecarFile;let s=sidecarStatus;if(!f||!sidecarFileValid||!sidecarReady(s))return;
+  if(!await confirmSheet('Update the sidecar?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent once. Sidecar input and actions pause; other bridge lighting continues.`,'Update'))return;
+  s=sidecarStatus;if(f!==sidecarFile||!sidecarFileValid||!sidecarReady(s)){sidecarMessage='Sidecar status changed; wait until it permits an update.';renderSidecar(s);return}
+  sidecarCandidate={boot:s.boot_id,slot:s.slot};sidecarSending=true;sidecarMessage='Sending once. Waiting for gateway progress and confirmation.';renderSidecar(s);
+  try{await req('sidecar/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sidecarMessage='Transfer response received; checking the running image.'}
+  catch(e){sidecarMessage='The upload response was lost or rejected; the outcome is uncertain. Checking status without resending.'}
+  finally{sidecarSending=false;await loadSidecarStatus()}};
 for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}
-loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden)loadCcxHealth()},10000);
+loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();loadSidecarStatus();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden)loadCcxHealth()},10000);setInterval(()=>{if(!$('panel-setup').hidden||sidecarSending||sidecarCandidate)loadSidecarStatus()},2000);
 </script></body></html>

@@ -39,10 +39,11 @@ const requests=[],failKeys=new Set(),waits=new Map();
 const context={document,status,replies,requests,failKeys,waits,location:{href:'http://ha.local/api/hassio_ingress/token/'},URL,
   Date,Math,Number,String,Object,Array,Set,JSON,Promise,console,
   setInterval(){return 0;},setTimeout(){return 0;},confirm(){return true;},
-  async fetch(url,opts){const path=new URL(url).pathname.split('/').slice(-2).join('/');const key=path.split('?')[0].split('/').pop();requests.push({key,opts});if(failKeys.has(key))throw Error('test request failed');const value=key in replies?replies[key]:{};if(waits.has(key))await waits.get(key);return {ok:true,headers:{get:()=> 'application/json'},async json(){return value;}};},
+  async fetch(url,opts){const path=new URL(url).pathname.split('/').slice(-2).join('/');const key=path.startsWith('sidecar/')?path:path.split('?')[0].split('/').pop();requests.push({key,opts});if(failKeys.has(key))throw Error('test request failed');const value=key in replies?replies[key]:{};if(waits.has(key))await waits.get(key);return {ok:true,headers:{get:()=> 'application/json'},async json(){return value;}};},
 };
 const html=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 if(!html.includes('Online again after 30 s')||!html.includes('Uptime decrease observed')||html.includes('Stays online 30 s'))throw Error('the firmware steps must describe sampled uptime observations');
+if(!html.includes('other bridge lighting continues')||!html.includes('sidecar verifies the signature'))throw Error('sidecar update states its isolation and signature responsibility');
 const code=html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
@@ -387,6 +388,37 @@ const mappingChecks=`
   // Settle the initial background loads before simulating an independent editor.
   for(let i=0;i<30;i++)await Promise.resolve();
   if(refreshing)throw Error('initial refresh did not settle');
+  {
+    const monitor={age_s:0,delayed:false,upload_in_flight:false,awaiting_fresh_status:false};
+    const initial={schema_version:1,supported:true,online:true,mac:SIDECAR_MAC,antenna:'external',version:'v1',boot_id:12,slot:0,
+      elf_sha256:'a'.repeat(64),confirmed:true,pending_verify:false,monitoring:monitor,
+      update:{state:'idle',busy:false,retry_allowed:true,offset:0,total:0,expected_elf_sha256:''}};
+    sidecarStatusAt=Date.now();renderSidecar({schema_version:1,supported:false,gateway_unsupported:true,monitoring:monitor});
+    if(view('sidecar-pill').textContent!=='Unsupported'||!view('sidecar-upload').disabled||!view('sidecar-fw-note').textContent.includes('USB'))throw Error('old gateways show sidecar updates unsupported with bootstrap guidance');
+    sidecarStatus=initial;renderSidecar(initial);
+    const img=(n,magic)=>({name:'sidecar.signed.bin',size:n,slice(){return {async arrayBuffer(){return Uint8Array.of(magic).buffer}}}});
+    await pickSidecar(img(SIDECAR_LIMIT+1,0xe9));if(!view('sidecar-upload').disabled)throw Error('oversized images must be refused');
+    await pickSidecar(img(10,0));if(!view('sidecar-upload').disabled||!view('sidecar-file-note').textContent.includes('0xE9'))throw Error('the ESP image header is required');
+    const file=img(100,0xe9);await pickSidecar(file);if(view('sidecar-upload').disabled)throw Error('a valid image and ready external-antenna B1 enable update');
+    if(!text(view('sidecar-facts')).includes('a'.repeat(64)))throw Error('the entire running ELF hash is displayed');
+    for(const unsafe of [{...initial,mac:'10:bd:a3:b2:17:80'},{...initial,antenna:'onboard'},
+      {...initial,pending_verify:true},{...initial,boot_id:'12'},{...initial,monitoring:{...monitor,awaiting_fresh_status:true}},
+      {...initial,update:{...initial.update,busy:true}},{...initial,update:{...initial.update,retry_allowed:false}}])
+      if(sidecarReady(unsafe))throw Error('unsafe or uncertain sidecar status enabled update');
+    replies['sidecar/status']={...initial,update:{...initial.update,state:'uncertain',retry_allowed:false}};
+    requests.length=0;failKeys.add('sidecar/update');await view('sidecar-upload').onclick();failKeys.delete('sidecar/update');
+    if(requests.filter(r=>r.key==='sidecar/update').length!==1||requests.some(r=>r.key==='maintenance'))throw Error('sidecar upload sends once and never enters global maintenance');
+    if(!view('sidecar-upload').disabled||!view('sidecar-fw-note').textContent.includes('uncertain'))throw Error('lost response remains uncertain with resend disabled');
+    const report={...initial,boot_id:13,slot:1,elf_sha256:'b'.repeat(64),update:{...initial.update,state:'confirmed',expected_elf_sha256:'b'.repeat(64)}};
+    for(const wrong of [{...report,supported:false,online:false,mac:''},{...report,slot:0},{...report,boot_id:12},{...report,boot_id:'13'},{...report,elf_sha256:'c'.repeat(64)},{...report,pending_verify:true},{...report,mac:'10:bd:a3:b2:17:80'}]){
+      renderSidecar(wrong);if(!sidecarCandidate||view('sidecar-fw-note').textContent.includes('does not expose'))throw Error('confirmation requires B1, a new boot and slot, complete matching ELF hash and confirmation; transient offline is not an unsupported gateway');
+    }
+    renderSidecar(report);if(sidecarCandidate||!view('sidecar-fw-note').textContent.includes('full ELF hash matches'))throw Error('matching new B1 boot, slot and full hash confirm the update');
+    sidecarMessage='';sidecarStatusAt=Date.now()-60000;renderSidecar(report);
+    if(sidecarReady(report)||view('sidecar-fw-note').textContent.includes('running image confirmed'))throw Error('stale status cannot confirm an image or permit an upload');
+    sidecarStatusAt=Date.now();renderSidecar({...initial,update:{...initial.update,state:'uncertain',retry_allowed:false}});
+    if(!view('sidecar-fw-note').textContent.includes('uncertain')||!view('sidecar-upload').disabled)throw Error('other tabs show uncertain updates and do not resend');
+  }
   {
     const observed={id:1,kind:'ccx.local_level',source:{serial:71839249,zone_id:1594},source_event:{boot_id:3,sequence:4},
       fields:{level_x100:0},gateway_received_us:7000,timing:{source_rf_sfd_us:100,source_decode_done_us:300,source_uart_tx_us:500,

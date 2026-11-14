@@ -2,6 +2,7 @@ import io
 import json
 from email.message import Message
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
@@ -234,6 +235,97 @@ class AddonTests(unittest.TestCase):
             bad.headers["Content-Type"]="application/json";bad.headers["Content-Length"]=str(len(body));bad.rfile=io.BytesIO(body)
             bad.do_POST(); self.assertEqual(bad.results[0][0],400)
 
+    @staticmethod
+    def sidecar_status(**changes):
+        status={"schema_version":1,"supported":True,"online":True,"mac":app.SIDECAR_MAC,"boot_id":7,"slot":0,
+                "version":"test","elf_sha256":"a"*64,"antenna":"external","pending_verify":False,"confirmed":True,
+                "image_limit":app.MAX_SIDECAR_FIRMWARE,"update":{"state":"idle","busy":False,"offset":0,"total":0,
+                "error":"","retry_allowed":True,"expected_elf_sha256":""}}
+        status.update(changes)
+        return status
+
+    def test_sidecar_proxy_limit_cache_and_old_gateway(self):
+        data=self.sidecar_status();original=self.gateway.request
+        def request(path, method="GET", body=None, content_type=None):
+            if path=="/api/sidecar/status":
+                self.gateway.calls.append((method,path,body,content_type))
+                return 200,"application/json",json.dumps(data).encode()
+            if path=="/api/sidecar/update":
+                self.gateway.calls.append((method,path,body,content_type))
+                return 202,"application/json",b'{"state":"reconciling"}'
+            return original(path,method,body,content_type)
+        self.gateway.request=request;self.panel.sidecar.poll_once()
+        before=len(self.gateway.calls)
+        for _ in range(3):
+            h=self.handler(path="/api/sidecar/status");h.do_GET()
+            self.assertEqual(json.loads(h.results[0][1])["mac"],app.SIDECAR_MAC)
+        self.assertEqual(len(self.gateway.calls),before)  # browser tabs only read the shared cache
+        image=b"\xe9"+b"x"*(app.MAX_SIDECAR_FIRMWARE-1)
+        h=self.handler(path="/api/sidecar/update")
+        h.headers["Content-Type"]="application/octet-stream";h.headers["Content-Length"]=str(len(image));h.rfile=io.BytesIO(image)
+        h.do_POST();self.assertEqual(h.results[0][0],202)
+        self.assertEqual(self.gateway.calls[-1],("POST","/api/sidecar/update",image,"application/octet-stream"))
+        self.assertTrue(json.loads(self.panel.proxy("sidecar_status")[2])["monitoring"]["awaiting_fresh_status"])
+        self.assertEqual(self.panel.proxy("sidecar_update",body=image)[0],409)
+        self.panel.sidecar.poll_once()
+        self.assertFalse(json.loads(self.panel.proxy("sidecar_status")[2])["monitoring"]["awaiting_fresh_status"])
+        for size,ctype,expected in ((app.MAX_SIDECAR_FIRMWARE+1,"application/octet-stream",413),(1,"text/plain",415)):
+            h=self.handler(path="/api/sidecar/update");h.headers["Content-Type"]=ctype;h.headers["Content-Length"]=str(size)
+            h.do_POST();self.assertEqual(h.results[0][0],expected)
+        blocked=self.handler(path="/api/sidecar/status?arbitrary=1");blocked.do_GET();self.assertEqual(blocked.results[0][0],404)
+        self.gateway.request=lambda *a,**k:(404,"application/json",b'{}')
+        self.panel.sidecar.poll_once()
+        self.assertFalse(json.loads(self.panel.proxy("sidecar_status")[2])["supported"])
+        self.assertEqual(self.panel.proxy("sidecar_update",body=image)[0],409)
+
+    def test_sidecar_upload_is_independent_and_uncertain_result_needs_new_status(self):
+        started,release=threading.Event(),threading.Event();original=self.gateway.request
+        status_started,status_release=threading.Event(),threading.Event();hold_status=[False]
+        data=self.sidecar_status()
+        def request(path, method="GET", body=None, content_type=None):
+            if path=="/api/sidecar/status":
+                self.gateway.calls.append((method,path,body,content_type))
+                if hold_status[0]:status_started.set();status_release.wait(5)
+                return 200,"application/json",json.dumps(data).encode()
+            if path=="/api/sidecar/update":
+                self.gateway.calls.append((method,path,body,content_type));started.set();release.wait(5);raise OSError("response lost")
+            return original(path,method,body,content_type)
+        self.gateway.request=request;self.panel.sidecar.poll_once();self.collect()
+        errors=[]
+        def upload():
+            try:self.panel.proxy("sidecar_update",body=b"\xe9signed")
+            except OSError as exc:errors.append(str(exc))
+        t=threading.Thread(target=upload);t.start()
+        try:
+            self.assertTrue(started.wait(2));self.assertTrue(json.loads(self.panel.proxy("sidecar_status")[2])["monitoring"]["upload_in_flight"])
+            self.collect()  # ordinary monitoring remains live during the upload
+            self.panel.sidecar.poll_once()
+            self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409)
+            self.assertTrue(self.gateway.calls[-1][1].startswith("/api/sidecar/status"))
+            hold_status[0]=True
+            poll=threading.Thread(target=self.panel.sidecar.poll_once);poll.start();self.assertTrue(status_started.wait(2))
+        finally:
+            release.set();t.join(2)
+            status_release.set()
+            if 'poll' in locals():poll.join(2)
+        self.assertEqual(errors,["response lost"])
+        self.assertEqual(sum(c[1]=="/api/sidecar/update" for c in self.gateway.calls),1)
+        self.assertFalse(any(c[1]=="/api/maintenance" for c in self.gateway.calls))
+        self.assertTrue(json.loads(self.panel.proxy("sidecar_status")[2])["monitoring"]["awaiting_fresh_status"])
+        self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409)
+        data["update"]={**data["update"],"state":"uncertain","retry_allowed":False}
+        hold_status[0]=False
+        self.panel.sidecar.poll_once()
+        self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409)
+
+    def test_sidecar_requires_identity_antenna_and_gateway_permission(self):
+        data=self.sidecar_status()
+        self.gateway.request=lambda *a,**k:(200,"application/json",json.dumps(data).encode())
+        for change in ({"mac":"10:bd:a3:b2:17:80"},{"antenna":"onboard"},{"online":False},{"pending_verify":True},
+                       {"update":{"busy":True,"retry_allowed":True}},{"update":{"busy":False,"retry_allowed":False}}):
+            data.clear();data.update(self.sidecar_status(**change));self.panel.sidecar.poll_once()
+            self.assertEqual(self.panel.proxy("sidecar_update",body=b"\xe9signed")[0],409,change)
+
     def test_handler_transactional_config_put(self):
         doc={"generation":4,"hash":"abc123","zones":[{"zone_id":1,"name":"Kitchen","n4_group":"uuid","serial":"123","warm_dim_curve":1}]}
         body=json.dumps(doc).encode()
@@ -328,6 +420,10 @@ class AddonTests(unittest.TestCase):
         with patch("app.http.client.HTTPConnection",Connection):
             client=app.Gateway("http://localhost","token")
             self.assertEqual(client.request("/api/zigbee/update","POST",binary,"application/octet-stream")[0],202)
+        self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
+        self.assertEqual(captured["timeout"],600)
+        with patch("app.http.client.HTTPConnection",Connection):
+            self.assertEqual(client.request("/api/sidecar/update","POST",binary,"application/octet-stream")[0],202)
         self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
         self.assertEqual(captured["timeout"],600)
 

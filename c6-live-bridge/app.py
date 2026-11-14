@@ -25,6 +25,8 @@ LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
 MAX_FIRMWARE = 786_432
 MAX_ZIGBEE_FIRMWARE = 0x180000
+MAX_SIDECAR_FIRMWARE = 720_896
+SIDECAR_MAC = "10:bd:a3:b1:5b:f0"
 # Show sensors: one programming read per collector slot, each zone at most every two minutes.
 PROGRAM_SLOT_S, PROGRAM_REFRESH_S, PROGRAM_STALE_S, PROGRAM_TIMEOUT_S = 30, 120, 600, 20
 SNAPSHOT_STALE_S = 120
@@ -58,6 +60,7 @@ ROUTES = {"status": ("GET", "/api/status"), "devices": ("GET", "/api/devices"),
           "native": ("GET", "/api/ketra/native"),
           "update": ("POST", "/api/endpoint/update"),
           "zigbee_update": ("POST", "/api/zigbee/update"), "zigbee_enroll": ("POST", "/api/zigbee/enroll"),
+          "sidecar_status": ("GET", "/api/sidecar/status"), "sidecar_update": ("POST", "/api/sidecar/update"),
           "maintenance": ("POST", "/api/maintenance"),
           "power_put": ("PUT", "/api/endpoint/power"),
           "safety_clear": ("POST", "/api/endpoint/safety/clear")}
@@ -144,13 +147,13 @@ class Gateway:
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
         long_operation = path == "/api/endpoint/update" or path.startswith("/api/program?")
         # A node update streams the image over UART2 with the node's lease kept.
-        timeout = timeout or (600 if path == "/api/zigbee/update" else 300 if long_operation else self.timeout)
+        timeout = timeout or (600 if path in ("/api/zigbee/update", "/api/sidecar/update") else 300 if long_operation else self.timeout)
         conn = conn_cls(self.hostname, self.port, timeout=timeout)
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = content_type or "application/octet-stream"
             headers["Content-Length"] = str(len(body))
-            if path in ("/api/endpoint/update", "/api/zigbee/update"):
+            if path in ("/api/endpoint/update", "/api/zigbee/update", "/api/sidecar/update"):
                 headers["X-SHA256"] = hashlib.sha256(body).hexdigest()
         try:
             conn.request(method, path, body=body, headers=headers)
@@ -163,6 +166,86 @@ class Gateway:
             return response.status, response.getheader("Content-Type", "application/json"), raw
         finally:
             conn.close()
+
+
+class SidecarMonitor:
+    """One shared status reader and an independent, single-upload path."""
+    def __init__(self, gateway, stop):
+        self.gateway, self.stop = gateway, stop
+        self.lock, self.upload_lock = threading.Lock(), threading.Lock()
+        self.wake = threading.Event()
+        self.data, self.at, self.error = None, 0, None
+        self.in_flight, self.awaiting_status = False, False
+        self.finished_at, self.watch_until = 0, 0
+
+    def poll_once(self):
+        started = time.monotonic()
+        try:
+            code, _, raw = self.gateway.request("/api/sidecar/status")
+            if code in (404, 405):
+                data = {"schema_version": 1, "supported": False, "gateway_unsupported": True}
+            elif code == 200:
+                data = json.loads(raw)
+                if not isinstance(data, dict):
+                    raise ValueError("invalid sidecar status")
+            else:
+                raise ValueError(f"sidecar status returned HTTP {code}")
+            with self.lock:
+                self.data, self.at, self.error = data, time.monotonic(), None
+                if not self.in_flight and started > self.finished_at:
+                    self.awaiting_status = False
+        except (OSError, http.client.HTTPException, ValueError, TypeError) as exc:
+            with self.lock:
+                self.error = str(exc)
+
+    def run(self):
+        while not self.stop.is_set():
+            self.wake.clear()
+            self.poll_once()
+            with self.lock:
+                active = self.in_flight or time.monotonic() < self.watch_until
+            self.wake.wait(2 if active else 30)
+
+    def status(self):
+        with self.lock:
+            if self.data is None:
+                return Panel.result({"error": "Waiting for sidecar status"}, 503)
+            data = dict(self.data)
+            data["monitoring"] = {"age_s": max(0, time.monotonic() - self.at),
+                                  "delayed": self.error is not None,
+                                  "upload_in_flight": self.in_flight,
+                                  "awaiting_fresh_status": self.awaiting_status}
+            return Panel.result(data)
+
+    def upload(self, body):
+        if not self.upload_lock.acquire(blocking=False):
+            return Panel.result({"error": "A sidecar upload is already in progress"}, 409)
+        try:
+            with self.lock:
+                s = self.data or {}
+                u = s.get("update") if isinstance(s.get("update"), dict) else {}
+                ready = (self.error is None and time.monotonic() - self.at <= 45 and not self.awaiting_status
+                         and s.get("schema_version") == 1 and s.get("supported") is True and s.get("online") is True
+                         and isinstance(s.get("mac"), str) and s["mac"].lower() == SIDECAR_MAC
+                         and s.get("antenna") == "external" and s.get("pending_verify") is False
+                         and type(s.get("boot_id")) is int and 0 <= s["boot_id"] <= 0x1fffffffffffff
+                         and type(s.get("slot")) is int and s["slot"] in (0, 1)
+                         and isinstance(s.get("elf_sha256"), str) and re.fullmatch(r"[0-9a-fA-F]{64}", s["elf_sha256"])
+                         and u.get("busy") is False and u.get("retry_allowed") is True)
+                if not ready:
+                    return Panel.result({"error": "Fresh sidecar status does not permit an update"}, 409)
+                self.in_flight = self.awaiting_status = True
+            self.wake.set()
+            try:
+                return self.gateway.request("/api/sidecar/update", "POST", body, "application/octet-stream")
+            finally:
+                with self.lock:
+                    self.in_flight = False
+                    self.finished_at = time.monotonic()
+                    self.watch_until = self.finished_at + 120
+                self.wake.set()
+        finally:
+            self.upload_lock.release()
 
 
 def clean_text(value, limit=200):
@@ -858,6 +941,7 @@ class Panel:
         self.last_error = self.last_contact = None
         self.online = False
         self.stop = threading.Event()
+        self.sidecar = SidecarMonitor(gateway, self.stop)
         self.snapshot_supported = True
         self.snapshot_retry_at = 0
         self.failures = 0
@@ -1153,6 +1237,10 @@ class Panel:
 
     def proxy(self, route, query="", body=None, content_type=None):
         method, base = ROUTES[route]
+        if route == "sidecar_status":
+            return self.sidecar.status()
+        if route == "sidecar_update":
+            return self.sidecar.upload(body)
         params = dict(query)
         if route == "events":
             after = bounded_int(params.get("after", "0"), "event cursor")
@@ -1569,7 +1657,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone",
                  "/api/ketra": "ketra", "/api/ketra/native": "native", "/api/ccx/status": "ccx_status",
-                 "/api/ccx/clock": "ccx_clock", "/api/ccx/rules": "ccx_rules", "/api/ccx/events": "ccx_events"}.get(parts.path)
+                 "/api/ccx/clock": "ccx_clock", "/api/ccx/rules": "ccx_rules", "/api/ccx/events": "ccx_events",
+                 "/api/sidecar/status": "sidecar_status"}.get(parts.path)
         if parts.path == "/api/events": route = "events"
         if parts.path == "/api/program": route = "program"
         allowed = {"events": {"after", "boot_id"}, "ccx_events": {"after", "boot_id"}, "program": {"zone", "page", "refresh"}}
@@ -1671,18 +1760,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {"error": str(exc)})
             except (OSError, http.client.HTTPException) as exc:
                 return self.reply(502, {"error": str(exc)})
-        if self.path not in ("/api/endpoint/update", "/api/zigbee/update"): return self.reply(404, {"error": "unknown endpoint"})
+        if self.path not in ("/api/endpoint/update", "/api/zigbee/update", "/api/sidecar/update"): return self.reply(404, {"error": "unknown endpoint"})
         zigbee = self.path == "/api/zigbee/update"
+        sidecar = self.path == "/api/sidecar/update"
         ctype = self.headers.get("Content-Type", "application/octet-stream")
         if ctype.split(";", 1)[0].strip().lower() != "application/octet-stream":
             return self.reply(415, {"error": "application/octet-stream required"})
         try:
-            body = self.read_body(MAX_ZIGBEE_FIRMWARE if zigbee else MAX_FIRMWARE)
+            body = self.read_body(MAX_SIDECAR_FIRMWARE if sidecar else MAX_ZIGBEE_FIRMWARE if zigbee else MAX_FIRMWARE)
         except OverflowError as exc: return self.reply(413, {"error": str(exc)})
         except EOFError as exc: return self.reply(400, {"error": str(exc)})
         except ValueError as exc: return self.reply(411, {"error": str(exc)})
         try:
-            code, out_type, raw = self.server.panel.proxy("zigbee_update" if zigbee else "update", body=body,
+            code, out_type, raw = self.server.panel.proxy("sidecar_update" if sidecar else "zigbee_update" if zigbee else "update", body=body,
                                                           content_type="application/octet-stream")
             return self.send(code, raw, out_type)
         except (OSError, http.client.HTTPException, ValueError) as exc: return self.reply(502, {"error": str(exc)})
@@ -1707,6 +1797,7 @@ def main():
     ccx = CcxFeed(gateway, ccx_publisher)
     server = Server(("0.0.0.0", 8099), panel, ha, ccx)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
+    threading.Thread(target=panel.sidecar.run, name="sidecar-status", daemon=True).start()
     if ccx_publisher:
         ccx_publisher.start()
     ccx.start()

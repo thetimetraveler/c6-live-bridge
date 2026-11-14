@@ -337,23 +337,20 @@ class AddonTests(unittest.TestCase):
     def test_sidecar_status_yields_to_collector_without_queueing(self):
         code,_,raw=self.panel.proxy("sidecar_status")
         self.assertEqual(code,503)
-        self.assertEqual(json.loads(raw),{"error":"Waiting for sidecar status","reason":"not yet polled",
-                                          "last_error":None,"poll_attempts":0,"collector_yields":0})
+        self.assertEqual(json.loads(raw),{"error":"Waiting for sidecar status","reason":"not yet polled","last_error":None})
         self.panel.upstream.acquire()
         try:
             self.assertIsNone(self.panel.sidecar.poll_once())
             self.assertIsNone(self.panel.sidecar.poll_once())
             self.assertEqual(self.gateway.calls,[])
             waiting=json.loads(self.panel.proxy("sidecar_status")[2])
-            self.assertEqual((waiting["reason"],waiting["poll_attempts"],waiting["collector_yields"]),
-                             ("gateway collector busy",0,2))
+            self.assertEqual(waiting["reason"],"gateway collector busy")
         finally:
             self.panel.upstream.release()
         self.gateway.fail=True
         self.assertFalse(self.panel.sidecar.poll_once())
         waiting=json.loads(self.panel.proxy("sidecar_status")[2])
-        self.assertEqual((waiting["reason"],waiting["last_error"],waiting["poll_attempts"],waiting["collector_yields"]),
-                         ("request failed","offline",1,2))
+        self.assertEqual((waiting["reason"],waiting["last_error"]),("request failed","offline"))
         self.gateway.fail=False
         self.assertTrue(self.panel.sidecar.poll_once())
         self.assertEqual(self.panel.proxy("sidecar_status")[0],200)
@@ -369,13 +366,44 @@ class AddonTests(unittest.TestCase):
         try:
             self.assertTrue(started.wait(1))
             waiting=json.loads(self.panel.proxy("sidecar_status")[2])
-            self.assertEqual((waiting["reason"],waiting["poll_attempts"]),("request in progress",1))
+            self.assertEqual(waiting["reason"],"request in progress")
             self.assertIsNone(self.panel.sidecar.poll_once())
             waiting=json.loads(self.panel.proxy("sidecar_status")[2])
             self.assertEqual(waiting["reason"],"another sidecar poll in progress")
         finally:
             release.set();worker.join(2)
         self.assertEqual(self.panel.proxy("sidecar_status")[0],200)
+
+    def test_sidecar_background_waits_for_collector_then_populates_cache(self):
+        class ObservedLock:
+            def __init__(self): self.lock=threading.Lock();self.waiting=threading.Event()
+            def acquire(self,blocking=True):
+                if blocking: self.waiting.set()
+                return self.lock.acquire(blocking=blocking)
+            def release(self): self.lock.release()
+        upstream=ObservedLock();upstream.acquire(blocking=False)
+        self.panel.upstream=self.panel.sidecar.upstream=upstream
+        requested=threading.Event()
+        def request(path,*args,**kwargs):
+            self.gateway.calls.append(path);requested.set()
+            return 200,"application/json",json.dumps(self.sidecar_status()).encode()
+        self.gateway.request=request
+        worker=threading.Thread(target=self.panel.sidecar.run);worker.start()
+        held=True
+        try:
+            self.assertTrue(upstream.waiting.wait(1))
+            self.assertEqual(self.gateway.calls,[])
+            self.assertEqual(json.loads(self.panel.proxy("sidecar_status")[2])["reason"],"waiting for gateway collector")
+            self.assertIsNone(self.panel.sidecar.poll_once())  # a preflight poll never queues
+            upstream.release();held=False
+            self.assertTrue(requested.wait(1))
+        finally:
+            if held: upstream.release()
+            self.panel.stop.set();self.panel.sidecar.wake.set();worker.join(2)
+        self.assertFalse(worker.is_alive())
+        code,_,raw=self.panel.proxy("sidecar_status")
+        self.assertEqual(code,200)
+        self.assertEqual(json.loads(raw)["mac"],app.SIDECAR_MAC)
 
     def test_sidecar_never_uploads_if_feed_has_not_stopped(self):
         data=self.sidecar_status();starts=[]

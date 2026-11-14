@@ -1,3 +1,7 @@
+## 0.17.2
+
+- Fix the sidecar firmware card remaining on "Waiting for sidecar status" while regular gateway monitoring is active.
+
 ## 0.17.1
 
 - Show the sidecar status reader's last polling outcome while its first status is still unavailable.

@@ -11,6 +11,7 @@ import time
 LOG = logging.getLogger("c6-management.ccx")
 MAX_LINE = 262144
 MAX_MESSAGE = 1048576
+MAX_QUEUE_AGE_US = 1_000_000
 
 
 class CcxEventPublisher:
@@ -78,8 +79,13 @@ class CcxEventPublisher:
                     except queue.Empty:
                         self.client.service()
                         continue
+                    queue_age_us = max(0, (time.monotonic_ns() - queued_at) // 1000)
+                    if queue_age_us > MAX_QUEUE_AGE_US:
+                        with self.lock:
+                            self.dropped += 1
+                        continue
                     message = dict(event)
-                    message["app_mqtt_queue_us"] = max(0, (time.monotonic_ns() - queued_at) // 1000)
+                    message["app_mqtt_queue_us"] = queue_age_us
                     with self.lock:
                         message["app_mqtt_dropped"] = self.dropped
                     try:

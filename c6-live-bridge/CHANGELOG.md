@@ -2,6 +2,7 @@
 
 - Add a dedicated CCX live stream, generic event inspector, gateway rule editor and separately timed source/gateway stages. Existing local rule state is preserved when it is read.
 - Publish new CCX events as nonretained QoS 0 MQTT messages through the existing broker service; show stream gaps and publisher drops. The publisher is independent of Show sensors and never blocks the lighting path or the app's snapshot collector.
+- Drop and count MQTT events that wait over one second in the app's publish queue so a slow broker does not replay stale actions.
 - Label the browser's cache-request duration correctly instead of calling it a gateway poll.
 
 ## 0.15.2

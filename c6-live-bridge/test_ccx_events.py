@@ -174,6 +174,28 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(pub.snapshot()["dropped"], 3)
         self.assertEqual(pub.snapshot()["queued"], 0)
 
+    def test_expired_queued_event_is_dropped_before_publish(self):
+        messages = []
+        class Client:
+            def publish(self, topic, payload, retain=False):
+                if topic == CcxEventPublisher.TOPIC:
+                    messages.append(json.loads(payload))
+                    pub.stop_event.set()
+            def service(self): pass
+            def close(self): pass
+        pub = CcxEventPublisher(Client)
+        pub.online = True
+        samples = iter((0, 1_100_000_000))
+        def now(): return next(samples, 1_100_000_000)
+        with patch("ccx_events.time.monotonic_ns", side_effect=now):
+            self.assertTrue(pub.offer({"id": 1}))
+            self.assertTrue(pub.offer({"id": 2}))
+            pub.run()
+        self.assertEqual([e["id"] for e in messages], [2])
+        self.assertEqual(messages[0]["app_mqtt_dropped"], 1)
+        self.assertEqual(pub.snapshot()["dropped"], 1)
+        self.assertEqual(pub.snapshot()["sent_to_socket"], 1)
+
     def test_worker_publishes_unretained_and_reports_socket_send(self):
         online, sent = threading.Event(), threading.Event()
         class Client:

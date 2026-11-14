@@ -100,6 +100,9 @@ accept them. `app_mqtt_queue_us` measures time inside the app's publish queue.
 The `sent_to_socket` counter is not a delivery receipt. MQTT publication is
 best effort: disconnected subscribers miss events, failed sends can be lost,
 and queued events are discarded on a broker disconnect rather than replayed.
+An event that has spent over one second in the app's publish queue is dropped
+and counted, even while connected. This does not bound an in-progress send or
+time spent at the broker or subscriber.
 Subscribers that act on events should account for missing or duplicate records.
 
 The inspector shows source-side and gateway-side durations separately. A

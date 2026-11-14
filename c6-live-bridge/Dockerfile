@@ -2,7 +2,7 @@ FROM python:3.13-alpine
 WORKDIR /app
 # zoneinfo needs the system time zone database to evaluate shows in local time.
 RUN apk add --no-cache tzdata
-COPY app.py ccx_events.py index.html ./
+COPY app.py ccx_events.py cca.py cca_mqtt.py index.html cca.js ./
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8099
 CMD ["python3", "/app/app.py"]

@@ -48,12 +48,13 @@ p{margin:6px 0}
 @keyframes breathe{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
 
 /* Segmented control */
-.segmented{position:relative;display:grid;grid-template-columns:repeat(5,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:520px;margin:0 auto}
-.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/5);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
+.segmented{position:relative;display:grid;grid-template-columns:repeat(6,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:620px;margin:0 auto}
+.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/6);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
 .segmented[data-tab=activity] .thumb{transform:translateX(100%)}
 .segmented[data-tab=diagnostics] .thumb{transform:translateX(200%)}
 .segmented[data-tab=programming] .thumb{transform:translateX(300%)}
-.segmented[data-tab=setup] .thumb{transform:translateX(400%)}
+.segmented[data-tab=cca] .thumb{transform:translateX(400%)}
+.segmented[data-tab=setup] .thumb{transform:translateX(500%)}
 .segmented button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .segmented .short{display:none}
 @media(max-width:480px){#tabs.segmented button{font-size:.72rem;padding:6px 1px;letter-spacing:-.01em}.segmented .full{display:none}.segmented .short{display:inline}}
@@ -497,6 +498,9 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 .show-key .k-dia{width:8px;height:8px;background:var(--blue);transform:rotate(45deg)}
 
 @media(max-width:700px){.hero{align-items:flex-start}.hero-glyph{width:44px;height:44px;font-size:1.3rem}main{padding:4px 14px 40px}.bar-inner{padding:10px 14px 8px}.hero{padding:16px}.hero h1{font-size:1.3rem}.card{padding:16px}.segmented button{font-size:.8rem}}
+/* CCA controls use the same cards and inputs as the rest of the app. */
+.cca-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:2px 12px}.cca-fields label{display:grid;margin:6px 0;min-width:0}.cca-fields input,.cca-fields select{width:100%;min-width:0}
+.cca-list{display:grid;gap:10px}.cca-item{background:var(--inset);border-radius:10px;padding:12px}.cca-item textarea{min-height:90px}.cca-json{display:block;margin:10px 0;padding:12px;border-radius:10px;background:var(--inset);color:var(--label);font:12px/1.45 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.cca-activity{display:grid;gap:6px;max-height:600px;overflow:auto}.cca-activity details{background:var(--inset);border-radius:9px;padding:9px 12px}.cca-activity summary{cursor:pointer;overflow-wrap:anywhere}.cca-activity pre{white-space:pre-wrap;overflow-wrap:anywhere}.cca-break{overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.topology .flow-pulse{stroke-dasharray:none}}
 </style></head><body>
 <header class="bar"><div class="bar-inner">
@@ -507,6 +511,7 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity">Activity<span id="activity-badge" class="tab-badge"></span></button>
     <button id="tab-diagnostics" role="tab" aria-selected="false" aria-controls="panel-diagnostics">Health<span id="diag-badge" class="tab-badge"></span></button>
     <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming" aria-label="Programming"><span class="full">Programming</span><span class="short">Program</span><span id="program-badge" class="tab-badge"></span></button>
+    <button id="tab-cca" role="tab" aria-selected="false" aria-controls="panel-cca">CCA</button>
     <button id="tab-setup" role="tab" aria-selected="false" aria-controls="panel-setup">Setup</button>
   </nav>
 </div></header>
@@ -603,6 +608,54 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
   </section>
 </div>
 
+<div id="panel-cca" class="panel" role="tabpanel" hidden>
+  <section class="card">
+    <div class="card-head"><h2>CCA radio</h2><span id="cca-status-pill" class="pill wait">Loading</span></div>
+    <p class="lede">Commands are sent through the CCA radio. Local transmission and sequence telemetry do not confirm that a Lutron device received or applied a command.</p>
+    <div id="cca-status-facts" class="groups"></div><p id="cca-status-note" class="small muted" role="status">Open this tab to load CCA status.</p>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Send a command</h2></div>
+    <p class="lede">Choose a command and review the exact JSON before sending. IDs accept decimal or 0x-prefixed hexadecimal.</p>
+    <div class="cca-fields"><label>Target defaults<select id="cca-target-select"></select></label><label>Command<select id="cca-command-select"></select></label><label>Saved preset<select id="cca-preset-select"></select></label></div>
+    <div class="actions"><button id="cca-load-preset" class="secondary">Load preset</button></div>
+    <div id="cca-command-fields" class="cca-fields"></div>
+    <p id="cca-command-help" class="small muted"></p>
+    <strong class="small">Exact command JSON</strong><pre id="cca-command-preview" class="cca-json"></pre>
+    <div class="actions"><button id="cca-command-send">Send command</button><button id="cca-save-preset" class="secondary">Save as preset</button></div>
+    <p id="cca-command-note" class="small muted" role="status"></p>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Targets and presets</h2></div>
+    <p class="lede">These are saved in the add-on. Targets fill matching address fields; presets hold the exact native command and never send when loaded.</p>
+    <label>Expected CCA board MAC<input id="cca-expected-mac" placeholder="10:bd:a3:b1:5b:1c" autocomplete="off"></label>
+    <h3>Targets</h3><div id="cca-targets" class="cca-list"></div><div class="actions"><button id="cca-add-target" class="secondary">Add target</button></div>
+    <h3>Presets</h3><div id="cca-presets" class="cca-list"></div><div class="actions"><button id="cca-add-preset" class="secondary">Add preset</button></div>
+    <div class="actions"><button id="cca-config-save">Save targets and presets</button><button id="cca-config-reload" class="secondary">Reload saved settings</button></div><p id="cca-config-note" class="small muted" role="status"></p>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Presence</h2></div>
+    <p class="lede">Update a manual presence state or use the example in Home Assistant. Native LRF occupancy emulation is unsupported; these inputs do not send RF packets.</p>
+    <div class="cca-fields"><label>Sensor serial<input id="cca-presence-serial" placeholder="Decimal or 0x hexadecimal"></label><label>State<select id="cca-presence-state"><option value="occupied">Occupied</option><option value="vacant">Vacant</option><option value="unavailable">Unavailable</option></select></label></div>
+    <div class="actions"><button id="cca-presence-send">Set state</button><button id="cca-presence-copy" class="secondary">Copy HA automation</button></div><p id="cca-presence-note" class="small muted" role="status"></p><pre id="cca-presence-example" class="cca-json"></pre>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>CCA end-device firmware</h2><span id="cca-ota-pill" class="pill wait">No file</span></div>
+    <p class="lede">Select an LDF container or an already extracted body explicitly. The add-on strips the 0x80-byte LDF header and stages at most 110 KiB. Stage resets the existing session; resume compares the staged prefix before continuing. Neither starts RF automatically.</p>
+    <div class="cca-fields"><label>File format<select id="cca-ota-format"><option value="">Choose a format</option><option value="ldf">LDF container</option><option value="body">Extracted body</option></select></label><label>Firmware file<input id="cca-ota-file" type="file"></label><label>Device ID<input id="cca-ota-device" placeholder="Decimal or 0x hexadecimal"></label><label>Subnet<input id="cca-ota-subnet" placeholder="Decimal or 0x hexadecimal"></label></div>
+    <div class="actions"><button id="cca-ota-upload" class="secondary">Upload file to add-on</button><button id="cca-ota-stage">Stage</button><button id="cca-ota-resume" class="secondary">Resume staging</button><button id="cca-ota-stop" class="secondary">Stop staging</button><button id="cca-ota-clear" class="secondary">Clear staged session</button></div>
+    <div class="actions"><button id="cca-ota-start">Start RF transfer</button></div><p id="cca-ota-note" class="small muted cca-break" role="status">No file selected.</p><div id="cca-ota-facts" class="groups"></div>
+    <p class="small muted">Stopping staging stops the add-on upload only. RF sequence completion reports local attempts; it does not establish device receipt, flash or installation.</p>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Packets and activity</h2><span id="cca-events-pill" class="pill wait">Connecting</span></div>
+    <p class="lede">CCA has its own cached stream, boot and cursor. Entries show local command stages and observed packets; gaps are reported rather than filled in.</p>
+    <div class="cca-fields"><label>Filter activity<input id="cca-events-filter" placeholder="Command, request ID, raw bytes…"></label></div>
+    <div class="actions"><button id="cca-events-download" class="secondary">Download browser history</button></div><p id="cca-events-note" class="small muted" role="status"></p><div id="cca-events" class="cca-activity"></div>
+  </section>
+  <details class="card"><summary>Advanced JSON</summary><p class="lede">Send a native command object through the same endpoint as the guided controls. Native OTA commands act directly; the firmware workflow above provides prefix-verified staging and resume.</p><textarea id="cca-advanced-json" spellcheck="false" aria-label="Advanced CCA command JSON">{"cmd":"query"}</textarea><div class="actions"><button id="cca-advanced-send">Send JSON</button></div><p id="cca-advanced-note" class="small muted" role="status"></p></details>
+</div>
+
 <div id="panel-setup" class="panel" role="tabpanel" hidden>
   <p class="setup-intro">Nothing here is needed for day-to-day use. Changes that affect lighting ask before they are applied.</p>
   <h2 class="setup-h">Everyday controls</h2>
@@ -697,7 +750,7 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     </div>
   </section>
   <section class="card" id="sidecar-firmware-card">
-    <div class="card-head"><h2>Sidecar firmware</h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
+    <div class="card-head"><h2>Passive CCX listener (B1) firmware</h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
     <p class="lede">Update the passive B1 sidecar through the gateway using a signed <code>.bin</code> image. Only sidecar input and its actions pause during the update; other bridge lighting continues.</p>
     <p class="small muted">The sidecar needs its external antenna and a one-time USB bootstrap before it can update over the three wires. If it cannot run its updater, recover it over USB.</p>
     <p id="sidecar-feed-note" class="small muted">The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.</p>
@@ -1721,7 +1774,7 @@ async function refresh(){
   }finally{refreshing=false}
 }
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
-const tabs=['overview','activity','diagnostics','programming','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}if(name==='setup'&&ccxRules===null)loadCcxRules();if(name==='activity')loadCcxHealth()}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
+const tabs=['overview','activity','diagnostics','programming','cca','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}if(name==='setup'&&ccxRules===null)loadCcxRules();if(name==='activity')loadCcxHealth();if(name==='cca'&&typeof CCAUI!=='undefined')CCAUI.show()}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
 $('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
 $('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};
@@ -1809,4 +1862,4 @@ for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventL
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}
 loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();loadSidecarStatus();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden)loadCcxHealth()},10000);setInterval(()=>{if(!$('panel-setup').hidden||sidecarSending||sidecarCandidate)loadSidecarStatus()},2000);
-</script></body></html>
+</script><script src="cca.js"></script></body></html>

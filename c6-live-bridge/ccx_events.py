@@ -124,6 +124,7 @@ class CcxFeed:
     """A single S3 SSE reader, independent of the dashboard's snapshot collector."""
     def __init__(self, gateway, publisher=None, capacity=2048):
         self.gateway, self.publisher = gateway, publisher
+        self.cca = None
         self.events = deque(maxlen=capacity)
         self.lock = threading.Lock()
         self.lifecycle_lock = threading.Lock()
@@ -158,6 +159,7 @@ class CcxFeed:
             if paused:
                 with self.lock:
                     self.state, self.error = "pausing", None
+                if self.cca: self.cca.stream_state("pausing")
             with self.connection_lock:
                 conn = self.connection
                 if conn:
@@ -174,6 +176,7 @@ class CcxFeed:
             if paused and stopped:
                 with self.lock:
                     self.state = "paused"
+                if self.cca: self.cca.stream_state("paused")
             return stopped
 
     def pause(self):
@@ -281,7 +284,7 @@ class CcxFeed:
         return result
 
     def _consume(self, response):
-        name, data, first, size = "message", [], True, 0
+        name, data, first, cca_first, size = "message", [], True, True, 0
         while not self.stop_event.is_set():
             raw = response.readline(MAX_LINE + 1)
             if not raw:
@@ -295,6 +298,9 @@ class CcxFeed:
                 if name == "ccx_events" and data:
                     self.accept(json.loads("\n".join(data)), require_baseline=first)
                     first = False
+                elif name == "cca_events" and data and self.cca:
+                    self.cca.accept_events(json.loads("\n".join(data)), require_baseline=cca_first)
+                    cca_first = False
                 name, data, size = "message", [], 0
             elif line.startswith("event:"):
                 name = line[6:].lstrip()
@@ -310,6 +316,7 @@ class CcxFeed:
         while not self.stop_event.is_set():
             conn = None
             try:
+                if self.cca: self.cca.stream_state("connecting")
                 cls = http.client.HTTPSConnection if self.gateway.scheme == "https" else http.client.HTTPConnection
                 conn = cls(self.gateway.hostname, self.gateway.port, timeout=6)
                 with self.connection_lock:
@@ -327,6 +334,7 @@ class CcxFeed:
                 if response.status in (404, 405):
                     with self.lock:
                         self.state, self.error = "unsupported", None
+                    if self.cca: self.cca.stream_state("unsupported")
                     self.stop_event.wait(60)
                     continue
                 if response.status != 200:
@@ -342,6 +350,7 @@ class CcxFeed:
                 if not self.stop_event.is_set():
                     with self.lock:
                         self.state, self.error = "disconnected", str(exc)
+                    if self.cca: self.cca.stream_state("disconnected", str(exc))
                     LOG.warning("CCX stream unavailable: %s", exc)
             finally:
                 with self.connection_lock:

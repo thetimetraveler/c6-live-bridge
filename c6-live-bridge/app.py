@@ -20,6 +20,8 @@ import time
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ccx_events import CcxEventPublisher, CcxFeed
+from cca import CcaError, CcaService, MAX_BODY as MAX_CCA_BODY
+from cca_mqtt import CcaMqtt
 
 LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
@@ -1377,11 +1379,12 @@ def _mqtt_packet(header, body):
 
 
 class MqttClient:
-    """Minimal MQTT 3.1.1 publisher: QoS 0, retained messages, a last will, no subscriptions."""
+    """Minimal MQTT 3.1.1 client with bounded QoS 0 packet reception."""
     def __init__(self, host, port, username, password, client_id, will_topic, keepalive=60, timeout=10):
         self.host, self.port, self.username, self.password = host, port, username, password
         self.client_id, self.will_topic, self.keepalive, self.timeout = client_id, will_topic, keepalive, timeout
         self.sock, self.last_send = None, 0.0
+        self.incoming, self.packet_id = bytearray(), 0
 
     def connect(self):
         flags = 0x02 | 0x04 | 0x20  # clean session, will flag, retained will (QoS 0)
@@ -1418,13 +1421,47 @@ class MqttClient:
         data = payload if isinstance(payload, bytes) else payload.encode()
         self._send(_mqtt_packet(0x31 if retain else 0x30, _mqtt_string(topic) + data))
 
+    def subscribe(self, topic):
+        self.packet_id = self.packet_id % 65535 + 1
+        self._send(_mqtt_packet(0x82, self.packet_id.to_bytes(2, "big") + _mqtt_string(topic) + b"\x00"))
+
     def service(self):
-        """Keep the session alive and notice a broker that has gone away."""
+        """Return complete (topic, payload, retained) publishes; preserve partial packets."""
         if time.monotonic() - self.last_send >= self.keepalive / 2:
             self._send(b"\xc0\x00")
         while select.select([self.sock], [], [], 0)[0]:
-            if not self.sock.recv(4096):  # only PINGRESP is ever sent to a publisher
+            block = self.sock.recv(4096)
+            if not block:
                 raise ConnectionError("MQTT broker closed the connection")
+            self.incoming.extend(block)
+            if len(self.incoming) > 65541:
+                raise ValueError("MQTT packet exceeds size limit")
+        messages = []
+        while len(self.incoming) >= 2:
+            remaining, multiplier, index = 0, 1, 1
+            while True:
+                if index >= len(self.incoming): return messages
+                digit = self.incoming[index]
+                remaining += (digit & 127) * multiplier
+                index += 1
+                if not digit & 128: break
+                if index > 4: raise ValueError("invalid MQTT remaining length")
+                multiplier *= 128
+            if remaining > 65536: raise ValueError("MQTT packet exceeds size limit")
+            if len(self.incoming) < index + remaining: break
+            header = self.incoming[0]
+            body = bytes(self.incoming[index:index + remaining])
+            del self.incoming[:index + remaining]
+            if header >> 4 == 3:
+                if header & 0x06 or len(body) < 2: raise ValueError("unsupported MQTT publish")
+                length = int.from_bytes(body[:2], "big")
+                if not length or length + 2 > len(body): raise ValueError("invalid MQTT topic")
+                try: topic = body[2:2 + length].decode("utf-8")
+                except UnicodeDecodeError: raise ValueError("invalid MQTT topic") from None
+                messages.append((topic, body[2 + length:], bool(header & 1)))
+            elif header >> 4 == 9 and (len(body) < 3 or any(code != 0 for code in body[2:])):
+                raise ConnectionError("MQTT broker rejected a QoS 0 subscription")
+        return messages
 
     def close(self):
         if self.sock:
@@ -1663,6 +1700,7 @@ class Server(ThreadingHTTPServer):
         self.panel = panel
         self.ha = ha or HomeAssistant("", [])
         self.ccx = ccx
+        self.cca = getattr(panel, "cca", None)
         self.html = Path(__file__).with_name("index.html").read_bytes()
         super().__init__(address, Handler)
 
@@ -1699,7 +1737,27 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized(): return
         if self.path in ("/", "/index.html"):
             return self.send(200, self.server.html, "text/html; charset=utf-8")
+        if self.path == "/cca.js":
+            try: return self.send(200, Path(__file__).with_name("cca.js").read_bytes(), "text/javascript; charset=utf-8")
+            except OSError: return self.reply(404, {"error": "unknown endpoint"})
         parts = urlsplit(self.path)
+        if parts.path in ("/api/cca/capabilities", "/api/cca/status", "/api/cca/events", "/api/cca/config"):
+            cca = getattr(self.server, "cca", None)
+            if cca is None: return self.reply(503, {"error": "CCA service unavailable"})
+            try:
+                query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=2)
+                if parts.fragment or len(dict(query)) != len(query): raise ValueError("invalid query")
+                if parts.path == "/api/cca/events":
+                    if any(k not in ("after", "boot_id") for k, _ in query): raise ValueError("invalid query")
+                    params = dict(query)
+                    after = bounded_int(params.get("after", "0"), "CCA event cursor")
+                    boot = bounded_int(params["boot_id"], "CCA boot ID") if "boot_id" in params else None
+                    return self.reply(200, cca.read_events(after, boot))
+                if query: raise ValueError("invalid query")
+                value = (cca.capabilities_snapshot() if parts.path.endswith("capabilities") else
+                         cca.status_snapshot() if parts.path.endswith("status") else cca.get_config())
+                return self.reply(200, value)
+            except ValueError as exc: return self.reply(400, {"error": str(exc)})
         if parts.path == "/api/ha":
             if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
             return self.reply(200, self.server.ha.snapshot())
@@ -1745,6 +1803,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         if not self.authorized(): return
+        if self.path in ("/api/cca/config", "/api/cca/state"):
+            cca = getattr(self.server, "cca", None)
+            if cca is None: return self.reply(503, {"error": "CCA service unavailable"})
+            try:
+                if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
+                value = json.loads(self.read_body(65536 if self.path.endswith("config") else 128))
+                result = cca.put_config(value) if self.path.endswith("config") else cca.state(value)
+                return self.reply(200 if self.path.endswith("config") else 202, result)
+            except CcaError as exc: return self.reply(exc.status, {"error": str(exc)})
+            except OverflowError as exc: return self.reply(413, {"error": str(exc)})
+            except (ValueError, EOFError, UnicodeDecodeError) as exc: return self.reply(400, {"error": str(exc)})
+            except OSError: return self.reply(500, {"error": "CCA configuration could not be saved"})
         route = {"/api/config": "config_put", "/api/timezone": "timezone_put", "/api/endpoint/power": "power_put",
                  "/api/ketra": "ketra_put", "/api/ccx/rules": "ccx_rules_put"}.get(self.path)
         if route is None: return self.reply(404, {"error": "unknown endpoint"})
@@ -1779,6 +1849,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.authorized(): return
+        parts = urlsplit(self.path)
+        if parts.path in ("/api/cca/command", "/api/cca/ota/file", "/api/cca/ota/action"):
+            cca = getattr(self.server, "cca", None)
+            if cca is None: return self.reply(503, {"error": "CCA service unavailable"})
+            try:
+                if parts.fragment: raise ValueError("invalid query")
+                if parts.path.endswith("/file"):
+                    query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=1)
+                    if len(query) != 1 or query[0][0] != "format": raise ValueError("select file format")
+                    if self.headers.get_content_type() != "application/octet-stream": raise ValueError("application/octet-stream required")
+                    result = cca.file(query[0][1], self.read_body(MAX_CCA_BODY + 128))
+                else:
+                    if parts.query: raise ValueError("invalid query")
+                    if self.headers.get_content_type() != "application/json": raise ValueError("application/json required")
+                    value = json.loads(self.read_body(8192))
+                    result = cca.command(value) if parts.path.endswith("/command") else cca.action(value)
+                return self.reply(202, result)
+            except CcaError as exc: return self.reply(exc.status, {"error": str(exc)})
+            except OverflowError as exc: return self.reply(413, {"error": str(exc)})
+            except (ValueError, EOFError, UnicodeDecodeError) as exc: return self.reply(400, {"error": str(exc)})
+            except OSError: return self.reply(500, {"error": "CCA upload could not be saved"})
         if self.path == "/api/maintenance":
             try:
                 value = json.loads(self.read_body(128))
@@ -1849,12 +1940,20 @@ def main():
 
     ccx_publisher = CcxEventPublisher(lambda: mqtt_connect("ccx-bridge-ccx-events", CcxEventPublisher.AVAILABILITY)) if supervisor_token else None
     ccx = CcxFeed(gateway, ccx_publisher)
+    cca = CcaService(gateway)
+    cca_mqtt = CcaMqtt(cca, lambda: mqtt_connect("ccx-bridge-cca", CcaMqtt.AVAILABILITY)) if supervisor_token else None
+    cca.publisher = cca_mqtt
+    ccx.cca = cca
+    panel.cca = cca
     panel.sidecar.feed = ccx
     server = Server(("0.0.0.0", 8099), panel, ha, ccx)
     threading.Thread(target=panel.run_event_archive, name="event-archive", daemon=True).start()
     threading.Thread(target=panel.sidecar.run, name="sidecar-status", daemon=True).start()
     if ccx_publisher:
         ccx_publisher.start()
+    if cca_mqtt:
+        cca_mqtt.start()
+    cca.start()
     ccx.start()
     sensors = sensor_thread = None
     if options.get("show_sensors", True) is True and supervisor_token:
@@ -1867,6 +1966,9 @@ def main():
     finally:
         panel.stop.set()
         ccx.stop()
+        cca.stop()
+        if cca_mqtt:
+            cca_mqtt.stop()
         if ccx_publisher:
             ccx_publisher.stop()
         if sensors:

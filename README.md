@@ -5,6 +5,11 @@ It provides a live activity diagram, requested and confirmed device state,
 read-only programming inspection, mapping configuration and endpoint firmware
 uploads through the gateway.
 
+The CCA tab adds CC1101 radio status, named targets and presets, native CCA
+controls, packet inspection and Lutron end-device firmware staging. It needs
+a gateway with CCA support and a separate C6/CC1101 connected over I²C. Set
+that C6's expected MAC in the tab before sending commands.
+
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fthetimetraveler%2Fc6-live-bridge)
 
 ## Install
@@ -52,6 +57,7 @@ installation is required for its tests:
 ```sh
 python3 -m unittest discover -s c6-live-bridge -p 'test_*.py'
 node c6-live-bridge/test_ui.js
+node c6-live-bridge/test_cca_ui.js
 ```
 
 Runtime credentials are entered in Home Assistant's app configuration. This

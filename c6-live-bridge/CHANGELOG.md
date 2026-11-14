@@ -1,3 +1,10 @@
+## 0.18.0
+
+- Add a CCA dashboard with named targets and presets, native command forms and an advanced JSON console. Show CC1101 readiness, packet activity and correlated local command progress.
+- Stage Lutron end-device firmware from LDF files or extracted bodies, verify the C6's staged prefix before resuming, and start transmission as a separate explicit action. Local transmit completion does not confirm the receiving device updated.
+- Add CCA MQTT commands, results, events and a diagnostic device. Commands and events are not retained or replayed; existing CCX and Show topics continue independently.
+- Label the passive B1 firmware card separately from CCA end-device firmware. Native LRF2 occupancy encoding and CCA C6 self-update remain unavailable.
+
 ## 0.17.2
 
 - Fix the sidecar firmware card remaining on "Waiting for sidecar status" while regular gateway monitoring is active.

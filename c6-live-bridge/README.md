@@ -523,3 +523,47 @@ restored or replaced board) before enrolling again. **Update node firmware**
 sends a signed node image through the gateway; direct lighting pauses while it
 transfers (a hybrid gateway uses N4), and the node rolls back unless the
 gateway resumes the new image.
+
+## CCA controls and end-device firmware (0.18.0)
+
+The CCA tab reads the gateway's command catalogue, so its guided controls match
+the installed firmware. Save the separate CCA C6's MAC, named targets and
+presets in Settings within that tab. The advanced console accepts the same
+native JSON commands, including OTA commands. Raw commands accept a complete
+pre-CRC frame; the TDMA scheduler sets its sequence byte on transmission.
+
+Activity shows received frames, local transmit attempts and correlated command
+stages. `sequence_finished` means the local sequence ended; it does not confirm
+that a Lutron device received or applied it. Gaps remain visible when a bounded
+history overflows or a connection restarts. The existing CCX SSE connection
+carries CCA events too; opening this tab does not create another gateway feed.
+
+For end-device firmware, explicitly select LDF or extracted body format. LDF
+removes the first 128 bytes; the remaining body must be 1–112640 bytes. Select
+**Stage** to replace the C6's staged bytes, or **Resume** to compare the staged
+prefix SHA-256 before continuing. After staging, choose the destination and
+subnet and explicitly start transmission. Staging continues after closing the
+browser; app restart requires another explicit action. The app keeps one upload
+file and its CCA settings under `/data`. This flow updates Lutron end devices;
+the separate passive B1 firmware card updates B1. CCA C6 self-update is not
+implemented.
+
+With the MQTT broker service available, send nonretained QoS 0 requests to
+`ccx_bridge/cca/command`:
+
+```json
+{"id":"desk-1","command":{"cmd":"bridge_level","device_id":123,"target_id":456,"level_pct":50,"fade_qs":0}}
+```
+
+A saved preset can be invoked with
+`{"id":"desk-2","preset_id":"evening"}`. Results appear on
+`ccx_bridge/cca/results` with the caller ID and gateway request ID; local stages
+and packets appear on `ccx_bridge/cca/events`. IDs are suppressed in a bounded
+process-local cache; retained requests are ignored and commands are not retried.
+State and availability are retained under the same prefix, and Home Assistant
+discovers one diagnostic device. Broker outages do not block dashboard controls.
+
+`ccx_bridge/cca/presence/set` accepts
+`{"serial":123,"state":"occupied"}` (also `vacant` or `unavailable`). This
+updates the presence model only. Native LRF2 occupancy encoding/enrollment is
+unavailable and sends no occupancy RF packets.

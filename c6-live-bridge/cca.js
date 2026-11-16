@@ -18,7 +18,7 @@ var CCAUI = (() => {
   let capabilities = null, config = null, status = null, statusAt = 0, ota = null;
   let boot = null, cursor = 0, rows = [], keys = new Set(), stream = {}, lost = 0;
   // Rows the user has expanded, kept across re-renders so new packets do not collapse them.
-  const openEvents = new Set();
+  const openEvents = new Set(), eventListeners = [];
   let activeReceipt = null, formInputs = new Map(), presetDrafts = [];
   let loaded = false, loading = false, fetchingEvents = false, fetchingStatus = false, fetchingCaps = false;
   let sending = false, otaSending = false, configDirty = false, capsAt = 0, attemptAt = 0;
@@ -152,6 +152,7 @@ var CCAUI = (() => {
       (stream.missed ? ` · ${stream.missed} stream events missed` : '') + (lost ? ` · ${lost} events missing from this view` : '') +
       ' · starts at the add-on live baseline; earlier gateway events are not replayed');
     renderEvents();
+    if (data.events.some(e => e?.kind === 'cca.feedback_mapping')) { refreshTargets(); for (const f of eventListeners) f(); }
   }
   // Hold the reader's place while packets arrive (live.js); without it the list just redraws.
   const liveRender = (box, draw) => typeof LiveFeed === 'undefined' ? draw() : LiveFeed.render(box, box, draw);
@@ -355,6 +356,9 @@ var CCAUI = (() => {
     'pj2-3brl': {name:'Pico 3-button with raise/lower', buttons:[['on','On'],['raise','Raise'],['fav','Favorite'],['lower','Lower'],['off','Off']]},
     'pj2-4b':   {name:'Pico 4-button', buttons:[['1','Button 1'],['2','Button 2'],['3','Button 3'],['4','Button 4']]},
   };
+  // Other device kinds a target can be drawn as. A shade is detected when the target ID is a Lutron shade zone.
+  const KINDS = {shade:{name:'Shade', cmd:'shade_level'}, dimmer:{name:'Light (dimmer)', cmd:'bridge_level'}};
+  const layoutName = l => PICO[l]?.name || KINDS[l]?.name || '';
   const PICO_TYPES = {Pico2Button:'pj2-2b', Pico2ButtonRaiseLower:'pj2-2brl', Pico3Button:'pj2-3b', Pico3ButtonRaiseLower:'pj2-3brl'};
   let selectedButton = null, lutronSig = '';
   // Keypads from Home Assistant's Lutron integration (read by the page); a Pico's serial is its CCA device ID.
@@ -374,11 +378,86 @@ var CCAUI = (() => {
     return lutronKeypads().find(d => d.serial === id) || null;
   }
   // The layout to draw: an explicit choice, else what the Lutron device says, else unknown (null).
-  function resolveLayout(target) {
-    if (target.layout) return {layout: target.layout === 'none' ? null : target.layout, device: deviceOf(target), source: 'chosen'};
-    const device = deviceOf(target), layout = layoutOf(device);
-    return {layout, device, source: layout ? 'lutron' : device ? 'not-pico' : 'unknown'};
+  function zoneOf(target) {
+    let id; try { id = parseInteger(target.target_id, 0, 0xffffffff); } catch { return null; }
+    const z = typeof haData !== 'undefined' ? haData?.leap?.zones?.[String(id)] : null;
+    return z && typeof z === 'object' ? {...z, id} : null;
   }
+  function resolveLayout(target) {
+    const device = deviceOf(target), zone = zoneOf(target);
+    if (target.layout) return {layout: target.layout === 'none' ? null : target.layout, device, zone, source: 'chosen'};
+    const layout = layoutOf(device);
+    if (layout) return {layout, device, zone, source: 'lutron'};
+    if (zone?.type === 'Shade') return {layout: 'shade', device, zone, source: 'lutron-zone'};
+    return {layout: null, device, zone, source: device ? 'not-pico' : 'unknown'};
+  }
+  const zoneLabel = z => [...new Set([z.name || 'Zone ' + z.id, lutronArea(z.area)].filter(Boolean))].join(' · ') + ` · Lutron zone ${z.id}`;
+  // Shade feedback mappings from the latest feedback_list listing in CCA activity (stored on the CCA node).
+  function feedbackMappings() {
+    const listed = rows.filter(e => e.kind === 'cca.feedback_mapping');
+    const ids = listed.map(e => e.request_id).filter(Number.isInteger), latest = ids.length ? Math.max(...ids) : null;
+    const seen = new Map();
+    for (const e of listed) if (latest === null || e.request_id === latest)
+      seen.set([e.serial, e.target_id, e.subnet, e.link_index, e.component].join(':'), e);
+    return {listed: listed.length > 0, request: latest, mappings: [...seen.values()]};
+  }
+  // A command from the catalogue for this target: addresses from the target, level from the control.
+  function levelCommand(target, cmd, level) {
+    const d = descriptor(cmd);
+    if (!d) return {error: `This CCA firmware does not offer ${cmd}.`};
+    const command = {cmd};
+    for (const f of d.fields || []) {
+      if (f.name === 'level_pct') { command.level_pct = level; continue; }
+      const raw = target[f.name];
+      if (addressFields.includes(f.name) && raw !== undefined && raw !== null && String(raw).trim() !== '') {
+        try { command[f.name] = parseInteger(raw, f.min ?? 0, f.max ?? 0xffffffff, f.label || f.name); } catch (e) { return {error: e.message}; }
+      } else if (f.required && f.default === undefined) return {error: `Set this target's ${(f.label || f.name).toLowerCase()} first.`};
+    }
+    return {command};
+  }
+  const lastLevel = new WeakMap();
+  function levelView(target, layout, refresh) {
+    const kind = KINDS[layout], wrap = node('div', 'level-wrap'), shade = layout === 'shade';
+    const state = lastLevel.get(target) || {level: shade ? 100 : 50, sent: null}; lastLevel.set(target, state);
+    const picture = node('div', shade ? 'shade-window' : 'cca-bulb'), fill = node('div', shade ? 'shade-fabric' : 'bulb-glow');
+    if (shade) { picture.append(fill, node('div', 'shade-sill')); } else picture.append(fill, node('div', 'bulb-base'));
+    const readout = node('strong', 'level-readout'), slider = node('input');
+    slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1'; slider.value = String(state.level);
+    slider.setAttribute?.('aria-label', shade ? 'Shade level (100 is open)' : 'Light level');
+    const draw = () => {
+      const v = state.level;
+      if (shade) fill.style.height = (100 - v) + '%'; else fill.style.opacity = String(v / 100);
+      readout.textContent = shade ? (v >= 100 ? 'Open' : v <= 0 ? 'Closed' : v + '% open') : (v <= 0 ? 'Off' : v + '%');
+    };
+    slider.addEventListener('input', () => { state.level = Number(slider.value); draw(); });
+    const controls = node('div', 'level-controls'), quick = node('div', 'actions');
+    const out = node('p', 'small muted'); out.id = 'cca-device-note-' + (target.id || 'target'); out.setAttribute?.('role', 'status');
+    const send = level => {
+      if (level !== undefined) { state.level = level; slider.value = String(level); draw(); }
+      const built = levelCommand(target, kind.cmd, state.level);
+      if (built.error) { out.textContent = built.error; return; }
+      state.sent = state.level; sendCommand(built.command, 'device-note-' + (target.id || 'target'));
+    };
+    const a = node('button', 'secondary', shade ? 'Open' : 'On'), b = node('button', 'secondary', shade ? 'Close' : 'Off'), go = node('button', '', 'Send level');
+    a.onclick = () => send(100); b.onclick = () => send(0); go.onclick = () => send();
+    quick.append(a, b, go);
+    const preview = levelCommand(target, kind.cmd, state.level);
+    controls.append(readout, slider, quick, node('p', 'small muted', preview.error || `Sends ${kind.cmd} once with this target's addresses.` + (shade ? ' Feedback, when mapped, acknowledges the target; it does not measure the shade.' : '')), out);
+    if (shade) controls.append(motorsView(target));
+    draw(); wrap.append(picture, controls); return wrap;
+  }
+  function motorsView(target) {
+    const box = node('div', 'shade-motors'), {listed, mappings} = feedbackMappings();
+    let group, subnet; try { group = parseInteger(target.target_id); } catch {} try { subnet = parseInteger(target.subnet); } catch {}
+    const mine = mappings.filter(m => m.target_id === group && (subnet === undefined || m.subnet === subnet));
+    box.append(node('strong', 'small', 'Feedback motors on the CCA node'));
+    if (!listed) box.append(node('p', 'small muted', 'Not listed yet. List the CCA node\'s mappings to see which motors report for this shade.'));
+    else if (!mine.length) box.append(node('p', 'small muted', 'No motor is mapped for this shade group' + (subnet === undefined ? '.' : ' and subnet.')));
+    else { const list = node('ul', 'motor-list'); for (const m of mine) list.append(node('li', '', `Motor ${display(m.serial)} · link ${display(m.link_index)}` + (m.component !== undefined ? ` · component ${display(m.component)}` : ''))); box.append(list); }
+    if (descriptor('feedback_list')) { const list = node('button', 'plain', listed ? 'List again' : 'List mappings'); list.onclick = () => listMappings('device-note-' + (target.id || 'target')); box.append(list); }
+    return box;
+  }
+  function listMappings(noteId) { return sendCommand({cmd:'feedback_list'}, noteId); }
   const deviceLabel = d => [d.name, d.device].filter(Boolean).join(' ') + (lutronArea(d.area) ? ' · ' + lutronArea(d.area) : '') + (d.model ? ' · ' + d.model : '');
   function lutronArea(id) { const a = typeof haData !== 'undefined' ? haData?.leap?.areas?.[String(id)] : null; return a?.path || a?.name || ''; }
   const presetById = id => presetDrafts.find(p => p.id === id);
@@ -457,23 +536,25 @@ var CCAUI = (() => {
     head.append(inputFor(target.name, 'Name', v => { target.name = v; renderSelectors(); renderPresetUses(); }),
       inputFor(target.id, 'ID', v => { target.id = v; renderSelectors(); }),
       ...addressFields.map(field => inputFor(target[field], field === 'device_id' ? 'Device ID (serial)' : field.replace('_', ' '),
-        v => { target[field] = v; if (field === 'device_id') refresh(); }, 'Decimal or 0x hexadecimal')));
+        v => { target[field] = v; if (field !== 'subnet') refresh(); }, 'Decimal or 0x hexadecimal')));
     const layoutLabel = node('label', '', 'Device'), layoutSelect = node('select');
-    selectOptions(layoutSelect, [option('', 'Detect from Lutron'), option('none', 'Not a Pico'), ...Object.entries(PICO).map(([k, v]) => option(k, v.name))], target.layout || '');
+    selectOptions(layoutSelect, [option('', 'Detect from Lutron'), option('none', 'Plain target'), ...Object.entries(PICO).map(([k, v]) => option(k, v.name)), ...Object.entries(KINDS).map(([k, v]) => option(k, v.name))], target.layout || '');
     layoutSelect.addEventListener('change', () => { if (layoutSelect.value) target.layout = layoutSelect.value; else delete target.layout; configDirty = true; refresh(); renderPresetUses(); });
     layoutLabel.append(layoutSelect); head.append(layoutLabel);
     function refresh() {
       const r = resolveLayout(target), parts = [];
       const status = node('p', 'small ' + (r.layout || r.source === 'chosen' ? 'muted' : 'warn-text'));
       status.textContent = r.source === 'lutron' ? `${PICO[r.layout].name} from Lutron: ${deviceLabel(r.device)}` :
-        r.source === 'chosen' ? (r.layout ? `Shown as ${PICO[r.layout].name} (chosen here)` : 'Not shown as a Pico (chosen here).') +
-          (r.device && layoutOf(r.device) && layoutOf(r.device) !== r.layout ? ` Lutron reports ${PICO[layoutOf(r.device)].name}.` : '') :
+        r.source === 'lutron-zone' ? `Shade from Lutron: ${zoneLabel(r.zone)}` :
+        r.source === 'chosen' ? (r.layout ? `Shown as ${layoutName(r.layout)} (chosen here)` : 'Shown as a plain target (chosen here).') +
+          (r.device && layoutOf(r.device) && layoutOf(r.device) !== r.layout ? ` Lutron reports ${PICO[layoutOf(r.device)].name}.` : '') +
+          (r.zone && r.layout !== 'shade' && r.zone.type === 'Shade' ? ' Lutron reports a shade.' : '') :
         r.source === 'not-pico' ? `Lutron device ${deviceLabel(r.device)} is not a Pico.` :
-        String(target.device_id ?? '').trim() === '' ? 'Enter the Pico\'s serial as the device ID, or choose its layout under Device.' :
-        lutronKeypads().length ? 'No Lutron Pico has this serial. Choose the layout under Device to program its buttons.' :
+        String(target.device_id ?? '').trim() === '' && String(target.target_id ?? '').trim() === '' ? 'Enter a Pico\'s serial as the device ID or a shade\'s Lutron zone as the target ID, or choose under Device.' :
+        lutronKeypads().length ? 'No Lutron Pico or shade matches these IDs. Choose what this target is under Device.' :
         'Home Assistant\'s Lutron data is not available, so the layout cannot be detected. Choose it under Device.';
       parts.push(status);
-      if (r.layout) parts.push(picoView(target, r.layout, refresh));
+      if (PICO[r.layout]) parts.push(picoView(target, r.layout, refresh)); else if (KINDS[r.layout]) parts.push(levelView(target, r.layout, refresh));
       device.replaceChildren(...parts);
     }
     const remove = node('button', 'secondary', 'Remove target');
@@ -732,11 +813,16 @@ var CCAUI = (() => {
   };
   renderPresence(); renderOta();
   setInterval(() => {
-    if (document.getElementById('panel-cca')?.hidden !== false) return;
+    if (!['panel-cca', 'panel-local'].some(id => document.getElementById(id)?.hidden === false)) return;
     if (!loaded) { if (Date.now() - attemptAt >= 10000) initialize(); return; }
     fetchStatus(); fetchEvents(); if (Date.now() - capsAt >= 30000) refreshCapabilities();
   },2000);
-  return {show, lutronChanged, _test:{layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
+  // For the Local programming tab: the CCA node's mappings, and listing them again.
+  const local = {
+    mappings: feedbackMappings, canList: () => !!descriptor('feedback_list'), list: listMappings, ready: () => loaded,
+    onChange(f) { eventListeners.push(f); },
+  };
+  return {show, lutronChanged, local, _test:{levelCommand, feedbackMappings, layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
     setCapabilities(v) { capabilities = v; renderCommandChoices(); }, setStatus(v) { status = v; statusAt = Date.now(); statusView(); },
     state() { return {boot,cursor,rows:clone(rows),activeReceipt,configDirty}; }}};
 })();

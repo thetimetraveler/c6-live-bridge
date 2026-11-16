@@ -582,6 +582,27 @@ file and its CCA settings under `/data`. This flow updates Lutron end devices;
 the separate passive B1 firmware card updates B1. CCA C6 self-update is not
 implemented.
 
+### Local programming tab
+
+**Local** shows what runs on the gateway and CCA node without the app. Each
+CCX local rule is a When → Then card: the event kind, the source keypad (named
+from Home Assistant's Lutron data by serial) or zone, and the zone it sets or
+the Natural Show it selects. Disabled rules are dimmed, and a rule with a blank
+match is marked because it matches every event. Edit rules in Setup. The CCA
+node's shade feedback mappings appear by shade group with their motors;
+**List mappings** sends `feedback_list`, which reads the node and transmits
+nothing over RF.
+
+### Shade and dimmer targets
+
+A target whose `target_id` is a Lutron shade zone is drawn as a shade (the
+fabric covers the window from the top; 100 is open), with Open, Close and Send
+level. It sends `shade_level` with the target's `subnet` and `target_id`, and
+lists the feedback motors from the latest `feedback_list` for that group. A
+target set to **Light (dimmer)** is drawn as a bulb and sends `bridge_level`
+with the target's addresses. Choose either under **Device** when it is not
+detected. Each control sends one command; it does not read the device's level.
+
 ### Pico targets
 
 A target whose device ID is a Pico's serial is drawn as that Pico. The layout

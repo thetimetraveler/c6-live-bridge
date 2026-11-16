@@ -48,13 +48,14 @@ p{margin:6px 0}
 @keyframes breathe{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
 
 /* Segmented control */
-.segmented{position:relative;display:grid;grid-template-columns:repeat(6,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:620px;margin:0 auto}
-.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/6);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
+.segmented{position:relative;display:grid;grid-template-columns:repeat(7,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:700px;margin:0 auto}
+.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/7);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
 .segmented[data-tab=activity] .thumb{transform:translateX(100%)}
 .segmented[data-tab=diagnostics] .thumb{transform:translateX(200%)}
 .segmented[data-tab=programming] .thumb{transform:translateX(300%)}
-.segmented[data-tab=cca] .thumb{transform:translateX(400%)}
-.segmented[data-tab=setup] .thumb{transform:translateX(500%)}
+.segmented[data-tab=local] .thumb{transform:translateX(400%)}
+.segmented[data-tab=cca] .thumb{transform:translateX(500%)}
+.segmented[data-tab=setup] .thumb{transform:translateX(600%)}
 .segmented button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .segmented .short{display:none}
 @media(max-width:480px){#tabs.segmented button{font-size:.72rem;padding:6px 1px;letter-spacing:-.01em}.segmented .full{display:none}.segmented .short{display:inline}}
@@ -512,6 +513,20 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 .pico-row.on{background:var(--blue-t)}.pico-row strong{font-weight:600}.pico-panel{flex-basis:100%;background:var(--card);border-radius:10px;padding:12px;border:.5px solid var(--sep)}.pico-panel h4{margin:0 0 6px}
 .cca-chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.cca-chip{font-size:.75rem;padding:3px 8px;border-radius:999px;background:var(--card);border:.5px solid var(--sep);overflow-wrap:anywhere}.cca-chip.cmd{background:var(--blue-t);color:var(--blue);border-color:transparent;font-weight:600}.cca-chip.bad{color:var(--red,#d70015)}
 .cca-preset details summary{cursor:pointer;color:var(--blue);font-size:.85rem;margin:4px 0}#cca-add-pico{max-width:100%}
+/* CCA shade and dimmer targets. A shade's fabric covers the window from the top; level 100 is open. */
+.level-wrap{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;margin-top:8px}.level-controls{flex:1;min-width:220px;display:grid;gap:6px}.level-controls input[type=range]{width:100%}.level-readout{font-size:1.4rem}
+.shade-window{position:relative;width:120px;height:150px;border-radius:6px;border:6px solid var(--sep);background:linear-gradient(180deg,#9fd3ff,#d9efff 70%,#bfe3c6);overflow:hidden}
+.shade-fabric{position:absolute;left:0;right:0;top:0;height:0;background:repeating-linear-gradient(180deg,#e9e2d6 0 9px,#ddd4c5 9px 10px);border-bottom:5px solid #b9ab92;transition:height .35s var(--spring,ease)}.shade-sill{position:absolute;left:-6px;right:-6px;bottom:-6px;height:6px;background:var(--sep)}
+.cca-bulb{position:relative;width:96px;height:130px;display:grid;justify-items:center}.bulb-glow{width:84px;height:84px;border-radius:50%;background:radial-gradient(circle,#fff6c9,#ffd45c 55%,rgba(255,196,0,0) 72%);transition:opacity .25s}.cca-bulb::before{content:'';position:absolute;top:14px;width:56px;height:56px;border-radius:50%;border:2px solid var(--sep)}.bulb-base{width:28px;height:22px;margin-top:4px;border-radius:0 0 8px 8px;background:var(--sep)}
+.shade-motors{margin-top:6px;padding:10px;border-radius:10px;background:var(--card);border:.5px solid var(--sep)}.motor-list{margin:6px 0;padding-left:18px;font-size:.85rem}
+/* Local programming: rules as When → Then cards, shade groups with their motors. */
+.local-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:10px 0}
+.rule-card,.shade-card{background:var(--inset);border-radius:12px;padding:12px;display:grid;gap:8px}.rule-card.off{opacity:.62}
+.rule-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.rule-head strong{overflow-wrap:anywhere}
+.rule-flow{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:stretch}.rule-flow>span{align-self:center;color:var(--label2);font-size:1.2rem}
+.rule-side{background:var(--card);border-radius:9px;padding:8px 10px;font-size:.85rem;display:grid;gap:3px;align-content:start;overflow-wrap:anywhere}.rule-side b{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--label2)}
+.shade-card .shade-window{width:64px;height:76px;border-width:4px}.shade-card .head{display:flex;gap:12px;align-items:center}
+@media (max-width:520px){.rule-flow{grid-template-columns:1fr}.rule-flow>span{transform:rotate(90deg);justify-self:center}}
 /* Live feeds (live.js): bounded scroll areas that hold the reader's place while rows arrive. */
 /* live.js keeps the page still itself; the browser's own scroll anchoring would apply the same correction a second time, and Safari lacks it. */
 html,body{overflow-anchor:none}
@@ -527,6 +542,7 @@ html,body{overflow-anchor:none}
     <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity">Activity<span id="activity-badge" class="tab-badge"></span></button>
     <button id="tab-diagnostics" role="tab" aria-selected="false" aria-controls="panel-diagnostics">Health<span id="diag-badge" class="tab-badge"></span></button>
     <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming" aria-label="Programming"><span class="full">Programming</span><span class="short">Program</span><span id="program-badge" class="tab-badge"></span></button>
+    <button id="tab-local" role="tab" aria-selected="false" aria-controls="panel-local" aria-label="Local programming">Local</button>
     <button id="tab-cca" role="tab" aria-selected="false" aria-controls="panel-cca">CCA</button>
     <button id="tab-setup" role="tab" aria-selected="false" aria-controls="panel-setup">Setup</button>
   </nav>
@@ -622,6 +638,23 @@ html,body{overflow-anchor:none}
     <div class="toolbar"><label>Zone number <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" style="margin:6px 0">Load snapshot</button></div>
     <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
     <details class="raw"><summary>Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
+  </section>
+</div>
+
+<div id="panel-local" class="panel" role="tabpanel" hidden>
+  <section class="card" id="local-rules-card">
+    <div class="card-head"><h2>Gateway rules</h2><span id="local-rules-pill" class="pill wait">Not loaded</span></div>
+    <p class="lede">What the gateway does by itself when it hears a CCX message from a keypad or control. These rules run on the gateway, without the app or MQTT. Viewing them never changes anything.</p>
+    <div id="local-rules" class="local-grid"></div>
+    <div class="actions"><button id="local-rules-reload" class="secondary">Reload rules</button><button id="local-rules-edit" class="plain">Edit rules in Setup</button></div>
+    <p id="local-rules-note" class="small muted" role="status"></p>
+  </section>
+  <section class="card" id="local-cca-card">
+    <div class="card-head"><h2>CCA node shade feedback</h2><span id="local-cca-pill" class="pill wait">Not listed</span></div>
+    <p class="lede">Shade groups whose motors the CCA node reports feedback for after a shade command. These mappings are stored on the CCA node. Listing them reads the node; it sends nothing over RF.</p>
+    <div id="local-shades" class="local-grid"></div>
+    <div class="actions"><button id="local-cca-list" class="secondary">List mappings</button><button id="local-cca-open" class="plain">Open CCA</button></div>
+    <p id="cca-local-note" class="small muted" role="status"></p>
   </section>
 </div>
 
@@ -1598,6 +1631,43 @@ async function copyText(text){try{if(navigator.clipboard?.writeText){await navig
   const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.select();const ok=document.execCommand?.('copy');ta.remove();if(!ok)throw Error('the browser blocked clipboard access')}
 $('ccx-copy').onclick=async()=>{const n=ccxRows.length;if(!n){$('ccx-copy-note').textContent='No CCX events to copy yet.';return}
   try{await copyText(ccxLogText());$('ccx-copy-note').textContent=`Copied ${n} event${n===1?'':'s'} as JSON (boot ${val(ccxBoot)}, cursor ${ccxCursor}). The browser keeps the latest 500.`}catch(e){$('ccx-copy-note').textContent='Could not copy: '+e.message}};
+/* Local programming tab: the gateway's CCX rules as When → Then cards, and the CCA node's shade feedback mappings. */
+const CCX_KINDS={'ccx.button_press':'Button press','ccx.local_level':'Level from a local control','ccx.level_control':'Level command','ccx.dim_hold':'Dim hold','ccx.dim_step':'Dim step','ccx.property_report':'Property report','ccx.message':'Other CCX message'};
+let localRules=null,localWired=false;
+function lutronZoneName(id){const z=leap()?.zones?.[String(id)],a=z&&leap()?.areas?.[String(z.area)];if(z)return [...new Set([z.name,a?.path||a?.name].filter(Boolean))].join(' · ');const m=(configBase?.zones||[]).find(x=>x?.zone_id===id);return m?.name||null}
+function sourceName(serial){const k=Object.values(leap()?.keypads||{}).find(d=>d?.serial===serial);return k?[k.name,k.device].filter(Boolean).join(' ')+(k.model?' ('+k.model+')':''):null}
+const ruleLevel=l=>l==='event'?"the event's level":l===0?'off':Number.isInteger(l)?`${+(l/100).toFixed(2)}%`:'—';
+function localRuleCard(r){const m=r.match||{},a=r.action||{},card=el('div','rule-card'+(r.enabled?'':' off')),head=el('div','rule-head'),flow=el('div','rule-flow'),when=el('div','rule-side'),then=el('div','rule-side');
+  head.append(el('strong','',String(r.id)),pill(r.enabled?'Enabled':'Disabled',r.enabled?'good':'wait'));
+  when.append(el('b','','When'),el('span','',!('kind' in m)?'Any CCX event':m.kind===''?'An event with an empty kind':CCX_KINDS[m.kind]||m.kind));
+  if(m.serial!==undefined)when.append(el('span','','from '+(sourceName(m.serial)?`${sourceName(m.serial)} · serial ${m.serial}`:'serial '+m.serial)));
+  if(m.zone_id!==undefined)when.append(el('span','','for '+(lutronZoneName(m.zone_id)?`${lutronZoneName(m.zone_id)} · zone ${m.zone_id}`:'zone '+m.zone_id)));
+  if(m.message_type!==undefined)when.append(el('span','muted','message type '+m.message_type));
+  if(!('kind' in m)&&m.serial===undefined&&m.zone_id===undefined&&m.message_type===undefined)when.append(el('span','warn-text','Matches every event'));
+  const zone=Number.isInteger(a.target_zone)?(lutronZoneName(a.target_zone)?`${lutronZoneName(a.target_zone)} (zone ${a.target_zone})`:'zone '+a.target_zone):'—';
+  then.append(el('b','','Then'));
+  if(a.type==='select_show'){then.append(el('span','',`Select Natural Show ${a.show_id} on ${zone}`));if('level' in a)then.append(el('span','','at '+ruleLevel(a.level)))}
+  else then.append(el('span','',`Set ${zone} to ${ruleLevel(a.level)}`));
+  flow.append(when,el('span','','→'),then);card.append(head,flow);return card}
+async function loadLocalRules(){$('local-rules-note').textContent='Reading the gateway\'s rules…';
+  try{const data=await req('ccx/rules');if(!Array.isArray(data?.rules))throw Error('invalid rules response');localRules=data.rules;renderLocalRules();$('local-rules-note').textContent=''}
+  catch(e){localRules=null;$('local-rules-pill').textContent='Unavailable';$('local-rules-pill').className='pill wait';$('local-rules').replaceChildren();$('local-rules-note').textContent='Rules unavailable or unsupported: '+e.message}}
+function renderLocalRules(){if(!localRules)return;const on=localRules.filter(r=>r.enabled).length;$('local-rules-pill').textContent=localRules.length?`${on} of ${localRules.length} enabled`:'No rules';$('local-rules-pill').className='pill '+(on?'good':'wait');
+  $('local-rules').replaceChildren(...(localRules.length?localRules.map(localRuleCard):[el('p','empty','The gateway has no local rules. Add them in Setup → CCX local rules.')]))}
+function renderLocalShades(){const box=$('local-shades'),cca=typeof CCAUI!=='undefined'?CCAUI.local:null;if(!cca){box.replaceChildren(el('p','empty','CCA controls are unavailable.'));return}
+  const {listed,mappings}=cca.mappings(),groups=new Map();$('local-cca-list').disabled=!cca.canList();
+  for(const m of mappings){const k=m.subnet+':'+m.target_id;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(m)}
+  $('local-cca-pill').textContent=!listed?'Not listed':`${groups.size} shade group${groups.size===1?'':'s'} · ${mappings.length} motor${mappings.length===1?'':'s'}`;$('local-cca-pill').className='pill '+(listed?'good':'wait');
+  if(!listed){box.replaceChildren(el('p','empty',cca.ready()&&!cca.canList()?'This CCA firmware does not offer feedback mappings.':'List the mappings to see which shade motors the CCA node reports for.'));return}
+  if(!groups.size){box.replaceChildren(el('p','empty','The CCA node has no shade feedback mappings.'));return}
+  box.replaceChildren(...[...groups.values()].map(list=>{const first=list[0],card=el('div','shade-card'),head=el('div','head'),win=el('div','shade-window'),fab=el('div','shade-fabric'),txt=el('div');fab.style.height='45%';win.append(fab,el('div','shade-sill'));
+    txt.append(el('strong','',lutronZoneName(first.target_id)||'Shade group '+first.target_id),el('div','small muted',`group ${first.target_id} · subnet ${first.subnet}`));head.append(win,txt);
+    const ul=el('ul','motor-list');for(const m of list)ul.append(el('li','',`Motor ${m.serial} · link ${m.link_index}`+(m.component!==undefined?` · component ${m.component}`:'')));card.append(head,ul);return card}))}
+async function loadLocal(){if(!localWired&&typeof CCAUI!=='undefined'){localWired=true;CCAUI.local.onChange(renderLocalShades)}
+  renderLocalShades();loadLocalRules();if(typeof CCAUI!=='undefined'){try{await CCAUI.show()}catch{}renderLocalShades()}}
+$('local-rules-reload').onclick=loadLocalRules;$('local-rules-edit').onclick=()=>{goTo('setup','ccx-rules-card');if(ccxRules===null)loadCcxRules()};
+$('local-cca-open').onclick=()=>goTo('cca','cca-targets');
+$('local-cca-list').onclick=async()=>{if(typeof CCAUI==='undefined')return;await CCAUI.local.list('local-note');renderLocalShades()};
 async function refreshCcx(){if(ccxFetching)return;ccxFetching=true;try{const data=await req('ccx/events?after='+ccxCursor+(ccxBoot===null?'':'&boot_id='+encodeURIComponent(ccxBoot)));ccxEventView(data)}catch(e){$('ccx-stream-note').textContent='CCX event feed unavailable: '+e.message}finally{ccxFetching=false}}
 async function loadCcxHealth(){if(Date.now()-ccxHealthAt<10000)return;ccxHealthAt=Date.now();
   try{const s=await req('ccx/status'),clock=await req('ccx/clock'),anchor=clock?.utc_anchor||{},sync=s?.clock||{};const online=s?.online??s?.listener?.online??s?.receiver?.online;
@@ -1801,7 +1871,7 @@ async function refresh(){
   }finally{refreshing=false}
 }
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
-const tabs=['overview','activity','diagnostics','programming','cca','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}if(name==='setup'&&ccxRules===null)loadCcxRules();if(name==='activity')loadCcxHealth();if(name==='cca'&&typeof CCAUI!=='undefined')CCAUI.show()}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
+const tabs=['overview','activity','diagnostics','programming','local','cca','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}if(name==='setup'&&ccxRules===null)loadCcxRules();if(name==='activity')loadCcxHealth();if(name==='cca'&&typeof CCAUI!=='undefined')CCAUI.show();if(name==='local')loadLocal()}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
 $('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
 $('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};

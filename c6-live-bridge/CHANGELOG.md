@@ -1,3 +1,9 @@
+## 0.22.0
+
+- Add a **Local** tab showing the gateway's own programming. Each CCX local rule reads as When → Then with Lutron names for the source keypad and target zone; disabled rules and rules that match every event are marked. The CCA node's shade feedback mappings show each shade group with its motors, and can be listed from the tab.
+- Draw CCA shade targets as a window whose fabric follows the level, with Open, Close and Send level. A target whose target ID is a Lutron shade zone is detected as a shade, and its card lists the feedback motors the CCA node has mapped for it.
+- Add a Light (dimmer) target drawn as a bulb with a level control. Shade and dimmer commands are built from the firmware's catalogue with the target's addresses and sent once.
+
 ## 0.21.0
 
 - Draw CCA targets as Pico remotes. A target's layout (2-button, 2-button with raise/lower, 3-button, 3-button with raise/lower or 4-button) is detected by matching its device ID to a Pico serial in Home Assistant's Lutron data; when no Pico matches, choose the layout on the target.

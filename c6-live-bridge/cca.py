@@ -16,10 +16,10 @@ CHUNK = 40
 MAC = re.compile(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\Z")
 HEX = re.compile(r"(?:[0-9a-fA-F]{2})*\Z")
 ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
-# Pico layouts a target can be drawn as ("none": not a Pico), and the buttons they have.
+# Device layouts a target can be drawn as ("none": a plain target): Picos with their buttons, shades and dimmers.
 PICO_LAYOUTS = {"none": (), "pj2-2b": ("on", "off"), "pj2-2brl": ("on", "raise", "lower", "off"),
                 "pj2-3b": ("on", "fav", "off"), "pj2-3brl": ("on", "raise", "fav", "lower", "off"),
-                "pj2-4b": ("1", "2", "3", "4")}
+                "pj2-4b": ("1", "2", "3", "4"), "shade": (), "dimmer": ()}
 PICO_BUTTONS = {b for keys in PICO_LAYOUTS.values() for b in keys}
 
 

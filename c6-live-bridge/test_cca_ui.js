@@ -309,7 +309,7 @@ await tick();
   const find = (root, pred) => walk(root).find(pred);
   assert.deepEqual(keys(cards()[0]).map(k => k.picoKey),['1','2','3','4'],'a PJ2-4B is drawn with four buttons');
   assert.match(text(cards()[0]),/Pico 4-button from Lutron: Bedside Position 2 · Master Bedroom · PJ2-4B-XXX-L31/);
-  assert.equal(keys(cards()[1]).length,0); assert.match(text(cards()[1]),/No Lutron Pico has this serial\. Choose the layout/,'an unknown device asks for its layout');
+  assert.equal(keys(cards()[1]).length,0); assert.match(text(cards()[1]),/No Lutron Pico or shade matches these IDs\. Choose what this target is/,'an unknown device asks for its layout');
   assert.match(text(cards()[2]),/is not a Pico/);
   assert.match(text(get('presets')),/Set level/,'presets show the command title from the catalogue');
   assert.match(text(get('presets')),/Level 20%/);
@@ -371,5 +371,57 @@ await tick();
   const before = cards()[0]; ui.lutronChanged(); assert.equal(cards()[0],before);
   context.haData = {leap:{keypads:{a:{name:'Bedside',model:'PJ2-4B-XXX-L31',serial:82324321}}}}; ui.lutronChanged();
   assert.deepEqual(keys(cards()[0]).map(k => k.picoKey),['1','2','3','4']);
+}
+
+// Shades and dimmers: a target ID that is a Lutron shade zone is drawn as a shade with a level control.
+{
+  const shadeCaps = {schema_version:1,commands:[...caps.commands,
+    {name:'shade_level',title:'Shade level',group:'shade',fields:[{name:'subnet',type:'integer',min:0,max:65535,required:true},{name:'target_id',type:'integer',min:0,max:0xffffffff,required:true},
+      {name:'level_pct',type:'integer',min:0,max:100,required:true},{name:'fade_qs',type:'integer',min:0,max:255}]},
+    {name:'feedback_list',title:'List feedback mappings',group:'shade',fields:[]}]};
+  t.setCapabilities(shadeCaps);
+  context.haData = {leap:{areas:{'2710':{name:'Office',path:'Office'}},keypads:{},zones:{'16639':{name:'Office',area:'2710',type:'Shade'},'2731':{name:'office',area:'2710',type:'Dimmed'}}}};
+  t.setConfig({expected_mac:'',presets:[],targets:[{id:'office-shade',name:'Office shade',target_id:16639,subnet:44530},{id:'lamp',name:'Lamp',device_id:9,layout:'dimmer'},{id:'side',name:'Side shade',target_id:16639}]});
+  const cards = () => get('targets').children, find = (root, pred) => walk(root).find(pred);
+  assert.equal(t.resolveLayout(t.config().targets[0]).layout,'shade');
+  assert.match(text(cards()[0]),/Shade from Lutron: Office · Lutron zone 16639/);
+  assert.ok(find(cards()[0], n => n.className === 'shade-fabric'),'a shade is drawn as a window with fabric');
+  assert.ok(find(cards()[1], n => n.className === 'bulb-glow'),'a dimmer is drawn as a bulb');
+  assert.match(text(cards()[0]),/Not listed yet/);
+  assert.deepEqual(plain(t.levelCommand(t.config().targets[0],'shade_level',40).command),{cmd:'shade_level',subnet:44530,target_id:16639,level_pct:40});
+  assert.match(t.levelCommand(t.config().targets[2],'shade_level',40).error,/Set this target's subnet first/);
+  assert.deepEqual(plain(t.levelCommand(t.config().targets[1],'bridge_level',40).command),{cmd:'bridge_level',device_id:9,level_pct:40},'a dimmer uses the catalogue fields with the target\'s addresses');
+  assert.match(t.levelCommand(t.config().targets[1],'no_such_cmd',40).error,/does not offer no_such_cmd/);
+
+  // The slider previews; Send level sends once with the target's addresses.
+  const slider = find(cards()[0], n => n.type === 'range'), fabric = find(cards()[0], n => n.className === 'shade-fabric');
+  slider.value = '25'; slider.dispatch('input');
+  assert.equal(fabric.style.height,'75%'); assert.match(text(cards()[0]),/25% open/);
+  const before = count('cca/command');
+  await find(cards()[0], n => n.textContent === 'Send level').click(); await tick();
+  assert.equal(count('cca/command'),before+1);
+  assert.deepEqual(JSON.parse(requests.findLast(r => r.route === 'cca/command').opts.body),{cmd:'shade_level',subnet:44530,target_id:16639,level_pct:25});
+  await find(cards()[0], n => n.textContent === 'Close').click(); await tick();
+  assert.equal(JSON.parse(requests.findLast(r => r.route === 'cca/command').opts.body).level_pct,0);
+  find(cards()[2], n => n.textContent === 'Send level').click();
+  assert.match(find(cards()[2], n => n.id === 'cca-device-note-side').textContent,/subnet/,'a shade without a subnet explains instead of sending');
+
+  // Mappings listed by the CCA node appear on the shade and for the Local tab (latest listing only).
+  await find(cards()[0], n => n.textContent === 'List mappings').click(); await tick();
+  assert.deepEqual(JSON.parse(requests.findLast(r => r.route === 'cca/command').opts.body),{cmd:'feedback_list'});
+  let changed = 0; ui.local.onChange(() => changed++);
+  const map = (id, req, serial, link) => ({id, kind:'cca.feedback_mapping', request_id:req, serial, target_id:16639, subnet:44530, link_index:link, component:3});
+  const c = t.state().cursor;
+  t.eventView({boot_id:56,cursor:c+3,events:[map(c+1,40,999,1),map(c+2,41,72740540,32),map(c+3,41,141956735,10)],stream:{state:'online'}});
+  assert.equal(changed,1);
+  const listed = ui.local.mappings();
+  assert.equal(listed.listed,true); assert.deepEqual(plain(listed.mappings.map(m => m.serial)),[72740540,141956735],'only the latest listing counts');
+  assert.match(text(cards()[0]),/Motor 72740540 · link 32 · component 3/); assert.match(text(cards()[0]),/Motor 141956735/);
+  assert.match(text(cards()[2]),/Motor 72740540/,'without a subnet every mapping for the group shows');
+  assert.equal(ui.local.canList(),true);
+  // A chosen kind is saved; a Pico's buttons do not survive becoming a shade.
+  t.config().targets[1].buttons = {on:'x'};
+  assert.deepEqual(plain(t.configPayload().targets[1]),{id:'lamp',name:'Lamp',device_id:9,layout:'dimmer'});
+  context.haData = null;
 }
 console.log('CCA dashboard metadata, commands, events, settings, presence and OTA tests passed');

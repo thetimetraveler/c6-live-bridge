@@ -450,6 +450,18 @@ const mappingChecks=`
     {await view('ccx-copy').onclick();const copied=JSON.parse(clipboard.text);
       if(copied.count!==ccxRows.length||copied.events.length!==ccxRows.length||copied.boot_id!==5||copied.cursor!==ccxCursor||!view('ccx-copy-note').textContent.startsWith('Copied 3 events'))throw Error('Copy log copies the whole CCX log with its boot and cursor: '+view('ccx-copy-note').textContent);
       view('ccx-filter-source').value='no-match';renderCcxEvents();await view('ccx-copy').onclick();if(JSON.parse(clipboard.text).count!==3)throw Error('Copy log ignores the view filters');view('ccx-filter-source').value='';renderCcxEvents();}
+    {const ha=haData;haData={lights:[],leap:{areas:{'330':{name:'Master Bedroom',path:'Master Bedroom'}},zones:{'2731':{name:'office',area:'330'}},keypads:{a:{name:'Bedside',device:'Position 2',model:'PJ2-4B-XXX-L31',serial:82324321}}}};
+      replies.rules={rules:[{id:'bedside-on',enabled:true,match:{kind:'ccx.button_press',serial:82324321},action:{type:'set_level',target_zone:2731,level:7500}},
+        {id:'follow',enabled:false,match:{zone_id:9},action:{type:'select_show',target_zone:44,show_id:3,level:'event'}},{id:'all',enabled:true,match:{},action:{type:'set_level',target_zone:2731,level:0}}]};
+      showTab('local');await loadLocalRules();const cards=view('local-rules').children,t=i=>text(cards[i]);
+      if(view('panel-local').hidden||cards.length!==3||view('local-rules-pill').textContent!=='2 of 3 enabled')throw Error('the Local tab shows every gateway rule: '+view('local-rules-pill').textContent);
+      if(!t(0).includes('Button press')||!t(0).includes('from Bedside Position 2 (PJ2-4B-XXX-L31) · serial 82324321')||!t(0).includes('Set office · Master Bedroom (zone 2731) to 75%'))throw Error('a rule reads as When → Then with Lutron names: '+t(0));
+      if(!cards[1].className.includes('off')||!t(1).includes('Disabled')||!t(1).includes('for zone 9')||!t(1).includes('Select Natural Show 3 on zone 44')||!t(1).includes("at the event's level"))throw Error('a disabled show rule: '+t(1));
+      if(!t(2).includes('Any CCX event')||!t(2).includes('Matches every event')||!t(2).includes('to off'))throw Error('a blank match is called out: '+t(2));
+      if(!text(view('local-shades')).includes('CCA controls are unavailable'))throw Error('the shade section explains when CCA controls are missing');
+      failKeys.add('rules');await loadLocalRules();failKeys.delete('rules');
+      if(view('local-rules-pill').textContent!=='Unavailable'||view('local-rules').children.length)throw Error('an unreadable rule list is not shown as empty');
+      haData=ha;showTab('activity')}
     ccxEventView({schema_version:1,boot_id:6,cursor:0,next:1,events:[],stream:{state:'unsupported'}});
     if(ccxRows.length||view('ccx-stream-pill').textContent!=='Not supported')throw Error('new boot resets the CCX view and old gateways remain usable');
     {const prior=replies.status;replies.status={listener:{online:true},clock:{synced:true,uncertainty_us:12},monitoring:{age_s:100}};replies.clock={boot_id:6,utc_anchor:{synced:true},monitoring:{age_s:1}};ccxHealthAt=0;await loadCcxHealth();

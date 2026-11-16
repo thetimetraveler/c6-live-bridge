@@ -104,7 +104,9 @@ class ServiceTests(unittest.TestCase):
         self.assertNotIn("layout", auto, "a blank layout means detect it")
         self.assertEqual(auto["buttons"], {"on": "dim"})
         self.assertNotIn("buttons", self.service.put_config(config(buttons={}))["targets"][0])
-        for bad in ({"layout": "pj9"}, {"layout": "pj2-2b", "buttons": {"1": "dim"}}, {"buttons": {"x": "dim"}},
+        self.assertEqual(self.service.put_config(config(layout="shade"))["targets"][0]["layout"], "shade")
+        self.assertEqual(self.service.put_config(config(layout="dimmer"))["targets"][0]["layout"], "dimmer")
+        for bad in ({"layout": "shade", "buttons": {"on": "dim"}}, {"layout": "pj9"}, {"layout": "pj2-2b", "buttons": {"1": "dim"}}, {"buttons": {"x": "dim"}},
                     {"buttons": {"on": "missing"}}, {"buttons": ["dim"]}, {"layout": "none", "buttons": {"on": "dim"}}):
             with self.assertRaises(ValueError, msg=bad): self.service.put_config(config(**bad))
 

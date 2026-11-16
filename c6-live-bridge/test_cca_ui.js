@@ -17,6 +17,8 @@ class Element {
   replaceChildren(...nodes) { this.children = []; if (this.tag === 'select') this._value = ''; this.append(...nodes); }
   firstOption() { for (const child of this.children) { if (child.tag === 'option') return child; const nested = child.firstOption?.(); if (nested) return nested; } return null; }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+  setAttribute(k, v) { (this.attrs ||= {})[k] = String(v); }
+  getAttribute(k) { return this.attrs?.[k] ?? null; }
   dispatch(type) { for (const fn of this.listeners[type] || []) fn({target:this}); return this['on'+type]?.({target:this,preventDefault(){}}); }
   click() { return this.dispatch('click'); }
 }
@@ -288,4 +290,86 @@ if (process.env.CCA_CAPABILITIES_FIXTURE) {
   }
 }
 await tick();
+
+// Targets drawn as Picos: layout from the Lutron device whose serial is the target's device ID, else asked for.
+{
+  t.setCapabilities(caps);
+  assert.equal(t.layoutOf({model:'PJ2-3BRL-GWH-L01'}),'pj2-3brl');
+  assert.equal(t.layoutOf({model:'PJ2-4B-XXX-L31',type:'Pico4Button'}),'pj2-4b');
+  assert.equal(t.layoutOf({type:'Pico2ButtonRaiseLower'}),'pj2-2brl');
+  assert.equal(t.layoutOf({type:'Pico4ButtonScene'}),'pj2-4b');
+  assert.equal(t.layoutOf({model:'HRST-HN4B-XX',type:'SunnataHybridKeypad'}),null,'a keypad is not a Pico');
+  context.haData = {leap:{areas:{'330':{name:'Master Bedroom',path:'Master Bedroom'}},keypads:{
+    '12742':{name:'Bedside',device:'Position 2',area:'330',model:'PJ2-4B-XXX-L31',type:'Pico4Button',serial:82324321},
+    '3933':{name:'Bedside',device:'Position 1',area:'330',model:'PJ2-2B-XXX-L01',type:'Pico2Button',serial:139175899},
+    '1208':{name:'stairs top',model:'HRST-HN4B-XX',type:'SunnataHybridKeypad',serial:103906374}}}};
+  t.setConfig({expected_mac:'',targets:[{id:'bedside',name:'Bedside',device_id:82324321},{id:'mystery',name:'Mystery',device_id:5},{id:'stairs',name:'Stairs',device_id:103906374}],
+    presets:[{id:'dim',name:'Dim',command:{cmd:'bridge_level',device_id:4660,level_pct:20}},{id:'off',name:'All off',command:{cmd:'bridge_level',device_id:4660,level_pct:0}}]});
+  const cards = () => get('targets').children, keys = card => walk(card).filter(n => /\bpk\b/.test(n.className));
+  const find = (root, pred) => walk(root).find(pred);
+  assert.deepEqual(keys(cards()[0]).map(k => k.picoKey),['1','2','3','4'],'a PJ2-4B is drawn with four buttons');
+  assert.match(text(cards()[0]),/Pico 4-button from Lutron: Bedside Position 2 · Master Bedroom · PJ2-4B-XXX-L31/);
+  assert.equal(keys(cards()[1]).length,0); assert.match(text(cards()[1]),/No Lutron Pico has this serial\. Choose the layout/,'an unknown device asks for its layout');
+  assert.match(text(cards()[2]),/is not a Pico/);
+  assert.match(text(get('presets')),/Set level/,'presets show the command title from the catalogue');
+  assert.match(text(get('presets')),/Level 20%/);
+
+  // Select a button: its programming panel opens; assign a preset.
+  keys(cards()[0])[1].click();
+  let pick = find(cards()[0], n => n.id === 'cca-button-preset');
+  assert.ok(pick,'selecting a button shows its programming'); assert.match(text(cards()[0]),/Button 2 on Bedside/);
+  assert.match(text(cards()[0]),/Choose a preset for this button/);
+  pick.value = 'dim'; pick.dispatch('change');
+  assert.deepEqual(plain(t.config().targets[0].buttons),{'2':'dim'});
+  assert.match(keys(cards()[0])[1].className,/\bset\b/); assert.match(keys(cards()[0])[1].className,/\bon\b/);
+  assert.match(text(cards()[0]),/Set level.*Level 20%/s,'the panel shows what the preset sends');
+  assert.match(text(get('presets').children[0]),/Programmed on Bedside · Button 2/);
+  assert.match(text(get('presets').children[1]),/Not on any Pico button/);
+  assert.equal(t.state().configDirty,true);
+
+  const sent = count('cca/command');
+  await find(cards()[0], n => n.tag === 'button' && n.textContent === 'Send now').click(); await tick();
+  assert.equal(count('cca/command'),sent+1); assert.deepEqual(JSON.parse(requests.findLast(r => r.route === 'cca/command').opts.body),{cmd:'bridge_level',device_id:4660,level_pct:20});
+  assert.match(get('button-note').textContent,/request \d+/,'the receipt is shown under the button');
+
+  // Choose a layout for the unknown device.
+  const layoutSelect = find(cards()[1], n => n.tag === 'select' && walk(n).some(o => o.value === 'pj2-3brl'));
+  layoutSelect.value = 'pj2-3brl'; layoutSelect.dispatch('change');
+  assert.deepEqual(keys(cards()[1]).map(k => k.picoKey),['on','raise','fav','lower','off']);
+  assert.match(text(cards()[1]),/Shown as Pico 3-button with raise\/lower \(chosen here\)/);
+  keys(cards()[1])[4].click(); pick = find(cards()[1], n => n.id === 'cca-button-preset'); pick.value = 'off'; pick.dispatch('change');
+  assert.equal(find(cards()[0], n => n.id === 'cca-button-preset'),undefined,'one button panel is open at a time');
+
+  let payload = t.configPayload();
+  assert.deepEqual(plain(payload.targets[0]),{id:'bedside',name:'Bedside',device_id:82324321,buttons:{'2':'dim'}},'a detected layout is not stored');
+  assert.deepEqual(plain(payload.targets[1]),{id:'mystery',name:'Mystery',device_id:5,layout:'pj2-3brl',buttons:{off:'off'}});
+
+  // Renaming a preset ID keeps its buttons; removing a preset clears them.
+  const idInput = walk(get('presets').children[0]).filter(n => n.tag === 'input')[1];
+  idInput.value = 'dim2'; idInput.dispatch('input');
+  assert.equal(t.config().targets[0].buttons['2'],'dim2');
+  find(get('presets').children[0], n => n.textContent === 'Remove preset').click();
+  assert.deepEqual(plain(t.config().targets[0].buttons),{}); assert.match(get('config-note').textContent,/cleared from 1 Pico button/);
+  assert.equal(t.configPayload().targets[0].buttons,undefined);
+
+  // A chosen layout drops buttons it does not have.
+  t.config().targets[0].layout = 'pj2-2b'; t.config().targets[0].buttons = {'2':'off',on:'off'};
+  assert.deepEqual(plain(t.configPayload().targets[0].buttons),{on:'off'});
+  delete t.config().targets[0].layout; t.config().targets[0].buttons = {};
+
+  // Add a Pico straight from Lutron: only Picos not already added are offered.
+  t.selectButton(null);
+  const offered = walk(get('add-pico')).filter(n => n.tag === 'option' && n.value).map(n => n.value);
+  assert.deepEqual(offered,['139175899'],'added Picos and keypads are not offered');
+  get('add-pico').value = '139175899'; get('add-pico').dispatch('change');
+  const added = t.config().targets.at(-1);
+  assert.deepEqual(plain(added),{id:'bedside-position-1',name:'Bedside Position 1',device_id:'139175899'});
+  assert.deepEqual(keys(cards()[3]).map(k => k.picoKey),['on','off']); assert.ok(find(cards()[3], n => n.id === 'cca-button-preset'),'the new Pico opens on its first button');
+
+  // Lutron data arriving later redraws the targets once; unchanged data does not.
+  context.haData = null; ui.lutronChanged(); assert.match(text(cards()[0]),/Lutron data is not available/);
+  const before = cards()[0]; ui.lutronChanged(); assert.equal(cards()[0],before);
+  context.haData = {leap:{keypads:{a:{name:'Bedside',model:'PJ2-4B-XXX-L31',serial:82324321}}}}; ui.lutronChanged();
+  assert.deepEqual(keys(cards()[0]).map(k => k.picoKey),['1','2','3','4']);
+}
 console.log('CCA dashboard metadata, commands, events, settings, presence and OTA tests passed');

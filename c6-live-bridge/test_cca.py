@@ -93,6 +93,21 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.service.command(command)
         self.assertEqual(self.gateway.writes, [])
 
+    def test_pico_layout_and_button_presets(self):
+        dim = {"id": "dim", "name": "Dim", "command": {"cmd": "bridge_level", "device_id": 1, "level_pct": 50}}
+        def config(**target):
+            return {"expected_mac": "", "presets": [dim], "targets": [{"id": "bedside", "name": "Bedside", "device_id": 82324321, **target}]}
+        saved = self.service.put_config(config(layout="pj2-4b", buttons={"1": "dim", "4": "dim"}))
+        self.assertEqual(saved["targets"][0]["layout"], "pj2-4b")
+        self.assertEqual(saved["targets"][0]["buttons"], {"1": "dim", "4": "dim"})
+        auto = self.service.put_config(config(layout="", buttons={"on": "dim"}))["targets"][0]
+        self.assertNotIn("layout", auto, "a blank layout means detect it")
+        self.assertEqual(auto["buttons"], {"on": "dim"})
+        self.assertNotIn("buttons", self.service.put_config(config(buttons={}))["targets"][0])
+        for bad in ({"layout": "pj9"}, {"layout": "pj2-2b", "buttons": {"1": "dim"}}, {"buttons": {"x": "dim"}},
+                    {"buttons": {"on": "missing"}}, {"buttons": ["dim"]}, {"layout": "none", "buttons": {"on": "dim"}}):
+            with self.assertRaises(ValueError, msg=bad): self.service.put_config(config(**bad))
+
     def test_shade_catalogue_is_capability_driven_and_flat(self):
         def field(name, maximum, required=True, minimum=0):
             return {"name": name, "type": "integer", "min": minimum, "max": maximum, "required": required}

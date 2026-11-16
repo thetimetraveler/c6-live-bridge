@@ -347,28 +347,195 @@ var CCAUI = (() => {
     input.type = 'text'; input.value = value ?? ''; input.placeholder = placeholder; input.autocomplete = 'off';
     input.addEventListener('input', () => { onChange(input.value); configDirty = true; }); wrap.append(input); return wrap;
   }
+  // Pico layouts, top to bottom as on the remote. Keys match the add-on's PICO_LAYOUTS.
+  const PICO = {
+    'pj2-2b':   {name:'Pico 2-button', buttons:[['on','On'],['off','Off']]},
+    'pj2-2brl': {name:'Pico 2-button with raise/lower', buttons:[['on','On'],['raise','Raise'],['lower','Lower'],['off','Off']]},
+    'pj2-3b':   {name:'Pico 3-button', buttons:[['on','On'],['fav','Favorite'],['off','Off']]},
+    'pj2-3brl': {name:'Pico 3-button with raise/lower', buttons:[['on','On'],['raise','Raise'],['fav','Favorite'],['lower','Lower'],['off','Off']]},
+    'pj2-4b':   {name:'Pico 4-button', buttons:[['1','Button 1'],['2','Button 2'],['3','Button 3'],['4','Button 4']]},
+  };
+  const PICO_TYPES = {Pico2Button:'pj2-2b', Pico2ButtonRaiseLower:'pj2-2brl', Pico3Button:'pj2-3b', Pico3ButtonRaiseLower:'pj2-3brl'};
+  let selectedButton = null, lutronSig = '';
+  // Keypads from Home Assistant's Lutron integration (read by the page); a Pico's serial is its CCA device ID.
+  function lutronKeypads() {
+    const k = typeof haData !== 'undefined' ? haData?.leap?.keypads : null;
+    return k && typeof k === 'object' ? Object.values(k).filter(d => d && typeof d === 'object') : [];
+  }
+  function layoutOf(device) {
+    const m = /^PJ2-([234])B(RL)?(?:-|$)/i.exec(String(device?.model || ''));
+    if (m) return 'pj2-' + m[1] + 'b' + (m[2] ? 'rl' : '');
+    if (/^Pico4Button/.test(device?.type || '')) return 'pj2-4b';
+    return PICO_TYPES[device?.type] || null;
+  }
+  const lutronPicos = () => lutronKeypads().filter(d => Number.isSafeInteger(d.serial) && layoutOf(d));
+  function deviceOf(target) {
+    let id; try { id = parseInteger(target.device_id, 0, 0xffffffff); } catch { return null; }
+    return lutronKeypads().find(d => d.serial === id) || null;
+  }
+  // The layout to draw: an explicit choice, else what the Lutron device says, else unknown (null).
+  function resolveLayout(target) {
+    if (target.layout) return {layout: target.layout === 'none' ? null : target.layout, device: deviceOf(target), source: 'chosen'};
+    const device = deviceOf(target), layout = layoutOf(device);
+    return {layout, device, source: layout ? 'lutron' : device ? 'not-pico' : 'unknown'};
+  }
+  const deviceLabel = d => [d.name, d.device].filter(Boolean).join(' ') + (lutronArea(d.area) ? ' · ' + lutronArea(d.area) : '') + (d.model ? ' · ' + d.model : '');
+  function lutronArea(id) { const a = typeof haData !== 'undefined' ? haData?.leap?.areas?.[String(id)] : null; return a?.path || a?.name || ''; }
+  const presetById = id => presetDrafts.find(p => p.id === id);
+  function presetCommand(preset) { try { const c = JSON.parse(preset.text); return c && typeof c === 'object' && !Array.isArray(c) ? c : null; } catch { return null; } }
+  // A preset's command as short readable chips: its title, then each field.
+  function commandChips(command) {
+    const wrap = node('div', 'cca-chips');
+    if (!command) { wrap.append(node('span', 'cca-chip bad', 'Invalid JSON')); return wrap; }
+    const d = descriptor(command.cmd);
+    wrap.append(node('span', 'cca-chip cmd', d?.title || command.cmd || 'No cmd'));
+    for (const [k, v] of Object.entries(command)) if (k !== 'cmd') {
+      const field = d?.fields?.find(f => f.name === k), label = field?.label || k.replace(/_/g, ' ');
+      const shown = /_pct$/.test(k) && typeof v === 'number' ? v + '%' : (k === 'device_id' || k === 'target_id') && Number.isSafeInteger(v) ? `${v} (${asHex(v)})` : display(v);
+      wrap.append(node('span', 'cca-chip', `${label} ${shown}`));
+    }
+    return wrap;
+  }
+  function usesOf(presetId) {
+    const uses = [];
+    for (const t of config?.targets || []) for (const [key, id] of Object.entries(t.buttons || {})) if (id === presetId) {
+      const layout = resolveLayout(t).layout, label = PICO[layout]?.buttons.find(b => b[0] === key)?.[1] || 'Button ' + key;
+      uses.push(`${t.name || t.id} · ${label}`);
+    }
+    return uses;
+  }
+  function picoView(target, layout, refresh) {
+    const wrap = node('div', 'pico-wrap'), body = node('div', 'pico'), legend = node('div', 'pico-legend');
+    body.title = PICO[layout].name;
+    for (const [key, label] of PICO[layout].buttons) {
+      const preset = presetById(target.buttons?.[key]), active = selectedButton?.target === target && selectedButton.key === key;
+      const kind = key === 'raise' || key === 'lower' ? 'rl' : key === 'fav' ? 'fav' : layout === 'pj2-4b' ? 'scene' : 'main';
+      const b = node('button', 'pk ' + kind + (preset ? ' set' : '') + (active ? ' on' : ''), key === 'raise' ? '▲' : key === 'lower' ? '▼' : key === 'fav' ? '' : layout === 'pj2-4b' ? key : label);
+      b.type = 'button'; b.title = label + (preset ? ': ' + (preset.name || preset.id) : ': not programmed');
+      b.setAttribute?.('aria-label', b.title); b.setAttribute?.('aria-pressed', String(active)); b.picoKey = key;
+      const pick = () => {
+        const previous = selectedButton?.target; selectedButton = active ? null : {target, key}; refresh();
+        if (previous && previous !== target) targetItems.find(item => item.target === previous)?.refresh();
+      };
+      b.onclick = pick; body.append(b);
+      const row = node('button', 'pico-row' + (active ? ' on' : '')); row.type = 'button'; row.onclick = pick; row.picoKey = key;
+      row.append(node('strong', '', label), node('span', preset ? '' : 'muted', preset ? preset.name || preset.id : 'Not programmed'));
+      legend.append(row);
+    }
+    wrap.append(body, legend);
+    if (selectedButton?.target === target) wrap.append(buttonPanel(target, layout, selectedButton.key, refresh));
+    return wrap;
+  }
+  function buttonPanel(target, layout, key, refresh) {
+    const label = PICO[layout].buttons.find(b => b[0] === key)?.[1] || key, panel = node('div', 'pico-panel');
+    panel.append(node('h4', '', `${label} on ${target.name || target.id}`));
+    const choose = node('label', '', 'Runs preset'), select = node('select');
+    selectOptions(select, [option('', 'Nothing (not programmed)'), ...presetDrafts.map(p => option(p.id, p.name || p.id))], target.buttons?.[key] || '');
+    select.id = 'cca-button-preset';
+    select.addEventListener('change', () => {
+      target.buttons = {...(target.buttons || {})};
+      if (select.value) target.buttons[key] = select.value; else delete target.buttons[key];
+      configDirty = true; refresh(); renderPresetUses(); note('config-note', 'Button programming changed. Save settings to keep it.');
+    });
+    choose.append(select); panel.append(choose);
+    const preset = presetById(target.buttons?.[key]);
+    if (!preset) { panel.append(node('p', 'small muted', presetDrafts.length ? 'Choose a preset for this button, or add one below.' : 'Add a preset below, then assign it here.')); return panel; }
+    const command = presetCommand(preset);
+    panel.append(commandChips(command), node('pre', 'cca-json', command ? JSON.stringify(command, null, 2) : preset.text));
+    const actions = node('div', 'actions'), send = node('button', '', 'Send now'), load = node('button', 'secondary', 'Open in command form'), edit = node('button', 'plain', 'Edit preset');
+    send.disabled = !command || sending;
+    send.onclick = () => sendCommand(command, 'button-note');
+    load.onclick = () => { byId('preset-select').value = preset.id; loadPreset(); byId('command-select').scrollIntoView?.({behavior:'smooth', block:'center'}); };
+    edit.onclick = () => { const card = presetCards.get(preset.id); if (card) { card.details.open = true; card.item.scrollIntoView?.({behavior:'smooth', block:'center'}); } };
+    actions.append(send, load, edit);
+    const out = node('p', 'small muted'); out.id = 'cca-button-note'; out.setAttribute?.('role', 'status');
+    panel.append(actions, node('p', 'small muted', 'Sends the preset exactly as saved. A physical press of this Pico is not changed by this programming.'), out);
+    return panel;
+  }
+  function targetCard(target, index) {
+    const item = node('div', 'cca-item cca-target'), head = node('div', 'cca-fields'), device = node('div', 'cca-device');
+    head.append(inputFor(target.name, 'Name', v => { target.name = v; renderSelectors(); renderPresetUses(); }),
+      inputFor(target.id, 'ID', v => { target.id = v; renderSelectors(); }),
+      ...addressFields.map(field => inputFor(target[field], field === 'device_id' ? 'Device ID (serial)' : field.replace('_', ' '),
+        v => { target[field] = v; if (field === 'device_id') refresh(); }, 'Decimal or 0x hexadecimal')));
+    const layoutLabel = node('label', '', 'Device'), layoutSelect = node('select');
+    selectOptions(layoutSelect, [option('', 'Detect from Lutron'), option('none', 'Not a Pico'), ...Object.entries(PICO).map(([k, v]) => option(k, v.name))], target.layout || '');
+    layoutSelect.addEventListener('change', () => { if (layoutSelect.value) target.layout = layoutSelect.value; else delete target.layout; configDirty = true; refresh(); renderPresetUses(); });
+    layoutLabel.append(layoutSelect); head.append(layoutLabel);
+    function refresh() {
+      const r = resolveLayout(target), parts = [];
+      const status = node('p', 'small ' + (r.layout || r.source === 'chosen' ? 'muted' : 'warn-text'));
+      status.textContent = r.source === 'lutron' ? `${PICO[r.layout].name} from Lutron: ${deviceLabel(r.device)}` :
+        r.source === 'chosen' ? (r.layout ? `Shown as ${PICO[r.layout].name} (chosen here)` : 'Not shown as a Pico (chosen here).') +
+          (r.device && layoutOf(r.device) && layoutOf(r.device) !== r.layout ? ` Lutron reports ${PICO[layoutOf(r.device)].name}.` : '') :
+        r.source === 'not-pico' ? `Lutron device ${deviceLabel(r.device)} is not a Pico.` :
+        String(target.device_id ?? '').trim() === '' ? 'Enter the Pico\'s serial as the device ID, or choose its layout under Device.' :
+        lutronKeypads().length ? 'No Lutron Pico has this serial. Choose the layout under Device to program its buttons.' :
+        'Home Assistant\'s Lutron data is not available, so the layout cannot be detected. Choose it under Device.';
+      parts.push(status);
+      if (r.layout) parts.push(picoView(target, r.layout, refresh));
+      device.replaceChildren(...parts);
+    }
+    const remove = node('button', 'secondary', 'Remove target');
+    remove.onclick = () => { if (selectedButton?.target === target) selectedButton = null; config.targets.splice(index, 1); configDirty = true; renderConfig(); };
+    refresh(); item.refresh = refresh; item.target = target;
+    item.append(head, device, remove); return item;
+  }
+  const presetCards = new Map();
+  function renderPresetUses() {
+    for (const [id, card] of presetCards) {
+      const uses = usesOf(id);
+      card.uses.textContent = uses.length ? 'Programmed on ' + uses.join(', ') : 'Not on any Pico button';
+    }
+  }
+  function presetCard(preset, index) {
+    const item = node('div', 'cca-item cca-preset'), fields = node('div', 'cca-fields'), chips = node('div'), uses = node('p', 'small muted');
+    const showChips = () => chips.replaceChildren(commandChips(presetCommand(preset)));
+    fields.append(inputFor(preset.name, 'Name', v => { preset.name = v; renderSelectors(); refreshTargets(); }),
+      inputFor(preset.id, 'ID', v => {
+        // Keep button programming pointing at this preset when its ID is edited.
+        for (const t of config.targets) for (const [k, id] of Object.entries(t.buttons || {})) if (id === preset.id) t.buttons[k] = v;
+        presetCards.delete(preset.id); preset.id = v; presetCards.set(v, card); renderSelectors();
+      }));
+    const details = node('details'), summary = node('summary', '', 'Command JSON'), input = node('textarea');
+    input.value = preset.text; input.setAttribute?.('aria-label', 'Native command JSON');
+    input.addEventListener('input', () => { preset.text = input.value; configDirty = true; showChips(); refreshTargets(); });
+    details.append(summary, input); details.open = !presetCommand(preset);
+    const remove = node('button', 'secondary', 'Remove preset');
+    remove.onclick = () => {
+      const n = usesOf(preset.id).length;
+      for (const t of config.targets) for (const [k, id] of Object.entries(t.buttons || {})) if (id === preset.id) delete t.buttons[k];
+      presetDrafts.splice(index, 1); configDirty = true; renderConfig();
+      if (n) note('config-note', `Preset removed and cleared from ${n} Pico button${n === 1 ? '' : 's'}. Save settings to keep it.`);
+    };
+    showChips(); item.append(fields, chips, uses, details, remove);
+    const card = {item, details, uses}; presetCards.set(preset.id, card); return item;
+  }
+  let targetItems = [];
+  function refreshTargets() { for (const item of targetItems) item.refresh(); }
+  function renderLutronPicos() {
+    const select = byId('add-pico'), known = new Set((config?.targets || []).map(t => { try { return parseInteger(t.device_id); } catch { return null; } }));
+    const picos = lutronPicos().filter(d => !known.has(d.serial));
+    selectOptions(select, [option('', picos.length ? `Add a Pico from Lutron (${picos.length})` : lutronKeypads().length ? 'Every Lutron Pico is added' : 'No Lutron Picos available'),
+      ...picos.map(d => option(String(d.serial), deviceLabel(d)))], '');
+    select.disabled = !picos.length;
+  }
   function renderConfig() {
     if (!config) return;
     byId('expected-mac').value = config.expected_mac || '';
-    const targets = config.targets.map((target, index) => {
-      const item = node('div', 'cca-item'), fields = node('div', 'cca-fields');
-      fields.append(inputFor(target.id, 'ID', v => { target.id = v; renderSelectors(); }),
-        inputFor(target.name, 'Name', v => { target.name = v; renderSelectors(); }),
-        ...addressFields.map(field => inputFor(target[field], field.replace('_', ' '), v => { target[field] = v; }, 'Decimal or 0x hexadecimal')));
-      const remove = node('button', 'secondary', 'Remove target'); remove.onclick = () => { config.targets.splice(index, 1); configDirty = true; renderConfig(); };
-      item.append(fields, remove); return item;
-    });
-    byId('targets').replaceChildren(...(targets.length ? targets : [node('p','small muted','No saved targets yet.')]));
-    const presets = presetDrafts.map((preset, index) => {
-      const item = node('div','cca-item'), fields = node('div','cca-fields');
-      fields.append(inputFor(preset.id, 'ID', v => { preset.id = v; renderSelectors(); }), inputFor(preset.name, 'Name', v => { preset.name = v; renderSelectors(); }));
-      const label = node('label','','Native command JSON'), input = node('textarea'); input.value = preset.text;
-      input.addEventListener('input', () => { preset.text = input.value; configDirty = true; }); label.append(input);
-      const remove = node('button','secondary','Remove preset'); remove.onclick = () => { presetDrafts.splice(index,1); configDirty = true; renderConfig(); };
-      item.append(fields,label,remove); return item;
-    });
+    if (selectedButton && !config.targets.includes(selectedButton.target)) selectedButton = null;
+    presetCards.clear();
+    const presets = presetDrafts.map(presetCard);
+    targetItems = config.targets.map(targetCard);
+    byId('targets').replaceChildren(...(targetItems.length ? targetItems : [node('p','small muted','No saved targets yet. Add a Pico from Lutron, or add a target by hand.')]));
     byId('presets').replaceChildren(...(presets.length ? presets : [node('p','small muted','No saved presets yet.')]));
-    renderSelectors(); statusView();
+    renderPresetUses(); renderLutronPicos(); renderSelectors(); statusView();
+  }
+  // Called by the page when Home Assistant data refreshes; redraw only if the Lutron devices changed, so typing is not interrupted.
+  function lutronChanged() {
+    const sig = JSON.stringify(lutronKeypads().map(d => [d.serial, d.model, d.type, d.name, d.device, d.area]));
+    if (sig === lutronSig) return; lutronSig = sig;
+    if (config) { refreshTargets(); renderPresetUses(); renderLutronPicos(); }
   }
   function configPayload() {
     const expected = byId('expected-mac').value.trim().toLowerCase();
@@ -379,6 +546,10 @@ var CCAUI = (() => {
       if (!id || !name) throw Error('Every target needs an ID and name.');
       if (ids.has(id)) throw Error('Target IDs must be unique.'); ids.add(id);
       const value = {...t, id, name};
+      if (!value.layout) delete value.layout;
+      const layout = value.layout ? PICO[value.layout] : null, buttons = {};
+      for (const [k, p] of Object.entries(t.buttons || {})) if (p && (!value.layout || layout?.buttons.some(b => b[0] === k))) buttons[k] = p;
+      if (Object.keys(buttons).length) value.buttons = buttons; else delete value.buttons;
       for (const field of addressFields) {
         const raw = t[field];
         if (raw === undefined || raw === null || String(raw).trim() === '') delete value[field];
@@ -395,6 +566,8 @@ var CCAUI = (() => {
       if (!command || typeof command !== 'object' || Array.isArray(command) || typeof command.cmd !== 'string' || !command.cmd) throw Error(`Preset ${name} needs a command object with a cmd.`);
       return {id, name, command};
     });
+    for (const t of targets) for (const p of Object.values(t.buttons || {}))
+      if (!ids.has(p)) throw Error(`${t.name} has a button programmed with a preset that no longer exists.`);
     return {expected_mac:expected, targets, presets};
   }
   function setConfig(value) {
@@ -522,6 +695,14 @@ var CCAUI = (() => {
     configDirty = true; renderConfig(); byId('preset-select').value = id; note('config-note','Preset added to the editor. Save settings to keep it.');
   };
   byId('add-target').onclick = () => { if (!config) return; config.targets.push({id:uniqueId('target',config.targets),name:'New target'}); configDirty = true; renderConfig(); };
+  byId('add-pico').addEventListener('change', () => {
+    const d = lutronPicos().find(x => String(x.serial) === byId('add-pico').value);
+    if (!config || !d) return;
+    const name = [d.name, d.device].filter(Boolean).join(' ') || 'Pico ' + d.serial;
+    const target = {id:uniqueId(name, config.targets), name, device_id:String(d.serial)};
+    config.targets.push(target); selectedButton = {target, key:PICO[layoutOf(d)].buttons[0][0]}; configDirty = true; renderConfig();
+    note('config-note', `${name} added as a ${PICO[layoutOf(d)].name}. Choose what each button runs, then save settings.`);
+  });
   byId('add-preset').onclick = () => { if (!config) return; const id = uniqueId('preset',presetDrafts); presetDrafts.push({id,name:'New preset',text:'{"cmd":"query"}'}); configDirty = true; renderConfig(); };
   byId('expected-mac').addEventListener('input', () => { configDirty = true; if (config) config.expected_mac = byId('expected-mac').value; statusView(); });
   byId('config-save').onclick = async () => {
@@ -555,7 +736,7 @@ var CCAUI = (() => {
     if (!loaded) { if (Date.now() - attemptAt >= 10000) initialize(); return; }
     fetchStatus(); fetchEvents(); if (Date.now() - capsAt >= 30000) refreshCapabilities();
   },2000);
-  return {show, _test:{parseInteger, asHex, parseField, commandFromForm, eventView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
+  return {show, lutronChanged, _test:{layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
     setCapabilities(v) { capabilities = v; renderCommandChoices(); }, setStatus(v) { status = v; statusAt = Date.now(); statusView(); },
     state() { return {boot,cursor,rows:clone(rows),activeReceipt,configDirty}; }}};
 })();

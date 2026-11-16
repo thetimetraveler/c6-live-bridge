@@ -501,6 +501,17 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 /* CCA controls use the same cards and inputs as the rest of the app. */
 .cca-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:2px 12px}.cca-fields label{display:grid;margin:6px 0;min-width:0}.cca-fields input,.cca-fields select{width:100%;min-width:0}
 .cca-list{display:grid;gap:10px}.cca-item{background:var(--inset);border-radius:10px;padding:12px}.cca-item textarea{min-height:90px}.cca-json{display:block;margin:10px 0;padding:12px;border-radius:10px;background:var(--inset);color:var(--label);font:12px/1.45 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.cca-activity{display:grid;gap:6px;max-height:600px;overflow:auto}.cca-activity details{background:var(--inset);border-radius:9px;padding:9px 12px}.cca-activity summary{cursor:pointer;overflow-wrap:anywhere}.cca-activity pre{white-space:pre-wrap;overflow-wrap:anywhere}.cca-break{overflow-wrap:anywhere}
+/* CCA targets drawn as Pico remotes; a button shows the preset it runs. */
+.cca-device{margin:4px 0 10px}.pico-wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;margin-top:8px}
+.pico{display:grid;gap:7px;width:84px;padding:18px 12px 22px;border-radius:24px;background:var(--card);border:.5px solid var(--sep);box-shadow:0 6px 18px rgba(0,0,0,.12),inset 0 -2px 0 var(--sep)}
+.pico .pk{position:relative;display:block;width:100%;height:40px;padding:0;margin:0;border-radius:9px;background:var(--inset);color:var(--label);font-size:.72rem;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.18);transform:none}
+.pico .pk.scene{height:44px;font-size:.85rem}.pico .pk.rl{height:24px;font-size:.6rem;border-radius:7px}.pico .pk.fav{justify-self:center;width:30px;height:30px;border-radius:50%}
+.pico .pk.set::after{content:'';position:absolute;right:6px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--blue)}.pico .pk.fav.set::after{right:12px;top:12px}
+.pico .pk.on{outline:2px solid var(--blue);outline-offset:2px;background:var(--blue-t);color:var(--blue)}
+.pico-legend{display:grid;gap:4px;min-width:180px;flex:1}.pico-row{display:flex;justify-content:space-between;gap:12px;padding:7px 10px;border-radius:8px;background:none;color:var(--label);font-weight:400;text-align:left;white-space:normal}
+.pico-row.on{background:var(--blue-t)}.pico-row strong{font-weight:600}.pico-panel{flex-basis:100%;background:var(--card);border-radius:10px;padding:12px;border:.5px solid var(--sep)}.pico-panel h4{margin:0 0 6px}
+.cca-chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.cca-chip{font-size:.75rem;padding:3px 8px;border-radius:999px;background:var(--card);border:.5px solid var(--sep);overflow-wrap:anywhere}.cca-chip.cmd{background:var(--blue-t);color:var(--blue);border-color:transparent;font-weight:600}.cca-chip.bad{color:var(--red,#d70015)}
+.cca-preset details summary{cursor:pointer;color:var(--blue);font-size:.85rem;margin:4px 0}#cca-add-pico{max-width:100%}
 /* Live feeds (live.js): bounded scroll areas that hold the reader's place while rows arrive. */
 /* live.js keeps the page still itself; the browser's own scroll anchoring would apply the same correction a second time, and Safari lacks it. */
 html,body{overflow-anchor:none}
@@ -635,8 +646,8 @@ html,body{overflow-anchor:none}
     <div class="card-head"><h2>Targets and presets</h2></div>
     <p class="lede">These are saved in the add-on. Targets fill matching address fields; presets hold the exact native command and never send when loaded.</p>
     <label>Expected CCA board MAC<input id="cca-expected-mac" placeholder="10:bd:a3:b1:5b:1c" autocomplete="off"></label>
-    <h3>Targets</h3><div id="cca-targets" class="cca-list"></div><div class="actions"><button id="cca-add-target" class="secondary">Add target</button></div>
-    <h3>Presets</h3><div id="cca-presets" class="cca-list"></div><div class="actions"><button id="cca-add-preset" class="secondary">Add preset</button></div>
+    <h3>Targets</h3><p class="small muted">A Pico target is drawn as the remote. Select a button to see and change the preset it runs.</p><div id="cca-targets" class="cca-list"></div><div class="actions"><select id="cca-add-pico" aria-label="Add a Pico from Lutron"></select><button id="cca-add-target" class="secondary">Add target by hand</button></div>
+    <h3>Presets</h3><p class="small muted">Saved commands. Each shows what it sends and which Pico buttons run it.</p><div id="cca-presets" class="cca-list"></div><div class="actions"><button id="cca-add-preset" class="secondary">Add preset</button></div>
     <div class="actions"><button id="cca-config-save">Save targets and presets</button><button id="cca-config-reload" class="secondary">Reload saved settings</button></div><p id="cca-config-note" class="small muted" role="status"></p>
   </section>
   <section class="card">
@@ -1261,7 +1272,7 @@ const leap=()=>haData?.leap&&typeof haData.leap==='object'&&!haData.leap.error?h
 function leapZone(id){const l=leap(),z=l?.zones?.[String(id)];return z?{...z,path:l.areas?.[z.area]?.path||null}:null}
 /* "SpectrumTune · 1400–10000 K · warm dim" for a Lutron zone. */
 function fixtureText(z){if(!z)return '';return [z.type,Array.isArray(z.tuning)?`${z.tuning[0]}–${z.tuning[1]} K`:null,z.warm_dim===true?'warm dim':null].filter(Boolean).join(' · ')}
-function applyHA(d){haData=d&&d.available?d:null;haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={zone:new Map(),serial:new Map(),name:new Map()};const dup=new Set();
+function applyHA(d){haData=d&&d.available?d:null;if(typeof CCAUI!=='undefined')try{CCAUI.lutronChanged()}catch{}haError=d&&!d.available?d.error||'':'Home Assistant data unavailable';haIndex={zone:new Map(),serial:new Map(),name:new Map()};const dup=new Set();
   for(const l of haData?.lights||[]){if(l.zone_id&&!haIndex.zone.has(serialNorm(l.zone_id)))haIndex.zone.set(serialNorm(l.zone_id),l);if(l.serial)haIndex.serial.set(serialNorm(l.serial),l);for(const n of new Set([normName(l.name),normName(l.device)])){if(!n)continue;if(haIndex.name.has(n)&&haIndex.name.get(n)!==l)dup.add(n);else haIndex.name.set(n,l)}}for(const n of dup)haIndex.name.delete(n);
   const labelSig=JSON.stringify((haData?.lights||[]).map(l=>[l.entity_id,l.name,l.device,l.area,l.serial,l.zone_id]));if(labelSig!==haLabelSig){haLabelSig=labelSig;programSig='';zoneFilterSig='';if(lastDevices)deviceView(lastDevices);renderEvents();renderSerialOptions();editorChanged(false)}
   const sunSig=JSON.stringify([haData?.sun,haData?.time_zone]);if(sunSig!==haSunSig){haSunSig=sunSig;if(lastProgram)renderProgram(lastProgram)}}

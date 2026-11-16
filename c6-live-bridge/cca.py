@@ -16,6 +16,11 @@ CHUNK = 40
 MAC = re.compile(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\Z")
 HEX = re.compile(r"(?:[0-9a-fA-F]{2})*\Z")
 ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
+# Pico layouts a target can be drawn as ("none": not a Pico), and the buttons they have.
+PICO_LAYOUTS = {"none": (), "pj2-2b": ("on", "off"), "pj2-2brl": ("on", "raise", "lower", "off"),
+                "pj2-3b": ("on", "fav", "off"), "pj2-3brl": ("on", "raise", "fav", "lower", "off"),
+                "pj2-4b": ("1", "2", "3", "4")}
+PICO_BUTTONS = {b for keys in PICO_LAYOUTS.values() for b in keys}
 
 
 class CcaError(Exception):
@@ -241,13 +246,26 @@ class CcaService:
                     if set(item) != {"id", "name", "command"} or not isinstance(item["command"], dict):
                         raise ValueError("invalid preset")
                 else:
-                    if set(item) - {"id", "name", "device_id", "target_id", "subnet"}:
+                    if set(item) - {"id", "name", "device_id", "target_id", "subnet", "layout", "buttons"}:
                         raise ValueError("invalid target field")
                     item = dict(item)
+                    # layout absent means "detect from Home Assistant's Lutron data"; buttons map a button to a preset ID.
+                    if item.get("layout") in (None, ""): item.pop("layout", None)
+                    elif item["layout"] not in PICO_LAYOUTS: raise ValueError("invalid target layout")
+                    buttons = item.pop("buttons", None) or {}
+                    if not isinstance(buttons, dict): raise ValueError("invalid target buttons")
+                    allowed = PICO_LAYOUTS[item["layout"]] if "layout" in item else PICO_BUTTONS
+                    for button, preset in buttons.items():
+                        if button not in allowed or not isinstance(preset, str) or not ID.fullmatch(preset):
+                            raise ValueError("invalid target button")
+                    if buttons: item["buttons"] = dict(buttons)
                     for name in ("device_id", "target_id", "subnet"):
                         if name in item and item[name] not in (None, ""):
                             item[name] = uint(item[name], name, 65535 if name == "subnet" else 0xffffffff)
                 result[group].append(item)
+        presets = {p["id"] for p in result["presets"]}
+        if any(p not in presets for t in result["targets"] for p in t.get("buttons", {}).values()):
+            raise ValueError("target button uses an unknown preset")
         return result
 
     def get_config(self):

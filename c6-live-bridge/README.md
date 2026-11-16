@@ -582,6 +582,22 @@ file and its CCA settings under `/data`. This flow updates Lutron end devices;
 the separate passive B1 firmware card updates B1. CCA C6 self-update is not
 implemented.
 
+### Pico targets
+
+A target whose device ID is a Pico's serial is drawn as that Pico. The layout
+comes from Home Assistant's Lutron Caséta/RA3 diagnostics (`model`, such as
+`PJ2-4B-XXX-L31`, or `type`, such as `Pico4Button`). When no Lutron Pico has
+that serial, or Lutron data is unavailable, choose the layout under **Device**
+on the target; that choice is saved as `layout` (`pj2-2b`, `pj2-2brl`,
+`pj2-3b`, `pj2-3brl`, `pj2-4b` or `none`). **Add a Pico from Lutron** creates a
+target from a Pico the processor knows about.
+
+Select a button to see its programming: the preset it runs (saved as
+`buttons`, a map from `on`, `off`, `fav`, `raise`, `lower` or `1`–`4` to a
+preset ID), what the command sends and its JSON. **Send now** sends that
+preset once. This programming lives in the add-on: it does not change what a
+physical press of the Pico does in the Lutron system.
+
 With the MQTT broker service available, send nonretained QoS 0 requests to
 `ccx_bridge/cca/command`:
 

@@ -1,3 +1,9 @@
+## 0.21.0
+
+- Draw CCA targets as Pico remotes. A target's layout (2-button, 2-button with raise/lower, 3-button, 3-button with raise/lower or 4-button) is detected by matching its device ID to a Pico serial in Home Assistant's Lutron data; when no Pico matches, choose the layout on the target.
+- Select a Pico button to see its programming: the preset it runs, what that command sends and its JSON, with Send now, Open in command form and Edit preset. Assign or clear a button's preset there.
+- Add a Pico from Lutron in one step. Preset cards show their command as readable chips and which Pico buttons run them; the JSON editor stays available. Renaming a preset's ID keeps its buttons, and removing a preset clears them.
+
 ## 0.20.0
 
 - Show the Activity table, the CCX event inspector and the CCA packets and activity list as fixed-height live feeds, so new events no longer push the rest of the page down.

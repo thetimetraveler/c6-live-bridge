@@ -1029,6 +1029,8 @@ LEAP_DIAG={"data":{"bridge_data":{
              "2710":{"id":"2710","name":"Office","parent_id":"1077"},"9":{"id":"9","name":"Loop","parent_id":"9"}},
     "devices":{"30861":{"zone":"30861","device_name":"office lamp","area":"2710","type":"SpectrumTune","white_tuning_range":{"Min":1400,"Max":10000},"warm_dim":False},
                "1208":{"zone":None,"button_groups":["1219"],"control_station_name":"stairs top","device_name":"Position 2","area":"2710","model":"HRST-HN4B-XX"},
+               "12742":{"zone":None,"button_groups":["12745"],"control_station_name":"Bedside","device_name":"Position 2","area":"2710","model":"PJ2-4B-XXX-L31","type":"Pico4Button","serial":82324321},
+               "12767":{"zone":None,"button_groups":["12770"],"control_station_name":"nursery","model":"PJ2-4B-XXX-L31","type":"Pico4Button","serial":"82324361"},
                "1215":{"zone":None,"type":"KeypadLED","parent_device":"1208"}}}}}
 
 
@@ -1038,7 +1040,10 @@ class LeapDataTests(unittest.TestCase):
         self.assertEqual(d["areas"]["2710"],{"name":"Office","path":"Second Floor › Office"})
         self.assertEqual(d["areas"]["9"]["name"],"Loop")  # a parent loop ends the walk
         self.assertEqual(d["zones"]["30861"],{"name":"office lamp","area":"2710","type":"SpectrumTune","tuning":[1400,10000],"warm_dim":False})
-        self.assertEqual(list(d["keypads"]),["1208"])
+        self.assertEqual(list(d["keypads"]),["1208","12742","12767"])
+        self.assertEqual(d["keypads"]["12742"],{"name":"Bedside","device":"Position 2","area":"2710","model":"PJ2-4B-XXX-L31","type":"Pico4Button","serial":82324321})
+        self.assertIsNone(d["keypads"]["1208"]["serial"])
+        self.assertIsNone(d["keypads"]["12767"]["serial"],"a serial that is not an integer is not trusted as a CCA device ID")
         with self.assertRaises(ValueError):
             app.HomeAssistant.leap_data({"data":{}})
 

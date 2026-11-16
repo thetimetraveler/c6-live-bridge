@@ -412,7 +412,9 @@ class HomeAssistant:
             elif dev.get("button_groups"):
                 keypads[str(key)] = {"name": clean_text(dev.get("control_station_name") or dev.get("name"), 64),
                                      "device": clean_text(dev.get("device_name"), 64), "area": area,
-                                     "model": clean_text(dev.get("model"), 32)}
+                                     "model": clean_text(dev.get("model"), 32), "type": clean_text(dev.get("type"), 32),
+                                     # The device serial is its CCA device ID, so a CCA target can be matched to its Pico.
+                                     "serial": dev["serial"] if type(dev.get("serial")) is int and 0 < dev["serial"] <= 0xffffffff else None}
         return {"areas": areas, "zones": zones, "keypads": keypads}
 
     def leap(self, lights):

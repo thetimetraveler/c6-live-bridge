@@ -32,7 +32,8 @@ const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.
 const html = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 assert.match(html, /id="tab-cca"/);
 assert.match(html, /Passive CCX listener \(B1\) firmware/);
-assert.match(html, /CCA end-device firmware/);
+assert.match(html, /CCA node firmware/);
+assert.match(html, /Lutron end-device firmware over CCA/);
 assert.match(html, /<script src="cca\.js"><\/script>/);
 assert.ok(html.indexOf('src="cca-decoder.js"') < html.indexOf('src="cca.js"'),'decoder loads before CCA UI');
 assert.match(fs.readFileSync(new URL('./Dockerfile',import.meta.url),'utf8'),/^COPY .*cca-decoder\.js/m);
@@ -54,7 +55,7 @@ const caps = {schema_version:1,commands:cmds,max_raw_bytes:53,max_body_bytes:112
 const initialConfig = {expected_mac:'10:bd:a3:b1:5b:1c',targets:[{id:'office',name:'Office',device_id:0x1234,target_id:5,subnet:7}],presets:[]};
 const status = {supported:true,status_age_s:1,status:{ready:true,configuration:'ready',i2c:{online:true,status_age_ms:1000},c6:{mac:'10:bd:a3:b1:5b:1c',boot_id:4,radio_present:true,native_encoder:false,rx_packets:8,tx_packets:3}},ota:{state:'idle',upload:null}};
 const requests = [], confirmations = [];
-let confirmResult = true, failCommand = false, clipboard = '', download = null, nextRequest = 42;
+let confirmResult = true, failCommand = false, failNode = false, nodeAfterPost = null, clipboard = '', download = null, nextRequest = 42;
 const state = {caps, config:initialConfig, status, events:{schema_version:1,boot_id:55,cursor:0,events:[],stream:{state:'online'}}};
 const context = {
   document, console, Date, Math, Number, String, Object, Array, Set, Map, JSON, Promise, Error,
@@ -71,6 +72,7 @@ const context = {
     if (route === 'cca/status') return state.status;
     if (route.startsWith('cca/events?')) return state.events;
     if (route === 'cca/command') { if (failCommand) throw Error('connection lost'); return {accepted:true,request_id:nextRequest++}; }
+    if (route === 'cca/node-update') { if (nodeAfterPost) state.status = nodeAfterPost; if (failNode) throw Error('connection lost'); return {accepted:true}; }
     if (route === 'cca/state') return {accepted:true,revision:8};
     if (route.startsWith('cca/ota/file?')) return {state:'ready',upload:{size:3,sha256:'abcd'},expected:3,staged:0};
     if (route === 'cca/ota/action') return {state:'staging',upload:{size:3,sha256:'abcd'},expected:3,staged:0};
@@ -98,6 +100,7 @@ await ui.show();
 assert.equal(requests.filter(r => r.opts?.method && r.opts.method !== 'GET').length,0,'opening reads cache only');
 assert.equal(walk(get('command-select')).filter(n=>n.tag==='option').length,34,'all metadata commands are exposed');
 assert.equal(get('status-pill').textContent,'Ready');
+assert.match(get('node-note').textContent,/one-time USB bootstrap/,'old firmware remains usable and shows the bootstrap requirement');
 assert.match(text(get('status-facts')),/Matches expected MAC/);
 t.setStatus({...status,status_age_s:30}); assert.equal(get('status-pill').textContent,'Unavailable or stale');
 t.setStatus({...status,status:{...status.status,latest_operation:{cmd:'ota_full_tx',request_id:19,stage:'running',current:3,total:8,reason:'none'}}});
@@ -320,6 +323,55 @@ t.eventView({boot_id:91,cursor:1,events:[{id:1,kind:'cca.feedback',node_boot_id:
 assert.match(get('command-note').textContent,/Latest motor 4660: Shade ACK observed/);
 t.eventView({boot_id:92,cursor:0,events:[],stream:{state:'online'}});
 assert.match(get('command-note').textContent,/Feedback outcome unknown/,'raw-command feedback is also invalidated on restart');
+
+// Node self-update uses its own signed image path and the existing cached status.
+const image = (size, header=0xe9) => ({name:'cca-node.bin',size,slice(){return {async arrayBuffer(){return new Uint8Array([header]).buffer;}}}});
+const idleNode = {supported:true,online:true,busy:false,phase:'idle',error:'',offset:0,total:0,mac:'10:bd:a3:b1:5b:1c',
+  boot_id:4,slot:0,confirmed:true,pending_verify:false,local_ready:false,running_elf_sha256:'a'.repeat(64),candidate_elf_sha256:'',version:null,retry_allowed:true};
+const nodeStatus = (update, extra={}) => ({...status,status:{...status.status,capabilities:{node_update:true},node_update:{...idleNode,...update}},
+  node_upload:{in_flight:false,awaiting_status:false},...extra});
+await t.pickNodeFile(image(8192)); assert.equal(get('node-upload').disabled,true,'older firmware never enables node upload');
+const radioDown = nodeStatus({}); radioDown.status.c6 = {...radioDown.status.c6,radio_present:false};
+t.setStatus(radioDown); assert.equal(t.nodeReady(),true,'radio readiness is independent of updater access');
+for (const file of [image(8191),image(8193),image(1048577),image(8192,0)]) {
+  await t.pickNodeFile(file); assert.equal(get('node-upload').disabled,true);
+}
+await t.pickNodeFile(image(8192)); assert.equal(get('node-upload').disabled,false);
+t.setStatus(nodeStatus({mac:'aa:bb:cc:dd:ee:ff'})); assert.equal(get('node-upload').disabled,true);
+t.setStatus(nodeStatus({}, {status_age_s:16})); assert.equal(get('node-upload').disabled,true);
+t.setStatus(nodeStatus({}));
+nodeAfterPost = nodeStatus({busy:true,retry_allowed:false,phase:'receiving',offset:4096,total:8192});
+let nodePosts=count('cca/node-update'), commandPosts=count('cca/command'), otaPosts=count('cca/ota/action');
+await t.uploadNode(); assert.equal(count('cca/node-update'),nodePosts+1);
+assert.equal(requests.findLast(r=>r.route==='cca/node-update').opts.headers['Content-Type'],'application/octet-stream');
+assert.match(get('node-progress').textContent,/4096 of 8192 bytes/);
+assert.match(get('node-note').textContent,/CCA controls pause.*CCX and the event feed continue/);
+for (const id of ['command-send','advanced-send','presence-send','ota-upload','ota-stage','ota-resume','ota-stop','ota-clear','ota-start'])
+  assert.equal(get(id).disabled,true,id+' must be disabled during node update');
+await t.uploadNode(); await t.sendCommand({cmd:'bridge_level',device_id:1,level_pct:20}); await t.otaAction('stage');
+assert.equal(count('cca/node-update'),nodePosts+1); assert.equal(count('cca/command'),commandPosts); assert.equal(count('cca/ota/action'),otaPosts);
+await ui.show(); assert.equal(count('cca/node-update'),nodePosts+1,'refresh does not replay an upload');
+const confirmedNode = nodeStatus({phase:'confirmed',boot_id:5,slot:1,confirmed:true,local_ready:true,running_elf_sha256:'b'.repeat(64),candidate_elf_sha256:'b'.repeat(64)});
+state.status = confirmedNode; await ui.show(); assert.match(get('node-note').textContent,/full running ELF hash matches/);
+for (const change of [{mac:'aa:bb:cc:dd:ee:ff'},{online:false},{busy:null},{pending_verify:true},
+  {local_ready:false},{error:'candidate_rolled_back'},{boot_id:0},{slot:null},{candidate_elf_sha256:'c'.repeat(64)}]) {
+  state.status = nodeStatus({...confirmedNode.status.node_update,...change});
+  await ui.show(); assert.doesNotMatch(get('node-note').textContent,/hash matches/,'only the expected confirmed node can complete an update');
+}
+state.status = {...confirmedNode,status_age_s:16}; await ui.show(); assert.doesNotMatch(get('node-note').textContent,/hash matches/,'stale confirmation is not current evidence');
+
+state.status = nodeStatus({}); await ui.show(); failNode = true;
+nodeAfterPost = nodeStatus({busy:true,retry_allowed:false,phase:'receiving',offset:0,total:8192}, {node_upload:{in_flight:false,awaiting_status:true}});
+await t.uploadNode(); assert.equal(count('cca/node-update'),nodePosts+2);
+assert.equal(get('node-upload').disabled,true); assert.match(get('node-note').textContent,/awaiting fresh status/);
+failNode = false; nodeAfterPost = null;
+state.status = nodeStatus({phase:'uncertain',error:'activation_unknown',retry_allowed:false});
+await ui.show(); assert.match(get('node-note').textContent,/uncertain.*will not resend/);
+await ui.show(); await t.uploadNode(); assert.equal(count('cca/node-update'),nodePosts+2,'lost response is reconciled without another POST');
+state.status = nodeStatus({phase:'interrupted',error:'node_transfer_incomplete',retry_allowed:true});
+await ui.show(); assert.match(get('node-note').textContent,/interrupted.*node_transfer_incomplete.*will not resend/);
+assert.equal(get('node-upload').disabled,false,'gateway may permit an explicit manual retry after reconciliation');
+assert.equal(count('cca/node-update'),nodePosts+2,'interrupted status never automatically retries');
 
 // Optional firmware-produced fixture exercises every real descriptor during integration.
 if (process.env.CCA_CAPABILITIES_FIXTURE) {

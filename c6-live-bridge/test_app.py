@@ -535,6 +535,10 @@ class AddonTests(unittest.TestCase):
             self.assertEqual(client.request("/api/sidecar/update","POST",binary,"application/octet-stream")[0],202)
         self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
         self.assertEqual(captured["timeout"],600)
+        with patch("app.http.client.HTTPConnection",Connection):
+            self.assertEqual(client.request("/api/cca/node-update","POST",binary,"application/octet-stream")[0],202)
+        self.assertEqual(captured["headers"]["X-SHA256"],hashlib.sha256(binary).hexdigest())
+        self.assertEqual(captured["timeout"],60)
 
     def test_reconnect_after_gateway_disconnect(self):
         self.collect()

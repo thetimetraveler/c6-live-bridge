@@ -665,6 +665,14 @@ html,body{overflow-anchor:none}
     <div id="cca-status-facts" class="groups"></div><p id="cca-status-note" class="small muted" role="status">Open this tab to load CCA status.</p>
   </section>
   <section class="card">
+    <div class="card-head"><h2>CCA node firmware</h2><span id="cca-node-pill" class="pill wait">Loading</span></div>
+    <p class="lede">Update the CCA C6 itself with a signed image. The CCA radio and controls pause during the update; CCX and the shared event feed continue. A one-time USB bootstrap is required first. The CCA update path is prepared but has not yet been qualified on physical hardware.</p>
+    <div id="cca-node-facts" class="groups"></div>
+    <label class="dropzone"><input id="cca-node-file" type="file" accept=".bin,application/octet-stream" aria-label="Signed CCA node firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="cca-node-file-name">Choose a signed CCA node image</strong><span id="cca-node-file-note" class="muted small">8,192–1,048,576 bytes, in 4,096-byte blocks</span></label>
+    <p id="cca-node-progress" class="small muted" role="status"></p><div class="meter"><i id="cca-node-progress-bar" style="width:0"></i></div>
+    <div class="actions"><button id="cca-node-upload" disabled>Update CCA node firmware</button></div><p id="cca-node-note" class="small muted" role="status">Waiting for CCA node status.</p>
+  </section>
+  <section class="card">
     <div class="card-head"><h2>Send a command</h2></div>
     <p class="lede">Choose a command and review the exact JSON before sending. IDs accept decimal or 0x-prefixed hexadecimal.</p>
     <div class="cca-fields"><label>Target defaults<select id="cca-target-select"></select></label><label>Command<select id="cca-command-select"></select></label><label>Saved preset<select id="cca-preset-select"></select></label></div>
@@ -690,7 +698,7 @@ html,body{overflow-anchor:none}
     <div class="actions"><button id="cca-presence-send">Set state</button><button id="cca-presence-copy" class="secondary">Copy HA automation</button></div><p id="cca-presence-note" class="small muted" role="status"></p><pre id="cca-presence-example" class="cca-json"></pre>
   </section>
   <section class="card">
-    <div class="card-head"><h2>CCA end-device firmware</h2><span id="cca-ota-pill" class="pill wait">No file</span></div>
+    <div class="card-head"><h2>Lutron end-device firmware over CCA</h2><span id="cca-ota-pill" class="pill wait">No file</span></div>
     <p class="lede">Select an LDF container or an already extracted body explicitly. The add-on strips the 0x80-byte LDF header and stages at most 110 KiB. Stage resets the existing session; resume compares the staged prefix before continuing. Neither starts RF automatically.</p>
     <div class="cca-fields"><label>File format<select id="cca-ota-format"><option value="">Choose a format</option><option value="ldf">LDF container</option><option value="body">Extracted body</option></select></label><label>Firmware file<input id="cca-ota-file" type="file"></label><label>Device ID<input id="cca-ota-device" placeholder="Decimal or 0x hexadecimal"></label><label>Subnet<input id="cca-ota-subnet" placeholder="Decimal or 0x hexadecimal"></label></div>
     <div class="actions"><button id="cca-ota-upload" class="secondary">Upload file to add-on</button><button id="cca-ota-stage">Stage</button><button id="cca-ota-resume" class="secondary">Resume staging</button><button id="cca-ota-stop" class="secondary">Stop staging</button><button id="cca-ota-clear" class="secondary">Clear staged session</button></div>

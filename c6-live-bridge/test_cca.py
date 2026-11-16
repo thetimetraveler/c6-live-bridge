@@ -2,6 +2,8 @@ import hashlib
 import io
 import json
 import tempfile
+import threading
+import time
 import unittest
 from email.message import Message
 from pathlib import Path
@@ -28,6 +30,7 @@ class Gateway:
         self.buffer, self.expected, self.request_id = bytearray(), 0, 0
         self.control, self.digest, self.writes = {}, {}, []
         self.fail_after, self.code = None, None
+        self.node, self.node_posts = None, []
 
     def request(self, path, method="GET", body=None, content_type=None, timeout=None):
         if self.code: return self.code, "application/json", b'{}'
@@ -36,7 +39,15 @@ class Gateway:
             result = {"ready": True, "i2c": {"online": True}, "control": self.control,
                       "c6": {"mac": self.mac, "boot_id": self.boot, "radio_present": self.radio,
                              "ota_expected": self.expected, "ota_received": len(self.buffer)}}
+            if self.node is not None:
+                result["capabilities"] = {"node_update": True}; result["node_update"] = dict(self.node)
         elif path == "/api/cca/ota": result = self.digest
+        elif path == "/api/cca/node-update":
+            self.node_posts.append(body); self.node.update(busy=True, retry_allowed=False, phase="receiving")
+            if self.fail_after == "node_update":
+                self.fail_after = None
+                raise OSError("response lost")
+            return 202, "application/json", b'{"accepted":true}'
         elif path == "/api/cca/state":
             self.writes.append(json.loads(body)); result = {"accepted": True, "revision": 1}
         elif path == "/api/cca/command":
@@ -77,6 +88,14 @@ class ServiceTests(unittest.TestCase):
         self.service.action(payload); self.service.worker.join(2)
         self.assertFalse(self.service.worker.is_alive())
         return self.service.status_snapshot()["ota"]
+
+    def node_ready(self):
+        self.gateway.node = {"supported": True, "online": True, "busy": False, "retry_allowed": True,
+                             "mac": MAC, "phase": "idle", "boot_id": self.gateway.boot, "slot": 0}
+        self.service._status()
+
+    @staticmethod
+    def node_image(): return b"\xe9" + b"\x00" * 8191
 
     def test_config_and_catalogue(self):
         config = {"expected_mac": MAC.upper(), "targets": [{"id": "office", "name": "Office", "device_id": "0x1234", "subnet": "0x22"}],
@@ -159,6 +178,70 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(self.service.capabilities)
         self.service._capabilities()
         self.assertIsNotNone(self.service.capabilities)
+
+    def test_node_update_preflight_and_single_upload(self):
+        image = self.node_image()
+        self.service._status()  # Old firmware has no node updater.
+        with self.assertRaises(CcaError): self.service.node_update(image)
+        self.node_ready()
+        for invalid in (b"\xe9" * 8191, b"\xe9" * 8193, b"x" * 8192, b"\xe9" * (1024 * 1024 + 4096)):
+            with self.assertRaises(ValueError): self.service.node_update(invalid)
+        self.gateway.radio = False  # A failed radio need not prevent repairing the node.
+        self.service._status()
+        self.assertTrue(self.service.node_update(image)["accepted"])
+        self.assertEqual(self.gateway.node_posts, [image])
+        self.assertTrue(self.service.status_snapshot()["node_upload"]["awaiting_status"])
+        with self.assertRaises(CcaError): self.service.node_update(image)
+        self.service._status()
+        self.assertFalse(self.service.status_snapshot()["node_upload"]["awaiting_status"])
+        with self.assertRaises(CcaError): self.service.node_update(image)  # Gateway is busy.
+        self.assertEqual(self.gateway.node_posts, [image])
+
+    def test_node_update_lost_reply_requires_fresh_status(self):
+        image = self.node_image(); self.node_ready(); self.gateway.fail_after = "node_update"
+        with self.assertRaisesRegex(CcaError, "without retrying"): self.service.node_update(image)
+        self.assertEqual(self.gateway.node_posts, [image])
+        with self.assertRaises(CcaError): self.service.node_update(image)
+        self.service._status()
+        self.assertTrue(self.service.status_snapshot()["status"]["node_update"]["busy"])
+        with self.assertRaises(CcaError): self.service.node_update(image)
+        self.assertEqual(len(self.gateway.node_posts), 1)
+
+    def test_node_update_requires_fresh_matching_mac(self):
+        image = self.node_image(); self.node_ready()
+        self.service.config["expected_mac"] = "aa:bb:cc:dd:ee:ff"
+        with self.assertRaisesRegex(CcaError, "MAC"): self.service.node_update(image)
+        self.service.config["expected_mac"] = MAC
+        for update in ({"mac": "aa:bb:cc:dd:ee:ff"}, {"busy": True}, {"retry_allowed": False}, {"online": False}):
+            self.node_ready(); self.gateway.node.update(update); self.service._status()
+            with self.assertRaises(CcaError): self.service.node_update(image)
+        self.node_ready(); self.service.status_at = time.monotonic() - 16
+        with self.assertRaisesRegex(CcaError, "Fresh"): self.service.node_update(image)
+        self.assertEqual(self.gateway.node_posts, [])
+
+    def test_node_upload_does_not_hold_status_lock_or_allow_duplicate(self):
+        image = self.node_image(); self.node_ready(); started, release = threading.Event(), threading.Event()
+        original = self.gateway.request
+        def request(path, *args, **kwargs):
+            if path == "/api/cca/node-update":
+                started.set(); release.wait(2)
+            return original(path, *args, **kwargs)
+        self.gateway.request = request
+        failures = []
+        def upload():
+            try: self.service.node_update(image)
+            except Exception as exc: failures.append(exc)
+        worker = threading.Thread(target=upload); worker.start()
+        try:
+            self.assertTrue(started.wait(2))
+            self.service._status()  # An in-flight upload does not block status reads.
+            self.assertTrue(self.service.status_snapshot()["node_upload"]["in_flight"])
+            with self.assertRaisesRegex(CcaError, "already in progress"): self.service.node_update(image)
+        finally:
+            release.set(); worker.join(2)
+        self.assertFalse(worker.is_alive()); self.assertEqual(failures, [])
+        self.assertEqual(self.gateway.node_posts, [image])
+        self.assertTrue(self.service.status_snapshot()["node_upload"]["awaiting_status"])
 
     def test_identity_and_radio_guard_commands_and_presence(self):
         self.gateway.mac = "aa:bb:cc:dd:ee:ff"
@@ -315,11 +398,14 @@ class MqttTests(unittest.TestCase):
 class RouteTests(unittest.TestCase):
     def test_fixed_routes_json_and_binary(self):
         calls, replies = [], []
-        service = SimpleNamespace(capabilities_snapshot=lambda: CAPS, status_snapshot=lambda: {"supported": True},
+        service = SimpleNamespace(capabilities_snapshot=lambda: CAPS, status_snapshot=lambda: {"supported": True,
+                                  "status": {"node_update": {"supported": True, "phase": "receiving"}},
+                                  "status_age_s": 2, "node_upload": {"in_flight": False, "awaiting_status": False}},
                                   read_events=lambda after, boot: {"after": after, "boot_id": boot, "events": []},
                                   get_config=lambda: {"expected_mac": "", "targets": [], "presets": []},
                                   put_config=lambda value: value, command=lambda value: (calls.append(value) or {"accepted": True, "request_id": 3}),
-                                  file=lambda fmt, value: (calls.append((fmt, value)) or {"state": "ready"}))
+                                  file=lambda fmt, value: (calls.append((fmt, value)) or {"state": "ready"}),
+                                  node_update=lambda value: (calls.append(value) or {"accepted": True}))
         handler = object.__new__(app.Handler)
         handler.client_address = ("172.30.32.2", 1)
         handler.server = SimpleNamespace(cca=service)
@@ -328,6 +414,9 @@ class RouteTests(unittest.TestCase):
         handler.path = "/api/cca/events?after=9&boot_id=12"; handler.do_GET()
         self.assertEqual(replies[-1], (200, {"after": 9, "boot_id": 12, "events": []}))
         handler.path = "/api/cca/events?after=9&after=10"; handler.do_GET(); self.assertEqual(replies[-1][0], 400)
+        handler.path = "/api/cca/node-update"; handler.do_GET()
+        self.assertEqual(replies[-1][1]["phase"], "receiving"); self.assertEqual(replies[-1][1]["status_age_s"], 2)
+        handler.path = "/api/cca/node-update?refresh=1"; handler.do_GET(); self.assertEqual(replies[-1][0], 400)
         def body(value, ctype):
             handler.headers = Message(); handler.headers["Content-Type"] = ctype; handler.headers["Content-Length"] = str(len(value)); handler.rfile = io.BytesIO(value)
         handler.path = "/api/cca/command"; body(b'{"cmd":"button"}', "application/json"); handler.do_POST()
@@ -336,6 +425,12 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(calls[-1], ("body", b'abc'))
         handler.path = "/api/cca/ota/file?format=body&url=x"; body(b'abc', "application/octet-stream"); handler.do_POST()
         self.assertEqual(replies[-1][0], 400)
+        handler.path = "/api/cca/node-update"; body(b'firmware', "application/octet-stream"); handler.do_POST()
+        self.assertEqual(replies[-1], (202, {"accepted": True})); self.assertEqual(calls[-1], b'firmware')
+        handler.path = "/api/cca/node-update?url=x"; handler.do_POST(); self.assertEqual(replies[-1][0], 400)
+        handler.path = "/api/cca/node-update"; body(b'firmware', "application/json"); handler.do_POST(); self.assertEqual(replies[-1][0], 400)
+        body(b'x' * (app.MAX_NODE_IMAGE + 1), "application/octet-stream"); handler.do_POST(); self.assertEqual(replies[-1][0], 413)
+        handler.client_address = ("127.0.0.1", 1); body(b'firmware', "application/octet-stream"); handler.do_POST(); self.assertEqual(replies[-1][0], 403)
 
 
 if __name__ == "__main__": unittest.main()

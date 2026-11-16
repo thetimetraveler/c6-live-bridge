@@ -15,6 +15,7 @@ var CCAUI = (() => {
   const descriptor = name => commands().find(c => c.name === name);
   const addressFields = ['device_id', 'target_id', 'subnet'];
   const maxRows = 500;
+  const nodeMac = '10:bd:a3:b1:5b:1c', nodeMin = 8192, nodeMax = 1048576, hashPattern = /^[0-9a-f]{64}$/i;
   let capabilities = null, config = null, status = null, statusAt = 0, ota = null;
   let boot = null, cursor = 0, rows = [], keys = new Set(), stream = {}, lost = 0;
   // Rows the user has expanded, kept across re-renders so new packets do not collapse them.
@@ -22,6 +23,7 @@ var CCAUI = (() => {
   let activeReceipt = null, formInputs = new Map(), presetDrafts = [];
   let loaded = false, loading = false, fetchingEvents = false, fetchingStatus = false, fetchingCaps = false;
   let sending = false, otaSending = false, configDirty = false, capsAt = 0, attemptAt = 0;
+  let nodeFile = null, nodeFileValid = false, nodeSending = false, nodeMessage = '';
 
   // Never use parseInt: it would accept trailing garbage or a partial hexadecimal ID.
   function parseInteger(value, min = 0, max = 0xffffffff, label = 'Value') {
@@ -50,6 +52,51 @@ var CCAUI = (() => {
   }
   function note(id, text) { byId(id).textContent = text; }
   function pill(id, text, tone = 'wait') { byId(id).textContent = text; byId(id).className = 'pill ' + tone; }
+  function nodeBusy() {
+    return nodeSending || status?.node_upload?.in_flight === true || status?.node_upload?.awaiting_status === true || status?.status?.node_update?.busy === true;
+  }
+  function nodeReady() {
+    const wrapper = status || {}, s = wrapper.status || {}, peer = s.c6 || {}, u = s.node_update || {};
+    const age = Number.isFinite(wrapper.status_age_s) ? wrapper.status_age_s + Math.max(0, Date.now() - statusAt) / 1000 : Infinity;
+    return wrapper.error == null && age <= 15 && s.capabilities?.node_update === true && u.supported === true && u.online === true &&
+      String(config?.expected_mac || '').toLowerCase() === nodeMac && String(peer.mac || '').toLowerCase() === nodeMac &&
+      String(u.mac || '').toLowerCase() === nodeMac && u.busy === false && u.retry_allowed === true && !nodeBusy();
+  }
+  function updateCcaControls() {
+    const busy = nodeBusy();
+    for (const id of ['advanced-send','presence-send','ota-upload','ota-stage','ota-resume','ota-stop','ota-clear','ota-start']) byId(id).disabled = busy;
+    updatePreview();
+  }
+  function renderNodeUpdate() {
+    const s = status?.status || {}, u = s.node_update || {}, supported = s.capabilities?.node_update === true && u.supported === true;
+    const busy = nodeBusy(), phase = u.phase || 'idle', total = Number(u.total), offset = Number(u.offset);
+    const progress = Number.isFinite(total) && total > 0 && Number.isFinite(offset) ? Math.max(0, Math.min(100, 100 * offset / total)) : 0;
+    pill('node-pill', !status?.status ? 'Waiting' : busy ? 'Updating' : !supported ? 'Unavailable' : u.online ? 'Online' : 'Offline',
+      busy ? 'info' : supported && u.online ? 'good' : 'wait');
+    byId('node-facts').replaceChildren(facts('CCA node update', [['Board MAC',u.mac], ['Version',u.version], ['Slot',u.slot],
+      ['Boot ID',u.boot_id], ['Running ELF SHA-256',u.running_elf_sha256 || null], ['Candidate ELF SHA-256',u.candidate_elf_sha256 || null],
+      ['Confirmed',u.confirmed === true ? 'Yes' : u.pending_verify === true ? 'Pending verification' : null], ['Local ready',u.local_ready], ['Phase',u.phase], ['Error',u.error || null]]));
+    note('node-progress', u.total > 0 ? `${display(phase)} · ${display(u.offset)} of ${display(u.total)} bytes` : supported ? display(phase) : '');
+    byId('node-progress-bar').style.width = progress + '%';
+    const age = Number.isFinite(status?.status_age_s) ? status.status_age_s + Math.max(0, Date.now() - statusAt) / 1000 : Infinity;
+    const confirmed = status?.error == null && age <= 15 && supported && u.online === true && u.busy === false && !busy && u.phase === 'confirmed' &&
+      String(config?.expected_mac || '').toLowerCase() === nodeMac && String(u.mac || '').toLowerCase() === nodeMac &&
+      u.confirmed === true && u.pending_verify === false && u.local_ready === true && !u.error &&
+      Number.isSafeInteger(u.boot_id) && u.boot_id > 0 && (u.slot === 0 || u.slot === 1) &&
+      hashPattern.test(u.running_elf_sha256 || '') && String(u.running_elf_sha256).toLowerCase() === String(u.candidate_elf_sha256 || '').toLowerCase();
+    let message = nodeMessage;
+    if (!status?.status) message = 'Waiting for CCA node status.';
+    else if (busy) message = 'CCA update in progress or awaiting fresh status. CCA controls pause during the update; CCX and the event feed continue.';
+    else if (!supported) message = 'CCA node updater unavailable. The gateway and CCA node need compatible firmware and the one-time USB bootstrap.';
+    else if (['failed','uncertain','interrupted'].includes(phase)) message = `Update ${phase}${u.error ? ': ' + display(u.error) : ''}. Check status before any manual retry; the app will not resend automatically.`;
+    else if (confirmed) message = 'The CCA node confirmed the candidate image; the full running ELF hash matches.';
+    else if (phase === 'confirmed') message = 'Confirmation details are incomplete or inconsistent. Check the node identity, readiness and ELF hashes.';
+    else if (!u.online) message = 'CCA updater offline; use USB recovery if it cannot return.';
+    else if (!nodeReady()) message = 'Update unavailable. Verify the saved CCA MAC and wait for fresh updater status.';
+    note('node-note', message || 'Choose a signed CCA node image.');
+    byId('node-upload').disabled = !(nodeFile && nodeFileValid && nodeReady());
+    updateCcaControls();
+  }
   function statusView() {
     const wrapper = status || {}, s = wrapper.status || {}, peer = s.c6 || s.peer || {}, link = s.i2c || {}, control = s.control || {}, operation = s.latest_operation;
     const expected = String(config?.expected_mac || '').trim(), observed = String(peer.mac || '').trim();
@@ -76,6 +123,7 @@ var CCAUI = (() => {
       !status ? 'Waiting for CCA status.' : wrapper.supported === false ? 'This gateway does not expose CCA controls.' :
       !isMatch ? identity + '. Verify the attached board and save its expected MAC.' :
       !available ? 'Status is offline or stale; displayed fields are the last cached snapshot.' : 'Fresh status from the add-on cache.');
+    renderNodeUpdate();
   }
   function receiptText(receipt) {
     if (!receipt) return '';
@@ -250,7 +298,7 @@ var CCAUI = (() => {
       const operation = s?.status?.latest_operation;
       if (activeReceipt && operation) updateReceipt({...operation,kind:'cca.command',node_boot_id:peerBoot});
       statusView();
-    } catch (e) { status = {error:e.message}; statusAt = Date.now(); statusView(); }
+    } catch (e) { status = {...(status || {}), status_age_s:null, error:e.message}; statusAt = Date.now(); statusView(); }
     finally { fetchingStatus = false; }
   }
 
@@ -302,7 +350,7 @@ var CCAUI = (() => {
     try {
       const command = commandFromForm();
       byId('command-preview').textContent = JSON.stringify(command, null, 2);
-      byId('command-send').disabled = sending;
+      byId('command-send').disabled = sending || nodeBusy();
       byId('save-preset').disabled = false;
       return command;
     } catch (e) {
@@ -720,7 +768,7 @@ var CCAUI = (() => {
     return true;
   }
   async function sendCommand(command, noteId = 'command-note') {
-    if (sending) return;
+    if (sending || nodeBusy()) return;
     if (!command || typeof command !== 'object' || Array.isArray(command) || typeof command.cmd !== 'string' || !command.cmd) {
       note(noteId,'Enter a command object with a cmd.'); return;
     }
@@ -746,6 +794,7 @@ var CCAUI = (() => {
     catch { byId('presence-example').textContent = 'Enter a sensor serial to prepare the Home Assistant automation.'; }
   }
   async function presenceSend() {
+    if (nodeBusy()) return;
     try {
       const serial = parseInteger(byId('presence-serial').value,1,0xffffffff,'Sensor serial'), state = byId('presence-state').value;
       if (!['occupied','vacant','unavailable'].includes(state)) throw Error('Choose a valid state.');
@@ -762,7 +811,7 @@ var CCAUI = (() => {
     note('ota-note', o.error ? 'Upload or staging error: ' + o.error : o.message || (size ? 'File is stored by the add-on. Stage or resume separately; no RF transfer starts automatically.' : 'Upload a file to the add-on before staging.'));
   }
   async function uploadFile() {
-    if (otaSending) return;
+    if (otaSending || nodeBusy()) return;
     const file = byId('ota-file').files?.[0], format = byId('ota-format').value;
     if (!file) { note('ota-note','Choose an LDF container or extracted body first.'); return; }
     if (!['ldf','body'].includes(format)) { note('ota-note','Choose the correct file format.'); return; }
@@ -772,7 +821,7 @@ var CCAUI = (() => {
     finally { otaSending = false; fetchStatus(); }
   }
   async function otaAction(action) {
-    if (otaSending) return;
+    if (otaSending || nodeBusy()) return;
     const payload = {action};
     if (action === 'start') {
       try { payload.device_id = parseInteger(byId('ota-device').value,1,0xffffffff,'Device ID'); payload.subnet = parseInteger(byId('ota-subnet').value,0,65535,'Subnet'); }
@@ -784,6 +833,34 @@ var CCAUI = (() => {
     try { ota = await req('cca/ota/action',jsonOptions(payload)); renderOta(); }
     catch(e) { note('ota-note','Action response unavailable or rejected: ' + e.message + '. Its outcome may be unknown; it will not be resent automatically.'); }
     finally { otaSending = false; fetchStatus(); }
+  }
+  async function pickNodeFile(file) {
+    nodeFile = file || null; nodeFileValid = false;
+    note('node-file-name', file ? `${file.name} · ${file.size.toLocaleString()} bytes` : 'Choose a signed CCA node image');
+    note('node-file-note', '8,192–1,048,576 bytes, in 4,096-byte blocks'); renderNodeUpdate();
+    if (!file) return;
+    if (file.size < nodeMin || file.size > nodeMax || file.size % 4096) {
+      note('node-file-note', 'Image must be 8,192–1,048,576 bytes in 4,096-byte blocks.'); return;
+    }
+    try {
+      const bytes = new Uint8Array(await file.slice(0,1).arrayBuffer());
+      if (nodeFile !== file) return;
+      nodeFileValid = bytes[0] === 0xe9;
+      note('node-file-note', nodeFileValid ? 'ESP image header found; the CCA node verifies the signature.' : 'Invalid ESP image: expected first byte 0xE9.');
+    } catch { if (nodeFile !== file) return; note('node-file-note', 'Could not read the image header.'); }
+    renderNodeUpdate();
+  }
+  async function uploadNode() {
+    const file = nodeFile;
+    if (!file || !nodeFileValid || !nodeReady()) return;
+    if (!await confirmSheet('Update the CCA node?', `${file.name} (${file.size.toLocaleString()} bytes) will be sent once. CCA radio and controls pause; CCX and the event feed continue.`, 'Update')) return;
+    if (file !== nodeFile || !nodeFileValid || !nodeReady()) { nodeMessage = 'CCA updater status changed; wait until it permits an update.'; renderNodeUpdate(); return; }
+    nodeSending = true; nodeMessage = 'Sending once; waiting for gateway status.'; renderNodeUpdate();
+    try {
+      await req('cca/node-update', {method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
+      nodeMessage = 'Image accepted for transfer. Checking node status.';
+    } catch { nodeMessage = 'Upload response unavailable or rejected. Check status before any manual retry; the app will not resend automatically.'; }
+    finally { nodeSending = false; await fetchStatus(); renderNodeUpdate(); }
   }
   async function initialize() {
     if (loading) return;
@@ -851,6 +928,8 @@ var CCAUI = (() => {
   };
   byId('ota-upload').onclick = uploadFile;
   for (const [id, action] of [['stage','stage'],['resume','resume'],['stop','stop_staging'],['clear','clear'],['start','start']]) byId('ota-' + id).onclick = () => otaAction(action);
+  byId('node-file').onchange = e => pickNodeFile(e.target.files?.[0] || null);
+  byId('node-upload').onclick = uploadNode;
   byId('advanced-send').onclick = () => {
     try { sendCommand(JSON.parse(byId('advanced-json').value),'advanced-note'); }
     catch(e) { note('advanced-note','Invalid JSON: ' + e.message); }
@@ -866,7 +945,7 @@ var CCAUI = (() => {
     mappings: feedbackMappings, canList: () => !!descriptor('feedback_list'), list: listMappings, ready: () => loaded,
     onChange(f) { eventListeners.push(f); },
   };
-  return {show, lutronChanged, local, _test:{levelCommand, feedbackMappings, layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, packetView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
+  return {show, lutronChanged, local, _test:{levelCommand, feedbackMappings, layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, packetView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction, pickNodeFile, uploadNode, nodeReady,
     setCapabilities(v) { capabilities = v; renderCommandChoices(); }, setStatus(v) { status = v; statusAt = Date.now(); statusView(); },
     state() { return {boot,cursor,rows:clone(rows),activeReceipt,configDirty}; }}};
 })();

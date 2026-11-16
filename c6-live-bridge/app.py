@@ -20,7 +20,7 @@ import time
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ccx_events import CcxEventPublisher, CcxFeed
-from cca import CcaError, CcaService, MAX_BODY as MAX_CCA_BODY
+from cca import CcaError, CcaService, MAX_BODY as MAX_CCA_BODY, MAX_NODE_IMAGE
 from cca_mqtt import CcaMqtt
 
 LOG = logging.getLogger("c6-management")
@@ -150,13 +150,13 @@ class Gateway:
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
         long_operation = path == "/api/endpoint/update" or path.startswith("/api/program?")
         # A node update streams the image over UART2 with the node's lease kept.
-        timeout = timeout or (600 if path in ("/api/zigbee/update", "/api/sidecar/update") else 300 if long_operation else self.timeout)
+        timeout = timeout or (600 if path in ("/api/zigbee/update", "/api/sidecar/update") else 300 if long_operation else 60 if path == "/api/cca/node-update" else self.timeout)
         conn = conn_cls(self.hostname, self.port, timeout=timeout)
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = content_type or "application/octet-stream"
             headers["Content-Length"] = str(len(body))
-            if path in ("/api/endpoint/update", "/api/zigbee/update", "/api/sidecar/update"):
+            if path in ("/api/endpoint/update", "/api/zigbee/update", "/api/sidecar/update", "/api/cca/node-update"):
                 headers["X-SHA256"] = hashlib.sha256(body).hexdigest()
         try:
             conn.request(method, path, body=body, headers=headers)
@@ -1743,7 +1743,7 @@ class Handler(BaseHTTPRequestHandler):
             try: return self.send(200, Path(__file__).with_name(self.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
             except OSError: return self.reply(404, {"error": "unknown endpoint"})
         parts = urlsplit(self.path)
-        if parts.path in ("/api/cca/capabilities", "/api/cca/status", "/api/cca/events", "/api/cca/config"):
+        if parts.path in ("/api/cca/capabilities", "/api/cca/status", "/api/cca/events", "/api/cca/config", "/api/cca/node-update"):
             cca = getattr(self.server, "cca", None)
             if cca is None: return self.reply(503, {"error": "CCA service unavailable"})
             try:
@@ -1756,6 +1756,13 @@ class Handler(BaseHTTPRequestHandler):
                     boot = bounded_int(params["boot_id"], "CCA boot ID") if "boot_id" in params else None
                     return self.reply(200, cca.read_events(after, boot))
                 if query: raise ValueError("invalid query")
+                if parts.path.endswith("/node-update"):
+                    snapshot = cca.status_snapshot()
+                    node = (snapshot.get("status") or {}).get("node_update")
+                    value = dict(node) if isinstance(node, dict) else {"supported": False}
+                    value["status_age_s"] = snapshot.get("status_age_s")
+                    value["node_upload"] = snapshot.get("node_upload")
+                    return self.reply(200, value)
                 value = (cca.capabilities_snapshot() if parts.path.endswith("capabilities") else
                          cca.status_snapshot() if parts.path.endswith("status") else cca.get_config())
                 return self.reply(200, value)
@@ -1852,12 +1859,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorized(): return
         parts = urlsplit(self.path)
-        if parts.path in ("/api/cca/command", "/api/cca/ota/file", "/api/cca/ota/action"):
+        if parts.path in ("/api/cca/command", "/api/cca/ota/file", "/api/cca/ota/action", "/api/cca/node-update"):
             cca = getattr(self.server, "cca", None)
             if cca is None: return self.reply(503, {"error": "CCA service unavailable"})
             try:
                 if parts.fragment: raise ValueError("invalid query")
-                if parts.path.endswith("/file"):
+                if parts.path.endswith("/node-update"):
+                    if parts.query: raise ValueError("invalid query")
+                    if self.headers.get_content_type() != "application/octet-stream": raise ValueError("application/octet-stream required")
+                    result = cca.node_update(self.read_body(MAX_NODE_IMAGE))
+                elif parts.path.endswith("/file"):
                     query = parse_qsl(parts.query, keep_blank_values=True, max_num_fields=1)
                     if len(query) != 1 or query[0][0] != "format": raise ValueError("select file format")
                     if self.headers.get_content_type() != "application/octet-stream": raise ValueError("application/octet-stream required")

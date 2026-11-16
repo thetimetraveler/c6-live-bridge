@@ -579,8 +579,29 @@ prefix SHA-256 before continuing. After staging, choose the destination and
 subnet and explicitly start transmission. Staging continues after closing the
 browser; app restart requires another explicit action. The app keeps one upload
 file and its CCA settings under `/data`. This flow updates Lutron end devices;
-the separate passive B1 firmware card updates B1. CCA C6 self-update is not
-implemented.
+the separate passive B1 firmware card updates B1.
+
+## CCA node firmware (0.20.0)
+
+The **CCA node firmware** card updates the dedicated CCA C6 itself. It requires
+compatible gateway firmware and a one-time MAC-verified USB bootstrap of that
+C6 before updates can run over I²C. Save the expected CCA MAC
+`10:bd:a3:b1:5b:1c` in the CCA tab. Older firmware remains usable and shows the
+node updater as unavailable. The OTA and rollback path is prepared but has not
+yet been qualified on physical hardware.
+
+Choose a signed CCA node `.bin` image, 8,192–1,048,576 bytes in 4,096-byte
+blocks, then select **Update CCA node firmware** once. The gateway stages the
+image; the node verifies it, activates it and reports confirmation or rollback.
+The card displays transfer progress, boot, slot, running and candidate ELF
+hashes, and any failure reason. CCA radio and controls pause during the update;
+CCX and the existing shared event feed continue. This card is separate from the
+Lutron end-device RF firmware workflow above.
+
+If the response is lost, wait for fresh status and reconcile the reported
+phase and image before any manual retry. Refreshing or reopening the app only
+reads status and never resends an image. Use USB recovery if the updater cannot
+return.
 
 ### Local programming tab
 

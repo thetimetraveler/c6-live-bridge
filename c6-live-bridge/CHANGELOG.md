@@ -1,3 +1,8 @@
+## 0.22.2
+
+- Prepare a separate CCA node firmware card for signed C6 updates through the S3. A one-time USB bootstrap is required; physical OTA and rollback qualification remain pending. The update pauses CCA while CCX and the shared event feed continue.
+- Show node identity, slot, progress, failure reason and confirmation. An interrupted upload is reconciled from fresh status and is never sent again automatically. Existing Lutron end-device RF firmware controls and settings remain separate.
+
 ## 0.22.1
 
 - Decode received CCA activity with the shared protocol decoder instead of displaying the bridge command placeholder `unknown`. Show packet names, serials, fields and remaining undecoded bytes, and search the decoded values.

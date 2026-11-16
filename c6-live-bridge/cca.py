@@ -12,6 +12,9 @@ import time
 from ccx_events import CcxFeed
 
 MAX_BODY = 110 * 1024
+MAX_NODE_IMAGE = 1024 * 1024
+MIN_NODE_IMAGE = 8192
+CCA_NODE_MAC = "10:bd:a3:b1:5b:1c"
 CHUNK = 40
 MAC = re.compile(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\Z")
 HEX = re.compile(r"(?:[0-9a-fA-F]{2})*\Z")
@@ -62,6 +65,9 @@ class CcaService:
         self.upload_path = self.directory / "cca-upload.bin"
         self.lock = threading.RLock()
         self.operation = threading.RLock()
+        self.node_upload_lock = threading.Lock()
+        self.node_in_flight = self.node_awaiting_status = False
+        self.node_finished_at = 0.0
         self.stop_event, self.cancel_staging = threading.Event(), threading.Event()
         self.poll_interval, self.timeout = poll_interval, timeout
         self.publisher = publisher
@@ -174,6 +180,7 @@ class CcaService:
             self.error = None
 
     def _status(self, retry=False):
+        started = time.monotonic()
         data = self._read("/api/cca/status", retry=retry)
         with self.lock:
             if self.gateway_status is not None:
@@ -185,6 +192,8 @@ class CcaService:
                 if marker(data) != marker(self.gateway_status):
                     self.capabilities = None
             self.gateway_status, self.status_at, self.error = data, time.monotonic(), None
+            if not self.node_in_flight and started > self.node_finished_at:
+                self.node_awaiting_status = False
         return data
 
     def capabilities_snapshot(self):
@@ -195,7 +204,52 @@ class CcaService:
         with self.lock:
             return {"supported": self.supported, "status": self.gateway_status,
                     "status_age_s": None if self.status_at is None else max(0, time.monotonic() - self.status_at),
-                    "ota": dict(self.job), "error": self.error, "results": list(self.results)}
+                    "ota": dict(self.job), "error": self.error, "results": list(self.results),
+                    "node_upload": {"in_flight": self.node_in_flight, "awaiting_status": self.node_awaiting_status}}
+
+    def node_update(self, image):
+        if not isinstance(image, bytes) or not MIN_NODE_IMAGE <= len(image) <= MAX_NODE_IMAGE or len(image) % 4096 or image[0] != 0xe9:
+            raise ValueError("CCA node image must start with 0xE9 and be 8,192–1,048,576 bytes in 4,096-byte blocks")
+        if not self.node_upload_lock.acquire(blocking=False):
+            raise CcaError("A CCA node upload is already in progress", 409)
+        try:
+            with self.lock:
+                status = self.gateway_status or {}
+                peer = status.get("c6") or {}
+                update = status.get("node_update") or {}
+                caps = status.get("capabilities") or {}
+                if (self.config["expected_mac"] != CCA_NODE_MAC or not isinstance(peer, dict) or
+                        str(peer.get("mac", "")).lower() != CCA_NODE_MAC or not isinstance(update, dict) or
+                        str(update.get("mac", "")).lower() != CCA_NODE_MAC):
+                    raise CcaError("Expected and observed CCA node MAC must match the dedicated board", 409)
+                if (self.error is not None or self.status_at is None or time.monotonic() - self.status_at > 15 or
+                        not isinstance(caps, dict) or caps.get("node_update") is not True or
+                        update.get("supported") is not True or update.get("online") is not True or
+                        update.get("busy") is not False or update.get("retry_allowed") is not True or
+                        self.node_in_flight or self.node_awaiting_status):
+                    raise CcaError("Fresh CCA node updater status does not permit an update", 409)
+                self.node_in_flight = self.node_awaiting_status = True
+            try:
+                try:
+                    code, _, raw = self.gateway.request("/api/cca/node-update", "POST", image, "application/octet-stream")
+                except (OSError, ValueError, http.client.HTTPException):
+                    raise CcaError("CCA node upload outcome unknown; checking status without retrying", 502) from None
+                try: result = json.loads(raw)
+                except (ValueError, UnicodeDecodeError):
+                    raise CcaError("Invalid CCA node upload response; checking status without retrying", 502) from None
+                if not isinstance(result, dict):
+                    raise CcaError("Invalid CCA node upload response; checking status without retrying", 502)
+                if code != 202:
+                    reason = result.get("error")
+                    raise CcaError(str(reason) if isinstance(reason, str) and reason else f"Gateway returned HTTP {code}",
+                                   code if 400 <= code < 500 else 503 if code == 503 else 502)
+                return result
+            finally:
+                with self.lock:
+                    self.node_in_flight = False
+                    self.node_finished_at = time.monotonic()
+        finally:
+            self.node_upload_lock.release()
 
     def offer(self, event):
         if event.get("kind") == "ccx.stream_gap":

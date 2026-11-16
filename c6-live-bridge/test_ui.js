@@ -36,7 +36,8 @@ const replies={
   config:{generation:1,hash:1,editable:true,apply_status:'active',zones:[]},
 };
 const requests=[],failKeys=new Set(),waits=new Map();
-const context={document,status,replies,requests,failKeys,waits,location:{href:'http://ha.local/api/hassio_ingress/token/'},URL,
+const clipboard={text:null};
+const context={document,status,replies,requests,failKeys,waits,clipboard,navigator:{clipboard:{async writeText(t){clipboard.text=t;}}},location:{href:'http://ha.local/api/hassio_ingress/token/'},URL,
   Date,Math,Number,String,Object,Array,Set,JSON,Promise,console,
   setInterval(){return 0;},setTimeout(){return 0;},confirm(){return true;},
   async fetch(url,opts){const path=new URL(url).pathname.split('/').slice(-2).join('/');const key=path.startsWith('sidecar/')?path:path.split('?')[0].split('/').pop();requests.push({key,opts});if(failKeys.has(key))throw Error('test request failed');const value=key in replies?replies[key]:{};if(waits.has(key))await waits.get(key);return {ok:true,headers:{get:()=> 'application/json'},async json(){return value;}};},
@@ -44,7 +45,8 @@ const context={document,status,replies,requests,failKeys,waits,location:{href:'h
 const html=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 if(!html.includes('Online again after 30 s')||!html.includes('Uptime decrease observed')||html.includes('Stays online 30 s'))throw Error('the firmware steps must describe sampled uptime observations');
 if(!html.includes('other bridge lighting continues')||!html.includes('sidecar verifies the signature'))throw Error('sidecar update states its isolation and signature responsibility');
-const code=html.split('<script>',2)[1].split('</script>',1)[0];
+if(!html.includes('<script src="live.js"></script><script>'))throw Error('live.js must load before the page script that uses it');
+const code=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'live.js'),'utf8')+'\n'+html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
 const heroText=()=>view('headline').textContent+' '+view('headline-detail').textContent;
@@ -445,6 +447,9 @@ const mappingChecks=`
       const [fresh,viewed]=view('ccx-events').children;if(!viewed.open||fresh.open)throw Error('a newly arrived CCX event must not collapse the event being viewed');
       viewed.open=false;viewed.ontoggle();ccxEventView({schema_version:1,boot_id:5,cursor:3,events:[{id:3,kind:'ccx.local_level'}],stream:{state:'online'}});
       if(view('ccx-events').children.some(d=>d.open))throw Error('a collapsed CCX event stays collapsed');}
+    {await view('ccx-copy').onclick();const copied=JSON.parse(clipboard.text);
+      if(copied.count!==ccxRows.length||copied.events.length!==ccxRows.length||copied.boot_id!==5||copied.cursor!==ccxCursor||!view('ccx-copy-note').textContent.startsWith('Copied 3 events'))throw Error('Copy log copies the whole CCX log with its boot and cursor: '+view('ccx-copy-note').textContent);
+      view('ccx-filter-source').value='no-match';renderCcxEvents();await view('ccx-copy').onclick();if(JSON.parse(clipboard.text).count!==3)throw Error('Copy log ignores the view filters');view('ccx-filter-source').value='';renderCcxEvents();}
     ccxEventView({schema_version:1,boot_id:6,cursor:0,next:1,events:[],stream:{state:'unsupported'}});
     if(ccxRows.length||view('ccx-stream-pill').textContent!=='Not supported')throw Error('new boot resets the CCX view and old gateways remain usable');
     {const prior=replies.status;replies.status={listener:{online:true},clock:{synced:true,uncertainty_us:12},monitoring:{age_s:100}};replies.clock={boot_id:6,utc_anchor:{synced:true},monitoring:{age_s:1}};ccxHealthAt=0;await loadCcxHealth();

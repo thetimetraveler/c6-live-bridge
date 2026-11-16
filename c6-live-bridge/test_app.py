@@ -189,6 +189,14 @@ class AddonTests(unittest.TestCase):
         blocked.do_GET()
         self.assertEqual(blocked.results[0][0],404)
 
+    def test_handler_serves_page_scripts_only(self):
+        for name in ("cca.js","live.js"):
+            h=self.handler(path="/"+name);h.do_GET()
+            self.assertEqual(h.results[0][0],200);self.assertEqual(h.results[0][2],"text/javascript; charset=utf-8")
+            self.assertEqual(h.results[0][1],Path(app.__file__).with_name(name).read_bytes())
+        for path in ("/app.py","/live.js/../app.py","/test_ui.js"):
+            h=self.handler(path=path);h.do_GET();self.assertNotEqual(h.results[0][0],200,path)
+
     def test_handler_upload_body_cap_and_binary_forward(self):
         binary=b"fw\x00\xff"
         h=self.handler(path="/api/endpoint/update")

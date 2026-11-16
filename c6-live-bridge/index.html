@@ -501,6 +501,11 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 /* CCA controls use the same cards and inputs as the rest of the app. */
 .cca-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:2px 12px}.cca-fields label{display:grid;margin:6px 0;min-width:0}.cca-fields input,.cca-fields select{width:100%;min-width:0}
 .cca-list{display:grid;gap:10px}.cca-item{background:var(--inset);border-radius:10px;padding:12px}.cca-item textarea{min-height:90px}.cca-json{display:block;margin:10px 0;padding:12px;border-radius:10px;background:var(--inset);color:var(--label);font:12px/1.45 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.cca-activity{display:grid;gap:6px;max-height:600px;overflow:auto}.cca-activity details{background:var(--inset);border-radius:9px;padding:9px 12px}.cca-activity summary{cursor:pointer;overflow-wrap:anywhere}.cca-activity pre{white-space:pre-wrap;overflow-wrap:anywhere}.cca-break{overflow-wrap:anywhere}
+/* Live feeds (live.js): bounded scroll areas that hold the reader's place while rows arrive. */
+/* live.js keeps the page still itself; the browser's own scroll anchoring would apply the same correction a second time, and Safari lacks it. */
+html,body{overflow-anchor:none}
+.feed{max-height:min(65vh,600px);overflow:auto;overflow-anchor:none}.feed thead th{position:sticky;top:0;z-index:1;background:var(--card)}.feed-list{display:grid;gap:6px;align-content:start}.feed-list>details.raw{margin-top:0}
+.feed-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--label2);margin:4px 0}.feed-bar button{visibility:hidden;padding:4px 2px}.feed-bar.held{color:var(--blue)}.feed-bar.held button{visibility:visible}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.topology .flow-pulse{stroke-dasharray:none}}
 </style></head><body>
 <header class="bar"><div class="bar-inner">
@@ -555,7 +560,7 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <p class="lede">Each row is one lighting command and the steps it went through, or a status report or query reply, newest first. Select a row to see every step. <span id="events-tz"></span></p>
     <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
     <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Reports to Lutron update the processor’s record of the lamp, not the zone level Lutron shows. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports without a command association are listed as status updates. Report details separate the report counter from brightness and show why each report was sent. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
-    <div class="scroll"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
+    <div id="events-feed" class="scroll feed"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
     <p id="events-note" class="muted small">No events yet.</p>
     <p id="cursor-note" class="muted small"></p>
   </section>
@@ -566,7 +571,8 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <p id="ccx-clock-note" class="muted small">Clock status not yet available.</p>
     <p id="ccx-latency" class="muted small">No event timings yet.</p>
     <div class="toolbar"><label>Event kind <select id="ccx-filter-kind"><option value="">All kinds</option></select></label><label>Source serial or zone <input id="ccx-filter-source" placeholder="All sources"></label></div>
-    <div id="ccx-events" class="groups"></div>
+    <div class="actions"><button id="ccx-copy" class="secondary">Copy log</button></div><p id="ccx-copy-note" class="small muted" role="status"></p>
+    <div id="ccx-events" class="feed feed-list"></div>
   </section>
 </div>
 
@@ -651,7 +657,7 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
     <div class="card-head"><h2>Packets and activity</h2><span id="cca-events-pill" class="pill wait">Connecting</span></div>
     <p class="lede">CCA has its own cached stream, boot and cursor. Entries show local command stages and observed packets; gaps are reported rather than filled in.</p>
     <div class="cca-fields"><label>Filter activity<input id="cca-events-filter" placeholder="Command, request ID, raw bytes…"></label></div>
-    <div class="actions"><button id="cca-events-download" class="secondary">Download browser history</button></div><p id="cca-events-note" class="small muted" role="status"></p><div id="cca-events" class="cca-activity"></div>
+    <div class="actions"><button id="cca-events-download" class="secondary">Download browser history</button></div><p id="cca-events-note" class="small muted" role="status"></p><div id="cca-events" class="cca-activity feed"></div>
   </section>
   <details class="card"><summary>Advanced JSON</summary><p class="lede">Send a native command object through the same endpoint as the guided controls. Native OTA commands act directly; the firmware workflow above provides prefix-verified staging and resume.</p><textarea id="cca-advanced-json" spellcheck="false" aria-label="Advanced CCA command JSON">{"cmd":"query"}</textarea><div class="actions"><button id="cca-advanced-send">Send JSON</button></div><p id="cca-advanced-note" class="small muted" role="status"></p></details>
 </div>
@@ -764,19 +770,10 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 </div>
 </main>
 <dialog id="sheet" class="sheet"><h3 id="sheet-title"></h3><p id="sheet-body"></p><div class="sheet-actions"><button id="sheet-cancel" class="secondary">Cancel</button><button id="sheet-ok">OK</button></div></dialog>
-<script>
+<script src="live.js"></script><script>
 const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null,statusReceivedAt=0;let refreshing=false,shownEvents=new Set();
 async function req(path,opts){const r=await fetch(api(path),opts);const ct=r.headers.get('content-type')||'';const d=ct.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(d?.error||`HTTP ${r.status}`);return d}
 function val(v){return v===undefined||v===null?'—':typeof v==='object'?JSON.stringify(v):String(v)}
-// Re-render a list of <details> rows without disturbing an open row the user is reading. New rows land above it, so scroll the
-// page or list back by however far it was pushed. Rows are rebuilt, so carry over the scroll position of the boxes inside each one.
-function holdOpenRow(box,render){const open=[...box.children].filter(d=>d.open&&d.rowKey!==undefined&&d.getBoundingClientRect);if(!open.length)return render();
-  const inner=new Map(open.map(d=>[d.rowKey,[...d.querySelectorAll('pre,textarea')].map(x=>[x.scrollTop,x.scrollLeft])]));
-  const vh=window.innerHeight||document.documentElement.clientHeight,anchor=open.find(d=>{const r=d.getBoundingClientRect();return r.bottom>0&&r.top<vh})||open[0],before=anchor.getBoundingClientRect().top;render();
-  const rows=[...box.children];for(const d of rows){const saved=inner.get(d.rowKey);if(saved&&d.open)d.querySelectorAll('pre,textarea').forEach((x,i)=>{if(saved[i]){x.scrollTop=saved[i][0];x.scrollLeft=saved[i][1]}})}
-  const now=rows.find(d=>d.rowKey===anchor.rowKey);if(!now)return;const delta=now.getBoundingClientRect().top-before;if(!delta)return;
-  for(let s=box;s&&s!==document.body&&s!==document.documentElement;s=s.parentElement)if(s.scrollHeight>s.clientHeight&&/auto|scroll/.test(getComputedStyle(s).overflowY)){s.scrollTop+=delta;return}
-  window.scrollBy(0,delta)}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 function cell(row,text){const td=document.createElement('td');td.textContent=text;row.append(td);return td}
 function num(v){return Number.isFinite(Number(v))&&v!==null&&typeof v!=='boolean'?Number(v).toLocaleString():val(v)}
@@ -1465,7 +1462,10 @@ function eventDetail(g,asked){const list=el('ol','event-steps'),first=g.events[0
   return list}
 function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0;eventAnchor=null;expandedEvents.clear()}if(Number.isFinite(data.boot_epoch_ms))eventAnchor=data.boot_epoch_ms;for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
   eventLost=Number(data.lost)||0;eventOldest=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(eventLost?` · ${eventLost} events missed`:'');renderEvents()}
-function renderEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneName:'short'}).split(' ').pop();$('events-tz').textContent=tz===haData?.time_zone?`Times are in Home Assistant's time zone (${tz}, ${abbr}).`:`Times are in Pacific time (${abbr}) because Home Assistant's time zone isn't available.`;
+// Live lists hold the reader's place (live.js); if that script failed to load they simply redraw.
+function liveRender(box,list,draw){return typeof LiveFeed==='undefined'?draw():LiveFeed.render(box,list,draw)}
+function renderEvents(){liveRender($('events-feed'),$('events'),drawEvents)}
+function drawEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneName:'short'}).split(' ').pop();$('events-tz').textContent=tz===haData?.time_zone?`Times are in Home Assistant's time zone (${tz}, ${abbr}).`:`Times are in Pacific time (${abbr}) because Home Assistant's time zone isn't available.`;
   const zoneIds=[...new Set(eventRows.map(e=>e.zone).filter(z=>Number.isInteger(z)&&z>=0).map(String))].sort((a,b)=>a-b),fsig=JSON.stringify(zoneIds)+haLabelSig;if(fsig!==zoneFilterSig){zoneFilterSig=fsig;const fz=$('filter-zone'),prev=fz.value;fz.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All zones'}),...zoneIds.map(z=>{const t=zoneInfo(z).title;return Object.assign(document.createElement('option'),{value:z,textContent:t==='Zone '+z?t:`${t} · ${z}`})}));fz.value=zoneIds.includes(prev)?prev:''}
   const zone=$('filter-zone').value.trim(),stage=$('filter-stage').value,problems=!!$('filter-problems').checked;const stages=[...new Set(eventRows.map(e=>e.stage).filter(s=>typeof s==='string'))].sort();const select=$('filter-stage'),previous=select.value;select.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All steps'}),...stages.map(s=>Object.assign(document.createElement('option'),{value:s,textContent:stageInfo(s)[0]})));select.value=stages.includes(previous)?previous:'';
   const groups=groupEvents(eventRows),body=$('events');body.replaceChildren();let shown=0,day='';const seen=new Set();
@@ -1473,14 +1473,14 @@ function renderEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneN
     const first=g.events[0],sum=g.kind==='command'?commandSummary(g):null,[label,tone]=sum?[sum.label,sum.tone]:stageInfo(first.stage);if(problems&&tone!=='warn'&&tone!=='bad')continue;
     const key=g.kind[0]+':'+String(eventBootId)+':'+String(first.id),open=expandedEvents.has(key),at=wallTime(first);shown++;seen.add(key);
     if(at!==null&&dayKey(at)!==day){day=dayKey(at);const tr=el('tr','day'),td=el('td','',dayLabel(at));td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
-    const tr=el('tr',eventLost&&g.events.some(e=>Number(e.id)===eventOldest)?'gap':'');if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');tr.onclick=()=>{if(!expandedEvents.delete(key))expandedEvents.add(key);renderEvents()};
+    const tr=el('tr',eventLost&&g.events.some(e=>Number(e.id)===eventOldest)?'gap':'');if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');tr.onclick=()=>{if(!expandedEvents.delete(key))expandedEvents.add(key);renderEvents()};tr.rowKey=key;tr.rowOpen=open;
     const tc=cell(tr,'');tc.title='Gateway uptime '+clock(first.ts_ms);if(at!==null)tc.append(el('strong','time',wallClock(at)),el('span','sub',ago(at)));else tc.append(el('span','time','Uptime '+clock(first.ts_ms)),el('span','sub','Clock time unavailable'));
     const zc=cell(tr,'');if(g.zone===null)zc.textContent=first.zone===-1?'Bridge':val(first.zone);else{const zi=zoneInfo(g.zone);zc.append(el('strong','',zi.title));const sub=[zi.area,zi.title==='Zone '+g.zone?null:'Zone '+g.zone].filter(Boolean).join(' · ');if(sub)zc.append(el('span','sub',sub))}
     const wc=cell(tr,''),p=pill(label,tone),last=g.events[g.events.length-1],n=g.events.length;if(sum)wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));else{p.title=val(first.stage);const hop=hopChip(first.stage);if(REPORT_STAGES.has(first.stage))wc.append(el('span','what',n>1?'Status updates':'Status update'));wc.append(p);if(hop)wc.append(' ',hop);if(REPORT_STAGES.has(first.stage)&&reportReason(first))wc.append(el('span','sub',reportReason(first)));
       if(n>1){const end=wallTime(last);wc.append(el('span','sub',REPORT_STAGES.has(first.stage)?`${n} reports${at!==null&&end!==null?` · ${wallClock(at)}–${wallClock(end)}`:''} · not part of a command`:`${n} identical readings`))}else if(REPORT_STAGES.has(first.stage))wc.append(el('span','sub','Not part of a command'))}
     const lc=cell(tr,'');if(sum){const req=sum.req,conf=sum.conf;if(known(req))lc.append(levelLine('Asked',req));if(known(conf)){lc.append(levelLine(sum.corrected?'Hub reading':'Reported',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}}else lc.append(...stepLevels(last));if(!lc.children.length)lc.append(el('span','muted','—'));
     const btn=el('button','disclose','›');btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Hide steps':'Show steps');const dc=cell(tr,'');dc.className='disc';dc.append(btn);body.append(tr);
-    if(open){const d=el('tr','detail'),td=el('td');td.setAttribute('colspan','5');td.append(eventDetail(g,sum?.req));d.append(td);body.append(d)}}
+    if(open){const d=el('tr','detail'),td=el('td');d.rowKey=key+'/steps';d.rowOpen=true;d.rowDetail=true;td.setAttribute('colspan','5');td.append(eventDetail(g,sum?.req));d.append(td);body.append(d)}}
   shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
   if(!shown){const tr=el('tr'),td=el('td','empty',eventRows.length?'No activity matches these filters.':'Waiting for the first event…');td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
   const commands=groups.filter(g=>g.kind==='command').length;$('events-count').textContent=eventRows.length?`${commands} command${commands===1?'':'s'} · ${eventRows.length} event${eventRows.length===1?'':'s'}`:'';$('activity-badge').textContent=eventLost?' ':'';perfView(groups);
@@ -1579,7 +1579,14 @@ function renderCcxEvents(){const kinds=[...new Set(ccxRows.map(e=>e.kind).filter
   const query=$('ccx-filter-source').value.trim().toLowerCase(),rows=ccxRows.filter(e=>(!f.value||e.kind===f.value)&&(!query||[e.source?.serial,e.source?.zone_id].some(v=>String(v??'').toLowerCase().includes(query))));
   const out=rows.slice(-100).reverse().map(e=>{const d=el('details','raw'),sm=el('summary'),src=e.source||{},gatewayTime=ccxEventWall(e),parts=[e.kind||'CCX event',src.serial!==undefined?'Serial '+src.serial:'',src.zone_id!==undefined?'Zone '+src.zone_id:'',e.stage||'',e.decision?`matched ${val(e.decision.matched)}, submitted ${val(e.decision.submitted)}, refused ${val(e.decision.refused)}`:'',gatewayTime!==null?'Gateway time '+wallClock(gatewayTime):Number.isFinite(e.app_received_at_ms)?'App received '+wallClock(e.app_received_at_ms):''].filter(Boolean);
     sm.textContent=parts.join(' · ');const pre=el('pre','code',JSON.stringify(e,null,2));d.append(sm,el('p','muted small',ccxTiming(e,null)),pre);const key=String(ccxBoot)+':'+e.id;d.rowKey=key;d.open=ccxOpen.has(key);d.addEventListener('toggle',()=>{if(d.open)ccxOpen.add(key);else ccxOpen.delete(key)});return d});
-  const box=$('ccx-events');holdOpenRow(box,()=>box.replaceChildren(...(out.length?out:[el('p','empty',ccxRows.length?'No CCX events match these filters.':'Waiting for a CCX event…')])))}
+  const box=$('ccx-events');liveRender(box,box,()=>box.replaceChildren(...(out.length?out:[el('p','empty',ccxRows.length?'No CCX events match these filters.':'Waiting for a CCX event…')])))}
+// Copy every CCX event this page holds (not only the filtered view) with enough context to line it up with gateway logs.
+function ccxLogText(){return JSON.stringify({exported_at:new Date().toISOString(),boot_id:ccxBoot,cursor:ccxCursor,count:ccxRows.length,events:ccxRows},null,2)}
+async function copyText(text){try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);return}}catch{}
+  // Home Assistant served over plain HTTP has no async clipboard; fall back to a selection copy.
+  const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.opacity='0';document.body.append(ta);ta.select();const ok=document.execCommand?.('copy');ta.remove();if(!ok)throw Error('the browser blocked clipboard access')}
+$('ccx-copy').onclick=async()=>{const n=ccxRows.length;if(!n){$('ccx-copy-note').textContent='No CCX events to copy yet.';return}
+  try{await copyText(ccxLogText());$('ccx-copy-note').textContent=`Copied ${n} event${n===1?'':'s'} as JSON (boot ${val(ccxBoot)}, cursor ${ccxCursor}). The browser keeps the latest 500.`}catch(e){$('ccx-copy-note').textContent='Could not copy: '+e.message}};
 async function refreshCcx(){if(ccxFetching)return;ccxFetching=true;try{const data=await req('ccx/events?after='+ccxCursor+(ccxBoot===null?'':'&boot_id='+encodeURIComponent(ccxBoot)));ccxEventView(data)}catch(e){$('ccx-stream-note').textContent='CCX event feed unavailable: '+e.message}finally{ccxFetching=false}}
 async function loadCcxHealth(){if(Date.now()-ccxHealthAt<10000)return;ccxHealthAt=Date.now();
   try{const s=await req('ccx/status'),clock=await req('ccx/clock'),anchor=clock?.utc_anchor||{},sync=s?.clock||{};const online=s?.online??s?.listener?.online??s?.receiver?.online;

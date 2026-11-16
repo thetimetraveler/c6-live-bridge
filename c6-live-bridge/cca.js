@@ -153,29 +153,8 @@ var CCAUI = (() => {
       ' · starts at the add-on live baseline; earlier gateway events are not replayed');
     renderEvents();
   }
-  // Re-render without disturbing an open row the user is reading. New packets land above it, so scroll the list back by however
-  // far it was pushed. Rows are rebuilt, so carry over the scroll position of the JSON box inside each open row.
-  function holdOpenRow(box, render) {
-    const open = [...box.children].filter(d => d.open && d.rowKey !== undefined && d.getBoundingClientRect);
-    if (!open.length) return render();
-    const inner = new Map(open.map(d => [d.rowKey, [...d.querySelectorAll('pre')].map(x => [x.scrollTop, x.scrollLeft])]));
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    const anchor = open.find(d => { const r = d.getBoundingClientRect(); return r.bottom > 0 && r.top < vh; }) || open[0];
-    const before = anchor.getBoundingClientRect().top;
-    render();
-    const after = [...box.children];
-    for (const d of after) {
-      const saved = inner.get(d.rowKey);
-      if (saved && d.open) d.querySelectorAll('pre').forEach((x, i) => { if (saved[i]) { x.scrollTop = saved[i][0]; x.scrollLeft = saved[i][1]; } });
-    }
-    const now = after.find(d => d.rowKey === anchor.rowKey);
-    if (!now) return;
-    const delta = now.getBoundingClientRect().top - before;
-    if (!delta) return;
-    for (let s = box; s && s !== document.body && s !== document.documentElement; s = s.parentElement)
-      if (s.scrollHeight > s.clientHeight && /auto|scroll/.test(getComputedStyle(s).overflowY)) { s.scrollTop += delta; return; }
-    window.scrollBy(0, delta);
-  }
+  // Hold the reader's place while packets arrive (live.js); without it the list just redraws.
+  const liveRender = (box, draw) => typeof LiveFeed === 'undefined' ? draw() : LiveFeed.render(box, box, draw);
   function renderEvents() {
     const filter = byId('events-filter').value.trim().toLowerCase();
     const matching = rows.filter(e => !filter || JSON.stringify(e).toLowerCase().includes(filter));
@@ -204,7 +183,7 @@ var CCAUI = (() => {
       return d;
     });
     const box = byId('events');
-    holdOpenRow(box, () => box.replaceChildren(...(rendered.length ? rendered : [node('p', 'empty', rows.length ? 'No activity matches this filter.' : 'Waiting for CCA activity…')])));
+    liveRender(box, () => box.replaceChildren(...(rendered.length ? rendered : [node('p', 'empty', rows.length ? 'No activity matches this filter.' : 'Waiting for CCA activity…')])));
   }
   async function fetchEvents() {
     if (fetchingEvents) return;

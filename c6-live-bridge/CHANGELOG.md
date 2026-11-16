@@ -1,3 +1,9 @@
+## 0.20.0
+
+- Show the Activity table, the CCX event inspector and the CCA packets and activity list as fixed-height live feeds, so new events no longer push the rest of the page down.
+- Hold your place in a feed while you read: an expanded row, or the row you have scrolled to, stays still and keeps the scroll position of its JSON box. A bar above each feed shows how many events arrived above, with a button to jump back to the latest.
+- Add Copy log to the CCX event inspector. It copies every CCX event the page holds (up to the latest 500, ignoring filters) as JSON, with the boot ID and cursor.
+
 ## 0.19.2
 
 - Keep an expanded row in the CCX event inspector and the CCA packets and activity list in place on screen while new events arrive above it, and keep the scroll position of its JSON box.

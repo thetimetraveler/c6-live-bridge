@@ -153,6 +153,16 @@ assert.equal(JSON.parse(download.parts[0]).events.length,500);
 t.eventView({boot_id:56,after:0,cursor:2,lost:0,events:[{id:2,kind:'cca.tx',crc_valid:null}],stream:{state:'online'}});
 assert.equal(t.state().cursor,2); assert.equal(t.state().rows.length,1,'same-boot cursor rewind resets the browser baseline');
 assert.doesNotMatch(text(get('events')),/CRC invalid/,'unknown CRC is not a failure');
+{ const viewed = get('events').children[0]; viewed.open = true; viewed.dispatch('toggle');
+  t.eventView({boot_id:56,cursor:3,events:[{id:3,kind:'cca.rx',raw_hex:'aa'}],stream:{state:'online'}});
+  const [fresh, kept] = get('events').children;
+  assert.equal(kept.open, true, 'a newly arrived packet must not collapse the packet being viewed');
+  assert.ok(!fresh.open, 'new packets arrive collapsed');
+  kept.open = false; kept.dispatch('toggle');
+  t.eventView({boot_id:56,cursor:4,events:[{id:4,kind:'cca.rx',raw_hex:'bb'}],stream:{state:'online'}});
+  assert.ok(get('events').children.every(d => !d.open), 'a collapsed packet stays collapsed');
+  t.eventView({boot_id:57,cursor:1,events:[{id:2,kind:'cca.tx'}],stream:{state:'online'}});
+  assert.ok(!get('events').children[0].open, 'a new boot forgets expanded rows'); }
 
 // Presence uses the state endpoint and a copyable HA MQTT automation; no RF encoding claim.
 get('presence-serial').value='0x1234'; get('presence-serial').dispatch('input');

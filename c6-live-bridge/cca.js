@@ -17,6 +17,8 @@ var CCAUI = (() => {
   const maxRows = 500;
   let capabilities = null, config = null, status = null, statusAt = 0, ota = null;
   let boot = null, cursor = 0, rows = [], keys = new Set(), stream = {}, lost = 0;
+  // Rows the user has expanded, kept across re-renders so new packets do not collapse them.
+  const openEvents = new Set();
   let activeReceipt = null, formInputs = new Map(), presetDrafts = [];
   let loaded = false, loading = false, fetchingEvents = false, fetchingStatus = false, fetchingCaps = false;
   let sending = false, otaSending = false, configDirty = false, capsAt = 0, attemptAt = 0;
@@ -131,7 +133,7 @@ var CCAUI = (() => {
     const rewound = nextBoot === boot && cursor > 0 && data.after === 0 && Number.isInteger(data.cursor) && data.cursor < cursor;
     if (nextBoot !== boot || data.reset === true || rewound) {
       if (boot !== null) invalidateReceipt();
-      boot = nextBoot; cursor = 0; rows = []; keys.clear(); lost = 0;
+      boot = nextBoot; cursor = 0; rows = []; keys.clear(); openEvents.clear(); lost = 0;
     }
     for (const e of data.events) {
       if (!e || !Number.isInteger(e.id) || e.id < 0) continue;
@@ -140,7 +142,7 @@ var CCAUI = (() => {
       keys.add(key); rows.push(e); cursor = Math.max(cursor, e.id); updateReceipt(e);
     }
     if (Number.isInteger(data.cursor) && data.cursor >= 0) cursor = Math.max(cursor, data.cursor);
-    if (rows.length > maxRows) { rows = rows.slice(-maxRows); keys = new Set(rows.map(e => String(boot) + ':' + e.id)); }
+    if (rows.length > maxRows) { rows = rows.slice(-maxRows); keys = new Set(rows.map(e => String(boot) + ':' + e.id)); for (const k of openEvents) if (!keys.has(k)) openEvents.delete(k); }
     stream = data.stream || {}; lost += Math.max(0,Number(data.lost) || 0);
     const state = stream.state || 'connecting';
     pill('events-pill', ({online:'Live', unsupported:'Unsupported', disconnected:'Disconnected', connecting:'Connecting'})[state] || state,
@@ -172,7 +174,11 @@ var CCAUI = (() => {
         if (e.reason && e.reason !== 'none') parts.push(display(e.reason));
       }
       summary.textContent = parts.filter(Boolean).join(' · ');
-      d.append(summary, node('pre', 'cca-json', JSON.stringify(e, null, 2))); return d;
+      d.append(summary, node('pre', 'cca-json', JSON.stringify(e, null, 2)));
+      const key = String(boot) + ':' + e.id;
+      d.open = openEvents.has(key);
+      d.addEventListener('toggle', () => { if (d.open) openEvents.add(key); else openEvents.delete(key); });
+      return d;
     });
     byId('events').replaceChildren(...(rendered.length ? rendered : [node('p', 'empty', rows.length ? 'No activity matches this filter.' : 'Waiting for CCA activity…')]));
   }

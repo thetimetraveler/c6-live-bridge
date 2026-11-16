@@ -1539,7 +1539,7 @@ function perfView(groups=groupEvents(eventRows)){const timings=commandTimings(gr
   $('perf-note').textContent=`Times come from the gateway's clock, so they leave out Home Assistant and browser delays; Thread transit into the endpoint isn't included because the endpoint keeps its own clock. ${direct?'On direct Zigbee, "sent to lamps" is when the gateway hands the frame to the Zigbee node. "Lamp reading" requires a matching command confirmation that every lamp in the zone read back the commanded level. Shows are sampled periodically; their readbacks do not measure per-command latency. Missing confirmation does not imply a delay or failure.':'"Lutron → lamp reading" uses the zone\'s first hub reading within 15 seconds.'}${pollMs===null?'':` This dashboard's last set of cache requests took ${msText(pollMs)}.`}`}
 
 // The CCX stream has its own boot/cursor and does not share lighting-command grouping.
-let ccxBoot=null,ccxCursor=0,ccxRows=[],ccxKeys=new Set(),ccxFetching=false,ccxHealthAt=0,ccxClock=null,ccxClockAt=0,ccxRules=null,ccxRulesBase=null;
+let ccxBoot=null,ccxCursor=0,ccxRows=[],ccxKeys=new Set(),ccxOpen=new Set(),ccxFetching=false,ccxHealthAt=0,ccxClock=null,ccxClockAt=0,ccxRules=null,ccxRulesBase=null;
 function ccxMicros(v){return Number.isFinite(v)&&v>=0?(v<1000?Math.round(v)+' µs':(v/1000).toFixed(v<10000?2:1)+' ms'):'—'}
 function ccxDelta(a,b){return Number.isFinite(a)&&Number.isFinite(b)&&a>=0&&b>=a?b-a:null}
 function ccxEventWall(e){const anchor=ccxClock?.utc_anchor,at=e?.gateway_received_us??e?.stage_at_us,age=Number(ccxClock?.monitoring?.age_s)+(Date.now()-ccxClockAt)/1000;
@@ -1556,10 +1556,10 @@ function ccxTiming(e,mqtt){const t=e?.timing||{},pieces=[];
   if(Number.isFinite(mqtt?.last_queue_us))pieces.push('Last app MQTT queue '+ccxMicros(mqtt.last_queue_us));
   return pieces.length?pieces.join(' · '):'No comparable clock timings yet.'}
 function ccxEventView(data){if(data?.schema_version!==1||!Array.isArray(data.events))throw Error('Invalid CCX event response');
-  if(data.boot_id!==ccxBoot){ccxBoot=data.boot_id;ccxCursor=0;ccxRows=[];ccxKeys.clear()}
+  if(data.boot_id!==ccxBoot){ccxBoot=data.boot_id;ccxCursor=0;ccxRows=[];ccxKeys.clear();ccxOpen.clear()}
   for(const e of data.events){if(!e||!Number.isInteger(e.id))continue;const key=String(ccxBoot)+':'+e.id;if(!ccxKeys.has(key)){ccxKeys.add(key);ccxRows.push(e);ccxCursor=Math.max(ccxCursor,e.id)}}
   if(Number.isInteger(data.cursor)&&data.cursor>=0)ccxCursor=Math.max(ccxCursor,data.cursor);
-  if(ccxRows.length>500){ccxRows=ccxRows.slice(-500);ccxKeys=new Set(ccxRows.map(e=>String(ccxBoot)+':'+e.id))}
+  if(ccxRows.length>500){ccxRows=ccxRows.slice(-500);ccxKeys=new Set(ccxRows.map(e=>String(ccxBoot)+':'+e.id));for(const k of ccxOpen)if(!ccxKeys.has(k))ccxOpen.delete(k)}
   const stream=data.stream||{},mqtt=data.mqtt||{},state=stream.state||'connecting';$('ccx-stream-pill').textContent={online:'Live',unsupported:'Not supported',disconnected:'Disconnected',connecting:'Connecting',pausing:'Pausing for sidecar update',paused:'Paused for sidecar update'}[state]||state;
   $('ccx-stream-pill').className='pill '+(state==='online'?'good':state==='disconnected'?'warn':'wait');
   $('ccx-stream-note').textContent=`Stream ${state} · boot ${val(ccxBoot)} · cursor ${ccxCursor}`+(stream.missed?` · ${stream.missed} events missed`:'')+(data.lost?` · ${data.lost} missing from this view`:'')+(mqtt.online!==undefined?` · MQTT ${mqtt.online?'online':'offline'}, ${num(mqtt.sent_to_socket)} sent to socket, ${num(mqtt.dropped)} dropped`:' · MQTT unavailable');
@@ -1569,7 +1569,7 @@ function renderCcxEvents(){const kinds=[...new Set(ccxRows.map(e=>e.kind).filter
   f.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All kinds'}),...kinds.map(k=>Object.assign(document.createElement('option'),{value:k,textContent:k})));f.value=kinds.includes(prior)?prior:'';
   const query=$('ccx-filter-source').value.trim().toLowerCase(),rows=ccxRows.filter(e=>(!f.value||e.kind===f.value)&&(!query||[e.source?.serial,e.source?.zone_id].some(v=>String(v??'').toLowerCase().includes(query))));
   const out=rows.slice(-100).reverse().map(e=>{const d=el('details','raw'),sm=el('summary'),src=e.source||{},gatewayTime=ccxEventWall(e),parts=[e.kind||'CCX event',src.serial!==undefined?'Serial '+src.serial:'',src.zone_id!==undefined?'Zone '+src.zone_id:'',e.stage||'',e.decision?`matched ${val(e.decision.matched)}, submitted ${val(e.decision.submitted)}, refused ${val(e.decision.refused)}`:'',gatewayTime!==null?'Gateway time '+wallClock(gatewayTime):Number.isFinite(e.app_received_at_ms)?'App received '+wallClock(e.app_received_at_ms):''].filter(Boolean);
-    sm.textContent=parts.join(' · ');const pre=el('pre','code',JSON.stringify(e,null,2));d.append(sm,el('p','muted small',ccxTiming(e,null)),pre);return d});
+    sm.textContent=parts.join(' · ');const pre=el('pre','code',JSON.stringify(e,null,2));d.append(sm,el('p','muted small',ccxTiming(e,null)),pre);const key=String(ccxBoot)+':'+e.id;d.open=ccxOpen.has(key);d.addEventListener('toggle',()=>{if(d.open)ccxOpen.add(key);else ccxOpen.delete(key)});return d});
   $('ccx-events').replaceChildren(...(out.length?out:[el('p','empty',ccxRows.length?'No CCX events match these filters.':'Waiting for a CCX event…')]))}
 async function refreshCcx(){if(ccxFetching)return;ccxFetching=true;try{const data=await req('ccx/events?after='+ccxCursor+(ccxBoot===null?'':'&boot_id='+encodeURIComponent(ccxBoot)));ccxEventView(data)}catch(e){$('ccx-stream-note').textContent='CCX event feed unavailable: '+e.message}finally{ccxFetching=false}}
 async function loadCcxHealth(){if(Date.now()-ccxHealthAt<10000)return;ccxHealthAt=Date.now();

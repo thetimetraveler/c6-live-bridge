@@ -440,6 +440,11 @@ const mappingChecks=`
     if(ccxEventWall(observed)!==1700000000001||ccxEventWall({...observed,gateway_received_us:5999})!==null||ccxEventWall({...observed,gateway_received_us:null,stage_at_us:7000})!==1700000000001)throw Error('gateway wall time uses only a current, same-boot UTC anchor covering the event');
     ccxClock.boot_id=6;if(ccxEventWall(observed)!==null)throw Error('a clock from another boot cannot date an event');
     if(!text(view('ccx-events')).includes('71839249')||!text(view('ccx-events')).includes('level_x100'))throw Error('the generic inspector preserves decoded and raw fields');
+    {const row=view('ccx-events').children[0];row.open=true;row.ontoggle();
+      ccxEventView({schema_version:1,boot_id:5,cursor:2,events:[{id:2,kind:'ccx.local_level',source:{serial:1}}],stream:{state:'online'}});
+      const [fresh,viewed]=view('ccx-events').children;if(!viewed.open||fresh.open)throw Error('a newly arrived CCX event must not collapse the event being viewed');
+      viewed.open=false;viewed.ontoggle();ccxEventView({schema_version:1,boot_id:5,cursor:3,events:[{id:3,kind:'ccx.local_level'}],stream:{state:'online'}});
+      if(view('ccx-events').children.some(d=>d.open))throw Error('a collapsed CCX event stays collapsed');}
     ccxEventView({schema_version:1,boot_id:6,cursor:0,next:1,events:[],stream:{state:'unsupported'}});
     if(ccxRows.length||view('ccx-stream-pill').textContent!=='Not supported')throw Error('new boot resets the CCX view and old gateways remain usable');
     {const prior=replies.status;replies.status={listener:{online:true},clock:{synced:true,uncertainty_us:12},monitoring:{age_s:100}};replies.clock={boot_id:6,utc_anchor:{synced:true},monitoring:{age_s:1}};ccxHealthAt=0;await loadCcxHealth();

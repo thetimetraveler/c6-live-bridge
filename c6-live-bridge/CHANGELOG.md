@@ -1,3 +1,7 @@
+## 0.19.1
+
+- Keep expanded rows open in the CCX event inspector and the CCA packets and activity list when new events arrive. Rows collapse only when you close them or the gateway or node restarts.
+
 ## 0.19.0
 
 - Add catalogue-driven shade level and feedback mapping controls when the connected CCA firmware advertises support. Motor ACKs, individual feedback transmissions and the overall feedback result appear separately from local movement completion in activity and MQTT events.

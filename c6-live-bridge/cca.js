@@ -80,7 +80,19 @@ var CCAUI = (() => {
     const req = receipt.id === undefined ? '' : ` · request ${receipt.id}`;
     const labels = {queued:'Queued locally', running:'Running locally', sequence_finished:'Local sequence finished', failed:'Local sequence failed', unknown:'Execution outcome unknown'};
     const stage = labels[receipt.stage] || 'Gateway accepted the request';
-    return `${stage}${req}${receipt.reason ? ' · ' + receipt.reason : ''}. This does not confirm Lutron device receipt or state.`;
+    let text = `${stage}${req}${receipt.reason ? ' · ' + receipt.reason : ''}.`;
+    if (receipt.cmd === 'shade_level' || receipt.feedback || receipt.motorFeedback) {
+      const feedbackLabels = {waiting:'Waiting for shade ACK', ack_received:'Shade ACK observed', feedback_sent:'Feedback sent locally',
+        partial:'Feedback partially sent', ack_timeout:'Shade ACK timed out', superseded:'Feedback superseded',
+        not_applicable:'Feedback not applicable', unknown:'Feedback outcome unknown'};
+      const describe = e => (feedbackLabels[e.stage] || display(e.stage)) +
+        (e.reason && e.reason !== 'none' ? ' · ' + display(e.reason) : '') +
+        (e.current !== undefined && e.total !== undefined ? ` · ${display(e.current)} / ${display(e.total)}` : '');
+      text += ' Overall feedback: ' + (receipt.feedback ? describe(receipt.feedback) : 'final result not yet reported') + '.';
+      if (receipt.motorFeedback) text += ` Latest motor ${display(receipt.motorFeedback.serial)}: ${describe(receipt.motorFeedback)}.`;
+      text += ' Feedback does not confirm RA3 state or measured shade position.';
+    } else text += ' This does not confirm Lutron device receipt or state.';
+    return text;
   }
   function showReceipt() {
     const message = receiptText(activeReceipt);
@@ -88,9 +100,15 @@ var CCAUI = (() => {
     if (activeReceipt?.noteId && activeReceipt.noteId !== 'command-note') note(activeReceipt.noteId, message);
   }
   function updateReceipt(e) {
-    if (!activeReceipt || e.kind !== 'cca.command' || String(e.request_id) !== String(activeReceipt.id)) return;
+    if (!activeReceipt || !['cca.command','cca.feedback'].includes(e.kind) || String(e.request_id) !== String(activeReceipt.id)) return;
     if (activeReceipt.boot !== null && e.node_boot_id !== undefined && String(e.node_boot_id) !== String(activeReceipt.boot)) return;
     if (Number.isInteger(e.id) && activeReceipt.eventBoot === boot && e.id <= activeReceipt.after) return;
+    if (e.kind === 'cca.feedback') {
+      if (!Number.isInteger(e.serial) || e.serial < 0) return;
+      if (e.serial === 0) activeReceipt.feedback = e;
+      else activeReceipt.motorFeedback = e;
+      showReceipt(); return;
+    }
     const stage = e.stage;
     const ranks = {accepted:0,queued:1,running:2,sequence_finished:3,failed:3,unknown:3};
     if (ranks[stage] !== undefined && ranks[stage] >= (ranks[activeReceipt.stage] ?? 0) &&
@@ -99,12 +117,20 @@ var CCAUI = (() => {
       showReceipt();
     }
   }
+  function invalidateReceipt() {
+    if (!activeReceipt) return;
+    if (!['sequence_finished','failed'].includes(activeReceipt.stage)) activeReceipt.stage = 'unknown';
+    if ((activeReceipt.cmd === 'shade_level' || activeReceipt.feedback || activeReceipt.motorFeedback) &&
+        !['feedback_sent','partial','ack_timeout','superseded','not_applicable'].includes(activeReceipt.feedback?.stage))
+      activeReceipt.feedback = {stage:'unknown',reason:'stream or node restarted before the final result'};
+    showReceipt();
+  }
   function eventView(data) {
     if (!data || !Array.isArray(data.events)) throw Error('Invalid CCA activity response');
     const nextBoot = data.boot_id ?? null;
     const rewound = nextBoot === boot && cursor > 0 && data.after === 0 && Number.isInteger(data.cursor) && data.cursor < cursor;
     if (nextBoot !== boot || data.reset === true || rewound) {
-      if (boot !== null && activeReceipt && !['sequence_finished','failed'].includes(activeReceipt.stage)) { activeReceipt.stage = 'unknown'; showReceipt(); }
+      if (boot !== null) invalidateReceipt();
       boot = nextBoot; cursor = 0; rows = []; keys.clear(); lost = 0;
     }
     for (const e of data.events) {
@@ -133,6 +159,18 @@ var CCAUI = (() => {
       const parts = [e.kind || 'CCA event', e.cmd, e.request_id !== undefined ? 'request ' + e.request_id : '',
         e.stage, Number.isFinite(e.at_ms) ? 'node uptime ' + e.at_ms + ' ms' : '',
         e.rssi !== undefined ? 'RSSI ' + e.rssi : '', e.crc_valid === true ? 'CRC valid' : e.crc_valid === false ? 'CRC invalid' : ''];
+      if (e.kind === 'cca.feedback' || e.kind === 'cca.feedback_mapping') {
+        if (e.serial !== undefined) parts.push(e.serial === 0 && e.kind === 'cca.feedback' ? 'overall' : 'serial ' + display(e.serial));
+        if (e.target_id !== undefined) parts.push('group ' + display(e.target_id));
+        if (e.subnet !== undefined) parts.push('subnet ' + display(e.subnet));
+        if (e.link_index !== undefined) parts.push('link ' + display(e.link_index));
+        if (e.component !== undefined) parts.push('component ' + display(e.component));
+        if (e.ack_byte !== undefined) parts.push('ACK byte ' + display(e.ack_byte));
+        if (e.quantized_target !== undefined) parts.push('quantized target ' + display(e.quantized_target));
+        if (e.attempt !== undefined) parts.push('attempt ' + display(e.attempt));
+        if (e.current !== undefined && e.total !== undefined) parts.push(display(e.current) + ' / ' + display(e.total));
+        if (e.reason && e.reason !== 'none') parts.push(display(e.reason));
+      }
       summary.textContent = parts.filter(Boolean).join(' · ');
       d.append(summary, node('pre', 'cca-json', JSON.stringify(e, null, 2))); return d;
     });
@@ -153,7 +191,7 @@ var CCAUI = (() => {
       if (s?.ota) { ota = s.ota; renderOta(); }
       const peerBoot = (s?.status?.c6 || s?.status?.peer)?.boot_id;
       if (activeReceipt && activeReceipt.boot !== null && peerBoot !== undefined && peerBoot !== activeReceipt.boot) {
-        if (!['sequence_finished','failed'].includes(activeReceipt.stage)) { activeReceipt.stage = 'unknown'; showReceipt(); }
+        invalidateReceipt();
       }
       const operation = s?.status?.latest_operation;
       if (activeReceipt && operation) updateReceipt({...operation,kind:'cca.command',node_boot_id:peerBoot});
@@ -249,6 +287,10 @@ var CCAUI = (() => {
     });
     byId('command-fields').replaceChildren(...fields);
     note('command-help', command.name === 'raw' ? 'Raw payload is the complete pre-CRC frame. The radio does not construct its header from other fields.' :
+      command.name === 'shade_level' ? 'Shade movement and feedback have separate results. Feedback does not measure shade position.' :
+      command.name === 'feedback_map' ? 'Store a feedback mapping on the CCA node: device ID is the motor serial and target ID is the shade group.' :
+      command.name === 'feedback_remove' ? 'Remove the CCA node mapping for this motor serial, shade group and subnet.' :
+      command.name === 'feedback_list' ? 'List the CCA node mappings in activity.' :
       command.name.startsWith('ota_') ? 'Native OTA commands act directly. The firmware workflow below handles staging and prefix reconciliation.' : '');
     updatePreview();
   }
@@ -382,7 +424,7 @@ var CCAUI = (() => {
       const eventBoot = boot, after = cursor;
       const result = await req('cca/command', jsonOptions(command));
       const peer = status?.status?.c6 || status?.status?.peer || {};
-      activeReceipt = {id:result.request_id, boot:peer.boot_id ?? null, eventBoot, after, stage:'accepted', reason:'', noteId};
+      activeReceipt = {id:result.request_id, cmd:command.cmd, boot:peer.boot_id ?? null, eventBoot, after, stage:'accepted', reason:'', feedback:null, motorFeedback:null, noteId};
       showReceipt();
       for (const e of rows) updateReceipt(e);
       fetchEvents();

@@ -93,6 +93,56 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.service.command(command)
         self.assertEqual(self.gateway.writes, [])
 
+    def test_shade_catalogue_is_capability_driven_and_flat(self):
+        def field(name, maximum, required=True, minimum=0):
+            return {"name": name, "type": "integer", "min": minimum, "max": maximum, "required": required}
+        address = [field("subnet", 65535), field("target_id", 0xffffffff)]
+        serial = field("device_id", 0xffffffff, minimum=1)
+        commands = [
+            {"name": "shade_level", "fields": address + [field("level_pct", 100), field("fade_qs", 255, False), field("raw_repeat", 255, False)]},
+            {"name": "feedback_map", "fields": [serial] + address + [field("link_index", 99), field("component", 3, False, 3)]},
+            {"name": "feedback_remove", "fields": [serial] + address},
+            {"name": "feedback_list", "fields": []},
+        ]
+        # Older gateways remain limited to their advertised commands.
+        with self.assertRaisesRegex(ValueError, "unknown CCA command"):
+            self.service.command({"cmd": "feedback_list"})
+        self.service.capabilities = dict(CAPS, commands=CAPS["commands"] + commands)
+        values = [
+            {"cmd": "shade_level", "subnet": "0x22", "target_id": "0x1234", "level_pct": 50, "raw_repeat": 6},
+            {"cmd": "feedback_map", "device_id": "0x89", "target_id": 0x1234, "subnet": 34, "link_index": 0, "component": 3},
+            {"cmd": "feedback_remove", "device_id": 0x89, "target_id": 0x1234, "subnet": 34},
+            {"cmd": "feedback_list"},
+        ]
+        for value in values: self.assertTrue(self.service.command(value)["accepted"])
+        self.assertEqual(self.gateway.writes[0], {"cmd": "shade_level", "subnet": 34, "target_id": 0x1234, "level_pct": 50, "raw_repeat": 6})
+        self.assertEqual(self.gateway.writes[1]["link_index"], 0)
+        for value in (dict(values[0], level_pct=101), dict(values[1], link_index=100), dict(values[1], component=2)):
+            with self.assertRaises(ValueError): self.service.command(value)
+        self.assertEqual(len(self.gateway.writes), 4)
+
+    def test_capabilities_refresh_on_peer_feature_or_stream_change(self):
+        def status(boot, supported=None):
+            value = {"c6": {"boot_id": boot}}
+            if supported is not None: value["capabilities"] = {"shade_feedback": supported}
+            return value
+        self.service.gateway_status = status(1)  # Old firmware omits the field.
+        with patch.object(self.service, "_read", return_value=status(1)):
+            self.service._status()
+        self.assertIs(self.service.capabilities, CAPS)
+        for value in (status(1, False), status(1, True), status(2, False)):
+            self.service.capabilities = CAPS
+            with patch.object(self.service, "_read", return_value=value): self.service._status()
+            self.assertIsNone(self.service.capabilities)
+        self.service.capabilities = CAPS
+        self.service.stream_state("connecting")
+        self.assertIs(self.service.capabilities, CAPS)  # First connection is not a reconnect.
+        self.service.events.connected_once = True
+        self.service.stream_state("connecting")
+        self.assertIsNone(self.service.capabilities)
+        self.service._capabilities()
+        self.assertIsNotNone(self.service.capabilities)
+
     def test_identity_and_radio_guard_commands_and_presence(self):
         self.gateway.mac = "aa:bb:cc:dd:ee:ff"
         with self.assertRaisesRegex(CcaError, "MAC"): self.service.command({"cmd": "bridge_level", "device_id": 1, "level_pct": 20})
@@ -176,6 +226,30 @@ class ServiceTests(unittest.TestCase):
         stream([("ccx_events", env(1, 5, True)), ("cca_events", env(8, 15, True))])
         self.assertEqual([e["kind"] for e in saved], ["cca.rx", "cca.stream_gap"])
         self.assertEqual(self.service.read_events(0)["cursor"], 14)
+
+    def test_feedback_events_reach_results_cache_and_mqtt(self):
+        mqtt = CcaMqtt(self.service, None)
+        mqtt.online = True
+        self.service.publisher = mqtt
+        baseline = {"schema_version": 1, "boot_id": 8, "next": 1, "baseline": True, "events": []}
+        self.service.accept_events(baseline, require_baseline=True)
+        events = [
+            {"id": 1, "kind": "cca.command", "request_id": 7, "stage": "sequence_finished"},
+            {"id": 2, "kind": "cca.feedback", "request_id": 7, "serial": 123, "link_index": 0,
+             "stage": "ack_received", "reason": "none", "ack_byte": 0, "quantized_target": 0, "attempt": 1},
+            {"id": 3, "kind": "cca.feedback_mapping", "request_id": 8, "serial": 123, "target_id": 456,
+             "subnet": 34, "link_index": 0, "component": 3, "current": 1, "total": 1},
+            {"id": 4, "kind": "cca.rx", "raw_hex": "00"},
+        ]
+        self.service.accept_events({"schema_version": 1, "boot_id": 8, "next": 5, "events": events})
+        cached = self.service.read_events(0)["events"]
+        self.assertEqual([e["kind"] for e in self.service.status_snapshot()["results"]],
+                         ["cca.command", "cca.feedback", "cca.feedback_mapping"])
+        self.assertEqual(cached[1]["ack_byte"], 0)
+        self.assertEqual(cached[2]["link_index"], 0)
+        published = [mqtt.pending.get_nowait() for _ in events]
+        self.assertEqual([suffix for suffix, _ in published], ["events"] * len(events))
+        self.assertEqual([payload for _, payload in published], cached)
 
 
 class MqttTests(unittest.TestCase):

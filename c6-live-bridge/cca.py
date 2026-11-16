@@ -171,6 +171,14 @@ class CcaService:
     def _status(self, retry=False):
         data = self._read("/api/cca/status", retry=retry)
         with self.lock:
+            if self.gateway_status is not None:
+                def marker(status):
+                    peer = status.get("c6") or {}
+                    capabilities = status.get("capabilities") or {}
+                    return (peer.get("boot_id") if isinstance(peer, dict) else None,
+                            capabilities.get("shade_feedback") if isinstance(capabilities, dict) else None)
+                if marker(data) != marker(self.gateway_status):
+                    self.capabilities = None
             self.gateway_status, self.status_at, self.error = data, time.monotonic(), None
         return data
 
@@ -187,7 +195,7 @@ class CcaService:
     def offer(self, event):
         if event.get("kind") == "ccx.stream_gap":
             event = dict(event, kind="cca.stream_gap")
-        if event.get("kind") == "cca.command":
+        if event.get("kind") in ("cca.command", "cca.feedback", "cca.feedback_mapping"):
             with self.lock: self.results.append(event)
         if self.publisher: self.publisher.offer("events", event)
 
@@ -201,8 +209,11 @@ class CcaService:
         with self.events.lock:
             self.events.state = "unsupported" if self.supported is False else state
             self.events.error = error
-            if state == "connecting" and self.events.connected_once:
+            reconnecting = state == "connecting" and self.events.connected_once
+            if reconnecting:
                 self.events.reconnects += 1
+        if reconnecting:
+            with self.lock: self.capabilities = None
 
     def read_events(self, after, boot=None):
         return self.events.read(after, boot)

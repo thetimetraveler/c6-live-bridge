@@ -1,3 +1,8 @@
+## 0.19.0
+
+- Add catalogue-driven shade level and feedback mapping controls when the connected CCA firmware advertises support. Motor ACKs, individual feedback transmissions and the overall feedback result appear separately from local movement completion in activity and MQTT events.
+- Keep shade mappings on the CCA node. Feedback reports acknowledge a target; they do not confirm RA3 state or measure shade position. Existing CCA commands, settings and older firmware remain supported.
+
 ## 0.18.0
 
 - Add a CCA dashboard with named targets and presets, native command forms and an advanced JSON console. Show CC1101 readiness, packet activity and correlated local command progress.

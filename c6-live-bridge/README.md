@@ -524,7 +524,7 @@ sends a signed node image through the gateway; direct lighting pauses while it
 transfers (a hybrid gateway uses N4), and the node rolls back unless the
 gateway resumes the new image.
 
-## CCA controls and end-device firmware (0.18.0)
+## CCA controls and end-device firmware (0.19.0)
 
 The CCA tab reads the gateway's command catalogue, so its guided controls match
 the installed firmware. Save the separate CCA C6's MAC, named targets and
@@ -537,6 +537,40 @@ stages. `sequence_finished` means the local sequence ended; it does not confirm
 that a Lutron device received or applied it. Gaps remain visible when a bounded
 history overflows or a connection restarts. The existing CCX SSE connection
 carries CCA events too; opening this tab does not create another gateway feed.
+
+When the CCA firmware advertises shade feedback, the command catalogue also
+offers `shade_level`, `feedback_map`, `feedback_remove` and `feedback_list`.
+Mappings are stored on the CCA node, not in the add-on's targets or presets:
+`device_id` is the motor serial, `target_id` is the shade group, and `subnet`
+and `link_index` identify the RF link and motor ACK source. Only component 3 is
+supported and it is the default. Listing mappings produces
+`cca.feedback_mapping` activity records. For a
+shade move, local sequence completion and feedback are separate results;
+`cca.feedback` reports per-motor activity and an overall result with serial 0.
+`quantized_target` is the ACK byte shifted left eight bits, not a measured
+position. The overall final count is sent feedback reports / expected motors. Feedback
+transmission does not confirm RA3 state or measure shade position. Qualifying
+mapped absolute-level raw commands use the same automatic feedback path.
+
+The verified Office example uses RF subnet 44530, group 16639 and two motors.
+In the guided controls or advanced JSON, send each mapping object separately
+and use `feedback_list` to inspect the stored mappings:
+
+```json
+{"cmd":"feedback_map","device_id":72740540,"target_id":16639,"subnet":44530,"link_index":32}
+{"cmd":"feedback_map","device_id":141956735,"target_id":16639,"subnet":44530,"link_index":10}
+{"cmd":"feedback_list"}
+```
+
+An absolute move can then be sent as follows; this example sends an RF command
+and sets Office to 50%:
+
+```json
+{"cmd":"shade_level","target_id":16639,"subnet":44530,"level_pct":50}
+```
+
+`fade_qs` is optional and is measured in quarter seconds. `raw_repeat` defaults
+to six. Existing CCA commands and CCX dimmers retain their existing behavior.
 
 For end-device firmware, explicitly select LDF or extracted body format. LDF
 removes the first 128 bytes; the remaining body must be 1–112640 bytes. Select
@@ -558,7 +592,8 @@ With the MQTT broker service available, send nonretained QoS 0 requests to
 A saved preset can be invoked with
 `{"id":"desk-2","preset_id":"evening"}`. Results appear on
 `ccx_bridge/cca/results` with the caller ID and gateway request ID; local stages
-and packets appear on `ccx_bridge/cca/events`. IDs are suppressed in a bounded
+and packets appear on `ccx_bridge/cca/events`, including shade feedback and
+mapping records when supported. IDs are suppressed in a bounded
 process-local cache; retained requests are ignored and commands are not retried.
 State and availability are retained under the same prefix, and Home Assistant
 discovers one diagnostic device. Broker outages do not block dashboard controls.

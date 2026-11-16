@@ -186,12 +186,85 @@ requiredInputs[0].value='7'; requiredInputs[0].dispatch('input'); assert.equal(g
 requiredInputs[1].value='0'; requiredInputs[1].dispatch('change');
 assert.deepEqual(plain(t.commandFromForm()),{cmd:'requires_input',device_id:7,choice:0});
 
+// New controls come only from firmware metadata; target defaults apply to subnet and group.
+const shadeAddress = [
+  {name:'subnet',label:'Subnet',type:'integer',min:0,max:65535,required:true},
+  {name:'target_id',label:'Shade group',type:'integer',min:0,max:0xffffffff,required:true},
+];
+const motor = {name:'device_id',label:'Motor serial',type:'integer',min:1,max:0xffffffff,required:true};
+const shadeCaps = {commands:[
+  {name:'shade_level',group:'shade',fields:[...shadeAddress,{name:'level_pct',type:'integer',min:0,max:100,required:true},
+    {name:'fade_qs',type:'integer',min:0,max:255},{name:'raw_repeat',type:'integer',min:1,max:255,default:6}]},
+  {name:'feedback_map',group:'shade',fields:[motor,...shadeAddress,{name:'link_index',type:'integer',min:0,max:99,required:true},
+    {name:'component',type:'integer',min:3,max:3,default:3}]},
+  {name:'feedback_remove',group:'shade',fields:[motor,...shadeAddress]},
+  {name:'feedback_list',group:'shade',fields:[]},
+]};
+t.setCapabilities(shadeCaps);
+get('command-select').value='shade_level'; get('command-select').dispatch('change');
+let inputs=walk(get('command-fields')).filter(n=>n.tag==='input'||n.tag==='select');
+assert.equal(inputs[0].value,'7'); assert.equal(inputs[1].value,'5');
+inputs[2].value='73'; inputs[2].dispatch('input');
+assert.deepEqual(plain(t.commandFromForm()),{cmd:'shade_level',subnet:7,target_id:5,level_pct:73,raw_repeat:6});
+get('command-select').value='feedback_map'; get('command-select').dispatch('change');
+inputs=walk(get('command-fields')).filter(n=>n.tag==='input'||n.tag==='select');
+assert.equal(inputs[0].value,'4660'); assert.equal(inputs[1].value,'7'); assert.equal(inputs[2].value,'5');
+inputs[3].value='0'; inputs[3].dispatch('input');
+assert.deepEqual(plain(t.commandFromForm()),{cmd:'feedback_map',device_id:4660,subnet:7,target_id:5,link_index:0,component:3});
+inputs[3].value='100'; inputs[3].dispatch('input'); assert.equal(get('command-send').disabled,true);
+get('command-select').value='feedback_remove'; get('command-select').dispatch('change');
+assert.deepEqual(plain(t.commandFromForm()),{cmd:'feedback_remove',device_id:4660,subnet:7,target_id:5});
+get('command-select').value='feedback_list'; get('command-select').dispatch('change');
+assert.deepEqual(plain(t.commandFromForm()),{cmd:'feedback_list'});
+
+// Motor results are visible without marking the overall feedback operation complete.
+state.events={schema_version:1,boot_id:90,cursor:0,events:[],stream:{state:'online'}};
+t.eventView(state.events);
+await t.sendCommand({cmd:'shade_level',subnet:7,target_id:5,level_pct:73}); await tick();
+const requestId=t.state().activeReceipt.id;
+t.eventView({boot_id:90,cursor:1,events:[{id:1,kind:'cca.command',node_boot_id:4,request_id:requestId,stage:'sequence_finished'}],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Local sequence finished/);
+assert.match(get('command-note').textContent,/Overall feedback: final result not yet reported/);
+t.eventView({boot_id:90,cursor:2,events:[{id:2,kind:'cca.feedback',node_boot_id:4,request_id:requestId,serial:4660,link_index:0,
+  stage:'feedback_sent',reason:'none',ack_byte:0,quantized_target:0,attempt:1}],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Latest motor 4660: Feedback sent locally/);
+assert.match(get('command-note').textContent,/Overall feedback: final result not yet reported/);
+assert.match(text(get('events')),/link 0 · ACK byte 0 · quantized target 0 · attempt 1/);
+t.eventView({boot_id:90,cursor:3,events:[{id:3,kind:'cca.feedback',node_boot_id:5,request_id:requestId,serial:0,stage:'feedback_sent',current:1,total:1}],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Overall feedback: final result not yet reported/,'a different node boot cannot finalize feedback');
+t.eventView({boot_id:90,cursor:4,events:[{id:4,kind:'cca.feedback',node_boot_id:4,request_id:requestId,serial:0,stage:'feedback_sent',current:1,total:1}],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Overall feedback: Feedback sent locally · 1 \/ 1/);
+assert.match(get('command-note').textContent,/does not confirm RA3 state or measured shade position/);
+t.eventView({boot_id:90,cursor:5,events:[{id:5,kind:'cca.feedback_mapping',node_boot_id:4,request_id:requestId+1,
+  serial:4660,target_id:5,subnet:7,link_index:0,component:3,current:1,total:1}],stream:{state:'online'}});
+assert.match(text(get('events')),/serial 4660 · group 5 · subnet 7 · link 0 · component 3 · 1 \/ 1/);
+
+state.events={schema_version:1,boot_id:90,cursor:5,events:[],stream:{state:'online'}};
+await t.sendCommand({cmd:'shade_level',subnet:7,target_id:5,level_pct:30}); await tick();
+const nextId=t.state().activeReceipt.id;
+t.eventView({boot_id:90,cursor:7,events:[{id:6,kind:'cca.command',node_boot_id:4,request_id:nextId,stage:'sequence_finished'},
+  {id:7,kind:'cca.feedback',node_boot_id:4,request_id:nextId,serial:0,stage:'waiting'}],stream:{state:'online'}});
+t.eventView({boot_id:91,cursor:0,events:[],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Local sequence finished/);
+assert.match(get('command-note').textContent,/Feedback outcome unknown/,'stream restart leaves unfinished feedback unresolved');
+for (const [stage,label] of [['partial','Feedback partially sent'],['ack_timeout','Shade ACK timed out'],
+  ['superseded','Feedback superseded'],['not_applicable','Feedback not applicable']]) {
+  assert.match(t.receiptText({cmd:'shade_level',stage:'sequence_finished',feedback:{stage,serial:0,current:1,total:2}}),new RegExp(label));
+}
+state.events={schema_version:1,boot_id:91,cursor:0,events:[],stream:{state:'online'}};
+await t.sendCommand({cmd:'raw',raw_payload:'aa',raw_repeat:6}); await tick();
+const rawId=t.state().activeReceipt.id;
+t.eventView({boot_id:91,cursor:1,events:[{id:1,kind:'cca.feedback',node_boot_id:4,request_id:rawId,serial:4660,stage:'ack_received'}],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Latest motor 4660: Shade ACK observed/);
+t.eventView({boot_id:92,cursor:0,events:[],stream:{state:'online'}});
+assert.match(get('command-note').textContent,/Feedback outcome unknown/,'raw-command feedback is also invalidated on restart');
+
 // Optional firmware-produced fixture exercises every real descriptor during integration.
 if (process.env.CCA_CAPABILITIES_FIXTURE) {
   const actual = JSON.parse(fs.readFileSync(process.env.CCA_CAPABILITIES_FIXTURE,'utf8'));
-  assert.equal(actual.commands.length,34);
+  assert.ok(actual.commands.length>=34);
   t.setCapabilities(actual);
-  assert.equal(walk(get('command-select')).filter(n=>n.tag==='option').length,34);
+  assert.equal(walk(get('command-select')).filter(n=>n.tag==='option').length,actual.commands.length);
   for (const command of actual.commands) {
     get('command-select').value=command.name; get('command-select').dispatch('change');
     const controls=walk(get('command-fields')).filter(n=>n.tag==='input'||n.tag==='select');

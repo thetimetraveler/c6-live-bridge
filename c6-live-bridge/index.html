@@ -768,6 +768,15 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null,statusReceivedAt=0;let refreshing=false,shownEvents=new Set();
 async function req(path,opts){const r=await fetch(api(path),opts);const ct=r.headers.get('content-type')||'';const d=ct.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(d?.error||`HTTP ${r.status}`);return d}
 function val(v){return v===undefined||v===null?'—':typeof v==='object'?JSON.stringify(v):String(v)}
+// Re-render a list of <details> rows without disturbing an open row the user is reading. New rows land above it, so scroll the
+// page or list back by however far it was pushed. Rows are rebuilt, so carry over the scroll position of the boxes inside each one.
+function holdOpenRow(box,render){const open=[...box.children].filter(d=>d.open&&d.rowKey!==undefined&&d.getBoundingClientRect);if(!open.length)return render();
+  const inner=new Map(open.map(d=>[d.rowKey,[...d.querySelectorAll('pre,textarea')].map(x=>[x.scrollTop,x.scrollLeft])]));
+  const vh=window.innerHeight||document.documentElement.clientHeight,anchor=open.find(d=>{const r=d.getBoundingClientRect();return r.bottom>0&&r.top<vh})||open[0],before=anchor.getBoundingClientRect().top;render();
+  const rows=[...box.children];for(const d of rows){const saved=inner.get(d.rowKey);if(saved&&d.open)d.querySelectorAll('pre,textarea').forEach((x,i)=>{if(saved[i]){x.scrollTop=saved[i][0];x.scrollLeft=saved[i][1]}})}
+  const now=rows.find(d=>d.rowKey===anchor.rowKey);if(!now)return;const delta=now.getBoundingClientRect().top-before;if(!delta)return;
+  for(let s=box;s&&s!==document.body&&s!==document.documentElement;s=s.parentElement)if(s.scrollHeight>s.clientHeight&&/auto|scroll/.test(getComputedStyle(s).overflowY)){s.scrollTop+=delta;return}
+  window.scrollBy(0,delta)}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 function cell(row,text){const td=document.createElement('td');td.textContent=text;row.append(td);return td}
 function num(v){return Number.isFinite(Number(v))&&v!==null&&typeof v!=='boolean'?Number(v).toLocaleString():val(v)}
@@ -1569,8 +1578,8 @@ function renderCcxEvents(){const kinds=[...new Set(ccxRows.map(e=>e.kind).filter
   f.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'All kinds'}),...kinds.map(k=>Object.assign(document.createElement('option'),{value:k,textContent:k})));f.value=kinds.includes(prior)?prior:'';
   const query=$('ccx-filter-source').value.trim().toLowerCase(),rows=ccxRows.filter(e=>(!f.value||e.kind===f.value)&&(!query||[e.source?.serial,e.source?.zone_id].some(v=>String(v??'').toLowerCase().includes(query))));
   const out=rows.slice(-100).reverse().map(e=>{const d=el('details','raw'),sm=el('summary'),src=e.source||{},gatewayTime=ccxEventWall(e),parts=[e.kind||'CCX event',src.serial!==undefined?'Serial '+src.serial:'',src.zone_id!==undefined?'Zone '+src.zone_id:'',e.stage||'',e.decision?`matched ${val(e.decision.matched)}, submitted ${val(e.decision.submitted)}, refused ${val(e.decision.refused)}`:'',gatewayTime!==null?'Gateway time '+wallClock(gatewayTime):Number.isFinite(e.app_received_at_ms)?'App received '+wallClock(e.app_received_at_ms):''].filter(Boolean);
-    sm.textContent=parts.join(' · ');const pre=el('pre','code',JSON.stringify(e,null,2));d.append(sm,el('p','muted small',ccxTiming(e,null)),pre);const key=String(ccxBoot)+':'+e.id;d.open=ccxOpen.has(key);d.addEventListener('toggle',()=>{if(d.open)ccxOpen.add(key);else ccxOpen.delete(key)});return d});
-  $('ccx-events').replaceChildren(...(out.length?out:[el('p','empty',ccxRows.length?'No CCX events match these filters.':'Waiting for a CCX event…')]))}
+    sm.textContent=parts.join(' · ');const pre=el('pre','code',JSON.stringify(e,null,2));d.append(sm,el('p','muted small',ccxTiming(e,null)),pre);const key=String(ccxBoot)+':'+e.id;d.rowKey=key;d.open=ccxOpen.has(key);d.addEventListener('toggle',()=>{if(d.open)ccxOpen.add(key);else ccxOpen.delete(key)});return d});
+  const box=$('ccx-events');holdOpenRow(box,()=>box.replaceChildren(...(out.length?out:[el('p','empty',ccxRows.length?'No CCX events match these filters.':'Waiting for a CCX event…')])))}
 async function refreshCcx(){if(ccxFetching)return;ccxFetching=true;try{const data=await req('ccx/events?after='+ccxCursor+(ccxBoot===null?'':'&boot_id='+encodeURIComponent(ccxBoot)));ccxEventView(data)}catch(e){$('ccx-stream-note').textContent='CCX event feed unavailable: '+e.message}finally{ccxFetching=false}}
 async function loadCcxHealth(){if(Date.now()-ccxHealthAt<10000)return;ccxHealthAt=Date.now();
   try{const s=await req('ccx/status'),clock=await req('ccx/clock'),anchor=clock?.utc_anchor||{},sync=s?.clock||{};const online=s?.online??s?.listener?.online??s?.receiver?.online;

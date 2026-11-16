@@ -1,3 +1,7 @@
+## 0.19.2
+
+- Keep an expanded row in the CCX event inspector and the CCA packets and activity list in place on screen while new events arrive above it, and keep the scroll position of its JSON box.
+
 ## 0.19.1
 
 - Keep expanded rows open in the CCX event inspector and the CCA packets and activity list when new events arrive. Rows collapse only when you close them or the gateway or node restarts.

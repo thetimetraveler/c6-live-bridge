@@ -180,21 +180,31 @@ fault bits, partition, leader, routers heard and blocked transmissions.
 `POST /api/endpoint/safety/clear` exactly `{"confirm":"clear-r1-latch"}`; both
 need `application/json` and, like maintenance, bypass the monitoring backoff.
 
-## Layout (0.14.0)
+## Layout (0.23.0)
 
-The dashboard has five tabs, each answering one question:
+The dashboard has five destinations: a left sidebar from 1000 px wide, a
+bottom tab bar below. Each answers one question:
 
-| Tab | Question | What's there |
+| Destination | Question | What's there |
 |---|---|---|
-| **Overview** | Is everything working? | Headline (one problem: what it is and what to do), status tiles, Lights |
-| **Activity** | What happened to a command? | Command flow (live diagram, explained under its **?**), then one row per command and its steps |
-| **Health** | Which part needs a look, and how fast is it? | Components (was Diagnostics), Response times (was Performance) |
-| **Programming** | Has new programming reached the lamps? | Programming sync, per-zone shows and presets |
-| **Setup** | Change something | Everyday controls, Configuration, Zigbee node and firmware |
+| **Home** | Is my lighting working? What needs me? | One status sentence with the checks behind it; **Needs attention** (what, since when, and a link to where it is fixed); **Rooms**; the command path |
+| **Activity** | What just happened, and how fast? | Command timeline (default), **Listener events** and **CCA packets** behind one segmented control; response times |
+| **Devices** | Which box is unhealthy, and what is it running? | One card per board: gateway, Thread endpoint, Zigbee node, CCX listener, CCA radio, Ketra hub. Each has a status, a few vitals, **All readings**, its firmware update and its own controls |
+| **Automation** | What makes the lights change? | Gateway rules (viewed here, edited in a side sheet), Lutron programming sync and zone programming, CCA targets, presets, shade feedback, presence and **Try a command** |
+| **Settings** | What do I configure rarely? | Zone mapping, Ketra lamps, show time zone, maintenance mode, and a **Danger zone** (disable the endpoint, clear the safety latch) |
 
-Each Overview tile opens the place that explains it. A healthy bridge shows
-no banner, only the tiles; the endpoint's hardware caveats (no physical hold)
-stay in Health, where they belong.
+Older tab names still work: links or calls to `overview`, `diagnostics`,
+`programming`, `local`, `cca` and `setup` open Home, Devices, Automation,
+Automation, Automation and Settings. Explanations sit behind each card's
+**i** control; developer detail (exact JSON, boot and cursor, raw readings)
+sits under **Advanced** or **All readings**.
+
+The Thread endpoint card shows the board's own health from
+`endpoint_health` (restart reason, uptime, memory, link errors and timing)
+and the link counters (`uart_framing_errors`, `uart_overflows`,
+`endpoint_cmd_frames`, `endpoint_cmd_lost`, `endpoint_cmd_duplicates`). A
+restart after a brownout, crash or watchdog, and any lost command, appear in
+Needs attention. Gateways that omit these fields show "Not reported".
 
 **Lights.** One compact row per lamp: the lamp's glow, name, its reading and
 whether it is **in sync** with Lutron (or a running Natural Show). In sync
@@ -252,12 +262,10 @@ what they do: type 1 *Unaffected*; type 72 sets brightness (`value`, Lutron's
 5 Modified Halogen); type 73 starts the Natural Show in `value`, optionally at
 `show_level`. Fade and delay are in quarter-seconds (default fade 2 s).
 
-**Setup** groups its cards as Everyday controls (maintenance, endpoint control,
-show time zone), Configuration (zone mapping, Ketra lamps) and Zigbee node and
-firmware. Every card says when to use it. **Firmware updates** holds both
-uploads side by side: the endpoint board (CCX on Thread, an ESP32 app image up
-to 768 KB) and the Zigbee node (Ketra radio, a signed image up to 1.5 MB, shown
-only on gateways that host the node).
+Firmware updates live on each board's card in **Devices**: the Thread
+endpoint (an ESP32 app image up to 768 KB), the Zigbee node (a signed image up
+to 1.5 MB, shown only on gateways that host the node), the CCX listener and the
+CCA node.
 
 **Sidecar firmware** is a separate card for the passive B1 with its external
 antenna. After the one-time USB bootstrap, signed images of 8,192–720,896 bytes

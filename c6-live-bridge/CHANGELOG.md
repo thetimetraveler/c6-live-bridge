@@ -1,5 +1,13 @@
-## 0.22.2
+## 0.23.0
 
+- Redesign the dashboard around five destinations instead of seven tabs: **Home** (is it working, what needs me), **Activity** (what just happened, and how fast), **Devices** (one card per board), **Automation** (what makes the lights change) and **Settings** (rare configuration). A left sidebar from 1000 px, a bottom tab bar below; no truncated labels. Old tab names, `#hash` links and `showTab()` calls open the new destinations.
+- Home leads with one status sentence and a **Needs attention** list: each item says what is wrong, since when where known, and links to the card where it is fixed. Rooms show the last command and how fast the lamps followed it; the command path is a compact strip.
+- Devices shows one card per board (gateway, Thread endpoint, Zigbee node, CCX listener, CCA radio, Ketra hub) with a status, four to six plain-language vitals, an **All readings** disclosure, its firmware update and its own controls. Flagged readings are listed above the cards.
+- Show the endpoint's own health from `/api/status` (`endpoint_health`: restart reason, uptime, memory, link errors, timing) and the board-link counters (framing errors, overflows, command frames, lost and duplicate commands). A brownout, crash or watchdog restart and any lost command need attention. Older gateways show "Not reported", never zero.
+- View and edit gateway rules in one place: the rule cards in Automation, and an editor in a side sheet with labelled full-width fields. Show ID 0 is accepted when the rule also gives a level, as the gateway does, so the installed touch-bar rules no longer show as errors and can be applied again.
+- Settings ends with a red **Danger zone** for disabling the endpoint and clearing its safety latch; both still confirm.
+- Move explanations behind an **i** control, and exact JSON, boot and cursor and inspector internals under **Advanced**. The CCA radio shows one reason instead of a grid of dashes when its status is unavailable.
+- Add design tokens (colour, type, 8-point spacing, radius, elevation) and one component set used everywhere. Dark only. No proxy routes change except the CCA node update below.
 - Prepare a separate CCA node firmware card for signed C6 updates through the S3. A one-time USB bootstrap is required; physical OTA and rollback qualification remain pending. The update pauses CCA while CCX and the shared event feed continue.
 - Show node identity, slot, progress, failure reason and confirmation. An interrupted upload is reconciled from fresh status and is never sent again automatically. Existing Lutron end-device RF firmware controls and settings remain separate.
 

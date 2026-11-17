@@ -478,7 +478,13 @@ const mappingChecks=`
     const candidate=ccxRulePayload();
     if(candidate.errors.length||candidate.rules[1].action.show_id!==31779||'level' in candidate.rules[1].action||Object.keys(candidate.rules[1].match).length)throw Error('Show default level and match-all rules must round trip');
     {const prior=ccxRules;ccxRules=[ccxDraftRule({id:'odd',enabled:false,match:{kind:''},action:{type:'set_level',target_zone:1,level:0}})];if(ccxRulePayload().rules[0].match.kind!=='')throw Error('an exact empty kind from the gateway must not silently become match-all');ccxRules=prior}
-    ccxRules[1].show_id='0';if(!ccxRulePayload().errors.length)throw Error('Show ID zero must be rejected');
+    ccxRules[1].show_id='0';if(!ccxRulePayload().errors.some(e=>e.includes('Show ID 0 needs a level')))throw Error('Show ID zero without a level must be rejected');
+    ccxRules[1].level='event';{const p=ccxRulePayload();if(p.errors.length||p.rules[1].action.show_id!==0||p.rules[1].action.level!=='event')throw Error('Show ID zero with a level is valid: '+p.errors.join(', '))}
+    ccxRules[1].level='5000';{const p=ccxRulePayload();if(p.errors.length||p.rules[1].action.show_id!==0||p.rules[1].action.level!==5000)throw Error('Show ID zero with a numeric level is valid')}
+    ccxRules[1].show_id='-1';if(!ccxRulePayload().errors.length)throw Error('a negative Show ID is rejected');
+    {const touch=ccxDraftRule({id:'dining-touchbar',enabled:true,match:{kind:'ccx.local_level',serial:71839249},action:{type:'select_show',target_zone:38138,level:'event',show_id:0}}),prior=ccxRules;ccxRules=[touch];const p=ccxRulePayload();ccxRules=prior;
+      if(p.errors.length||JSON.stringify(p.rules[0].action)!==JSON.stringify({type:'select_show',target_zone:38138,show_id:0,level:'event'}))throw Error('the installed touch-bar rule round trips without errors: '+JSON.stringify(p))}
+    ccxRules[1].level='';
     ccxRules[1].show_id='31779';renderCcxRules();requests.length=0;await view('ccx-save-rules').onclick();
     const put=requests.find(r=>r.key==='rules'&&r.opts?.method==='PUT');
     if(!put||JSON.parse(put.opts.body).rules[0].enabled!==false||JSON.parse(put.opts.body).rules[1].action.show_id!==31779)throw Error('saving multiple rules preserves the disabled Dining rule');

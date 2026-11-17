@@ -5,10 +5,12 @@ It provides a live activity diagram, requested and confirmed device state,
 read-only programming inspection, mapping configuration and endpoint firmware
 uploads through the gateway.
 
-The CCA tab adds CC1101 radio status, named targets and presets, native CCA
-controls, packet inspection and Lutron end-device firmware staging. It needs
-a gateway with CCA support and a separate C6/CC1101 connected over I²C. Set
-that C6's expected MAC in the tab before sending commands.
+The dashboard has five destinations: Home, Activity, Devices, Automation and
+Settings. CCA support adds CC1101 radio status and node firmware (Devices),
+named targets, presets and native commands (Automation), packet inspection
+(Activity) and Lutron end-device firmware staging. It needs a gateway with CCA
+support and a separate C6/CC1101 connected over I²C. Set that C6's expected
+MAC under Automation › Targets and presets before sending commands.
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fthetimetraveler%2Fc6-live-bridge)
 
@@ -46,8 +48,8 @@ for now, what the bridge sent, and what N4 confirmed. On gateways with the direc
 output option, the dashboard shows which output the gateway drives, flags
 commands held while that output is not admitted, and reports the read-only
 Zigbee member link. A hybrid gateway prefers direct Zigbee and falls back to N4 on its own;
-the dashboard shows **N4 fallback** while N4 carries lighting, and Setup's **Ketra lamps**
-card edits the gateway's lamp inventory. See the [app documentation](c6-live-bridge/README.md) for API details.
+the dashboard shows **N4 fallback** while N4 carries lighting, and the **Ketra lamps**
+card in Settings edits the gateway's lamp inventory. See the [app documentation](c6-live-bridge/README.md) for API details.
 
 ## Development
 

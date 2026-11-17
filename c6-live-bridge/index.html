@@ -255,9 +255,9 @@ dialog.side-sheet::backdrop{background:rgba(0,0,0,.55)}
 .side-sheet>footer{padding:var(--sp-2) var(--sp-4) var(--sp-3);border-top:.5px solid var(--c-line)}
 .side-sheet>footer .actions{margin-top:var(--sp-2)}
 .rule-forms{display:grid;gap:var(--sp-3);margin:var(--sp-3) 0}
-fieldset.rule-form{border:0;margin:0;padding:var(--sp-3);background:var(--c-raised);border-radius:var(--r-2);display:grid;gap:var(--sp-3);min-width:0}
-.rule-form legend{float:left;font-weight:700;font-size:var(--fs-4);padding:0}
-.rule-form-head{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);margin-top:-2px}
+fieldset.rule-form{position:relative;border:0;margin:0;padding:var(--sp-3);background:var(--c-raised);border-radius:var(--r-2);display:grid;gap:var(--sp-3);min-width:0}
+.rule-form legend{float:left;font-weight:700;font-size:var(--fs-4);padding:0;line-height:32px}
+.rule-form-head{position:absolute;top:12px;right:var(--sp-3);display:flex;align-items:center;gap:var(--sp-3)}
 .rule-form-head label.check{margin:0}
 .rule-form .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px var(--sp-3)}
 .rule-form .fields>h4{grid-column:1/-1;margin:0}
@@ -524,17 +524,6 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 .attention.clear li{background:var(--green-t)}
 @media(max-width:600px){.attention li{grid-template-columns:18px minmax(0,1fr)}.attention small{grid-column:2;white-space:normal}}
 .diag{display:grid;gap:10px;margin-top:10px}
-details.dsec{background:var(--inset);border-radius:12px;overflow:hidden}
-details.dsec>summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:30px minmax(0,1fr) auto 14px;gap:10px;align-items:center;padding:12px 14px}
-details.dsec>summary::-webkit-details-marker{display:none}
-details.dsec>summary::after{content:"›";color:var(--label3);font-size:1.3rem;line-height:1;transition:transform .3s var(--spring)}
-details[open].dsec>summary::after{transform:rotate(90deg)}
-.dsec-ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--tone-t);color:var(--tone);font-size:.95rem;font-weight:700}
-.dsec-t{font-weight:600}
-.dsec-t small{display:block;font-weight:400;color:var(--label2);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsec-body{padding:0 14px 14px}
-.dsec-body .list{background:var(--card)}
-.dsec-body h3{margin-top:12px}
 .row strong.good{color:var(--green)}
 .usage{display:inline-flex;align-items:center;gap:8px}
 .usage .meter{width:64px;margin:0}
@@ -1190,14 +1179,9 @@ function setHero(tone,title,detail,online=true){$('hero').className='hero '+tone
 function tile(label,value,tone,hint,goto){const d=el('div','tile '+tone);d.append(el('span','tile-dot'),el('span','tile-label',label),el('strong','',value),el('small','',hint||' '));
   if(goto){d.setAttribute('data-goto',goto.join(':'));d.setAttribute('role','button');d.setAttribute('tabindex','0');d.onclick=()=>goTo(...goto);d.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault?.();goTo(...goto)}});d.title=`Open ${goto[2]||'details'}`}return d}
 function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row'),b=el('strong',tone||'');if(v&&typeof v==='object')b.append(v);else b.textContent=v;r.append(el('span','',k),b);list.append(r)}g.append(el('h3','',title),list);g.title_=title;g.rows=rows;return g}
-/* Diagnostics: one disclosure per part of the bridge. A section with something flagged opens itself unless the viewer closed it. */
-let diagOpen={};
 // esp_reset_reason_t; crashes, watchdogs and brownouts are worth a look.
 const RESET_REASON={0:['Unknown',''],1:['Power on',''],2:['External reset',''],3:['Software restart',''],4:['Crash (panic)','warn'],5:['Interrupt watchdog','warn'],6:['Task watchdog','warn'],7:['Watchdog','warn'],8:['Wake from deep sleep',''],9:['Brownout (power dip)','warn'],10:['SDIO reset',''],11:['USB reset',''],12:['JTAG reset',''],13:['eFuse error','warn'],14:['Power glitch','warn'],15:['CPU lockup','warn']};
 const flaggedRows=groups=>groups.flatMap(g=>(g.rows||[]).filter(r=>r[2]==='warn'||r[2]==='bad').map(r=>({group:g.title_,key:r[0],value:typeof r[1]==='object'?r[1].textContent:r[1],tone:r[2]})));
-function diagSection(key,icon,title,sub,groups){const flags=flaggedRows(groups),tone=flags.some(f=>f.tone==='bad')?'bad':flags.length?'warn':'good',d=el('details','dsec '+tone),sm=el('summary'),t=el('span','dsec-t',title);
-  t.append(el('small','',sub));sm.append(el('span','dsec-ic',icon),t,pill(flags.length?`${flags.length} to check`:'OK',tone));const body=el('div','dsec-body'),grid=el('div','groups');grid.append(...groups);body.append(grid);d.append(sm,body);
-  const auto=tone!=='good';d.open=diagOpen[key]??auto;d.addEventListener('toggle',()=>{if(d.open!==auto)diagOpen[key]=d.open;else delete diagOpen[key]});d.flags=flags.map(f=>({...f,section:title}));d.key=key;return d}
 /* Lamp scene storage (the gateway's scene cache). Scenes still work while it is
    not ready, sent as ordinary commands, so flag it only once it has stayed
    not ready for 10 minutes. */
@@ -1354,7 +1338,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   $('diag-attention').replaceChildren(attentionList([{flags}]));{const n=flags.length,b=$('diag-badge');b.textContent=n?'​':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
   const flagCount=flags.length,flagTone=flags.some(f=>f.tone==='bad')?'bad':flagCount?'warn':'good';$('diag-pill').className='pill '+flagTone;$('diag-pill').textContent=flagCount?`${flagCount} reading${flagCount===1?'':'s'} to check`:'All normal';
   renderAttention(issues,out);
-  $('health-note').textContent=`${age===null?'Snapshot age unavailable':`Snapshot ${age.toFixed(1)} seconds old`}${current?' · endpoint online means a recent HELLO':' · current endpoint state is unknown'}.`;
+  $('health-note').textContent=age===null?'Update time unavailable.':`Updated ${age<1.5?'just now':Math.round(age)+' s ago'}${current?'':'; current endpoint state is unknown'}.`;
   perfView();
   if(!current)setHero('warn',age===null?'Monitoring unavailable':'Monitoring delayed','Showing the last gateway snapshot; current endpoint safety and network state are unknown.',false);
   const maintenance=!!s.diagnostics?.maintenance;
@@ -1882,7 +1866,8 @@ function ccxRulePayload(){const errors=[],rules=[],ids=new Set();const number=(s
     if(!id||id.length>24||ids.has(id))errors.push(label+' needs a unique ID of at most 24 bytes');ids.add(id);
     if(r.kind||r.emptyKind)match.kind=r.kind;for(const [k,max] of [['message_type',65535],['serial',4294967295],['zone_id',65535]]){const v=number(r[k],max,label+' '+k);if(v!==undefined)match[k]=v}
     const target=number(r.target_zone,65535,label+' target zone',true);if(target!==undefined)action.target_zone=target;
-    if(r.action==='select_show'){const show=number(r.show_id,4294967295,label+' Show ID',true,1);if(show!==undefined)action.show_id=show}
+    /* Show 0 is valid when the rule also gives a level (the gateway's touch-bar rules use it); without a level it is rejected. */
+    if(r.action==='select_show'){const withLevel=r.level!=='';if(r.show_id==='0'&&!withLevel)errors.push(label+' Show ID 0 needs a level');else{const show=number(r.show_id,4294967295,label+' Show ID',true,withLevel?0:1);if(show!==undefined)action.show_id=show}}
     if(r.level==='event')action.level='event';else if(r.level!==''||r.action==='set_level'){const level=number(r.level,10000,label+' level',true);if(level!==undefined)action.level=level}
     rules.push({id,enabled:r.enabled,match,action})}
   return {rules,errors}}

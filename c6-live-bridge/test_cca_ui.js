@@ -34,6 +34,8 @@ assert.match(html, /id="tab-cca"/);
 assert.match(html, /Passive CCX listener \(B1\) firmware/);
 assert.match(html, /CCA end-device firmware/);
 assert.match(html, /<script src="cca\.js"><\/script>/);
+assert.ok(html.indexOf('src="cca-decoder.js"') < html.indexOf('src="cca.js"'),'decoder loads before CCA UI');
+assert.match(fs.readFileSync(new URL('./Dockerfile',import.meta.url),'utf8'),/^COPY .*cca-decoder\.js/m);
 assert.doesNotMatch(source, /EventSource/);
 const fields = [
   {name:'device_id',label:'Device ID',type:'uint32',min:0,max:4294967295,required:true},
@@ -76,6 +78,7 @@ const context = {
   },
 };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(new URL('./cca-decoder.js',import.meta.url),'utf8'),context);
 vm.runInContext(source,context);
 const ui = context.CCAUI, t = ui._test;
 const plain = v => JSON.parse(JSON.stringify(v));
@@ -165,6 +168,53 @@ assert.doesNotMatch(text(get('events')),/CRC invalid/,'unknown CRC is not a fail
   assert.ok(get('events').children.every(d => !d.open), 'a collapsed packet stays collapsed');
   t.eventView({boot_id:57,cursor:1,events:[{id:2,kind:'cca.tx'}],stream:{state:'online'}});
   assert.ok(!get('events').children[0].open, 'a new boot forgets expanded rows'); }
+
+// Incoming packet names come from the RF decoder, not the outbound command placeholder.
+const sensor = {id:3,kind:'cca.rx',cmd:'unknown',request_id:0,crc_valid:true,raw_hex:'8800deadbeef210e0400022600deadbeef004707ff020000'};
+const packetConfig = t.config();
+const packetTarget = get('target-select').value;
+t.setConfig({...packetConfig,targets:[{id:'sensor',name:'Test sensor',device_id:'0xDEADBEEF'}]});
+t.eventView({boot_id:56,after:2,cursor:3,events:[sensor],stream:{state:'online'}});
+const received = get('events').children[0];
+assert.equal(received.children[0].tag,'summary');
+assert.match(received.children[0].textContent,/SENSOR_EXTENDED.*serial 3735928559/);
+assert.doesNotMatch(received.children[0].textContent,/unknown|request 0/);
+assert.match(text(received),/"event_flags"/);
+assert.match(text(received),/"21": "02"/,'unmapped byte 21 remains visible');
+assert.match(text(received),/"raw_hex"/,'original event remains visible');
+assert.match(t.packetView(sensor).note,/meanings are not established/);
+assert.equal(t.packetView({...sensor,truncated:true}).type,undefined);
+assert.equal(t.packetView({...sensor,raw_hex:'8800deadbeef'}).serial,undefined);
+assert.equal(t.packetView({...sensor,raw_hex:'ff'}).category,'unknown');
+assert.equal(t.packetView({...sensor,raw_hex:'not hex'}).type,undefined);
+assert.equal(t.packetView({...sensor,kind:'cca.command'}),null);
+const tx = t.packetView({kind:'cca.tx',raw_hex:Buffer.from([0x81,0,0x12,0x34,0x56,0x78,0x21,0x0e,0,1,2,3,4,1,0x40,2,0x80,0,0,0,0,0]).toString('hex')});
+assert.equal(tx.type,'SET_LEVEL');
+assert.doesNotMatch(tx.description,/Incomplete/,'TX telemetry contains pre-CRC payloads');
+assert.equal(tx.fields.level.value,'50%');
+assert.equal(tx.fields.source_id.raw,'12 34 56 78');
+assert.equal(tx.fields.source_id.value,null,'routing source has no claimed endian interpretation');
+assert.equal(tx.serial,undefined,'routing source is not a device serial');
+assert.match(tx.crc,/Not included/);
+assert.equal(t.packetView({...sensor,raw_hex:'072831000d',crc_valid:true}).check,'ACK check valid');
+assert.match(t.packetView({...sensor,raw_hex:'072831000d617c614c3924fa',crc_valid:false}).check,/prefix check valid; trailing bytes unclassified/);
+assert.match(t.packetView({...sensor,crc_valid:false}).description,/Unverified frame/);
+assert.equal(t.packetView({...sensor,raw_hex:'8800deadbeef210c0400022600deadbeef004707ff020000'}).type,'BUTTON_SENSOR_FORMAT_0C');
+assert.equal(t.packetView({...sensor,raw_hex:'88001234d578210b030004011234d5780000000000001aa7'}).fields.lux_reading,undefined);
+assert.equal(t.packetView({...sensor,raw_hex:'8100a1000000210e00deadbeeffe0600123400000000f3c0'}).fields.level,undefined);
+const ack = {...sensor,id:4,raw_hex:'072831000d'};
+t.eventView({boot_id:56,after:3,cursor:4,events:[ack],stream:{state:'online'}});
+assert.match(get('events').children[0].children[0].textContent,/ACK check valid/);
+assert.doesNotMatch(get('events').children[0].children[0].textContent,/CRC valid/);
+get('events-filter').value='sensor_extended'; get('events-filter').dispatch('input');
+assert.equal(get('events').children.length,1,'decoded packet names are searchable');
+assert.match(text(get('events')),/3735928559/);
+get('events-filter').value='test sensor'; get('events-filter').dispatch('input');
+assert.match(text(get('events')),/SENSOR_EXTENDED.*Test sensor/,'hexadecimal target IDs resolve names and names are searchable');
+get('events-filter').value=''; get('events-filter').dispatch('input');
+assert.deepEqual(plain(t.state().rows.find(e=>e.id===3)),sensor,'decoding leaves stored and downloaded events unchanged');
+t.setConfig(packetConfig);
+get('target-select').value=packetTarget; get('target-select').dispatch('change');
 
 // Presence uses the state endpoint and a copyable HA MQTT automation; no RF encoding claim.
 get('presence-serial').value='0x1234'; get('presence-serial').dispatch('input');

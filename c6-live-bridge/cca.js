@@ -156,14 +156,56 @@ var CCAUI = (() => {
   }
   // Hold the reader's place while packets arrive (live.js); without it the list just redraws.
   const liveRender = (box, draw) => typeof LiveFeed === 'undefined' ? draw() : LiveFeed.render(box, box, draw);
+  function packetView(e) {
+    if (!['cca.rx','cca.tx'].includes(e.kind)) return null;
+    if (typeof CCAProtocol === 'undefined') return {description:'Packet decoder unavailable'};
+    if (typeof e.raw_hex !== 'string' || !/^(?:[0-9a-f]{2}){1,53}$/i.test(e.raw_hex)) return {description:'Invalid packet bytes'};
+    if (e.truncated) return {description:'Truncated packet; raw bytes retained'};
+    const hex = e.raw_hex.toLowerCase().match(/../g), bytes = hex.map(v => Number.parseInt(v,16));
+    const info = CCAProtocol.identifyPacket(bytes);
+    const packet = {type:info.typeName, category:info.category, description:info.description, fields:{}};
+    if (info.category === 'unknown') return packet;
+    if ((info.typeName === 'SENSOR_LEVEL' && bytes[8] === 3) ||
+        (info.typeName === 'SET_LEVEL' && bytes[14] === 6 && bytes[15] === 0)) {
+      return {type:'FORMAT_' + hex[7].toUpperCase(), category:info.category,
+        description:'Ambiguous protocol variant; inspect the raw event.', fields:{}};
+    }
+    const fields = info.fields.filter(f => !(e.kind === 'cca.tx' && f.name === 'crc' && f.offset === bytes.length));
+    if (fields.length !== info.fields.length) packet.crc = 'Not included in TX payload telemetry';
+    if (fields.some(f => f.offset + f.size > bytes.length)) return {...packet, description:'Incomplete ' + info.typeName + ' frame'};
+    const covered = new Set();
+    for (const f of fields) {
+      const value = CCAProtocol.parseFieldValue(hex,f.offset,f.size,f.format,f.name);
+      // Source IDs can be routing addresses, with inconsistent endian conventions.
+      if (f.name === 'source_id') value.decoded = null;
+      packet.fields[f.name] = {offset:f.offset, raw:value.raw, value:value.decoded};
+      for (let i=f.offset; i<f.offset+f.size; i++) covered.add(i);
+    }
+    const source = ['SENSOR','BUTTON'].includes(info.category) ? packet.fields.device_id : null;
+    if (source) {
+      packet.serial = Number.parseInt(source.value,16);
+      const target = (config?.targets || []).find(t => { try { return parseInteger(t.device_id) === packet.serial; } catch { return false; } });
+      if (target?.name) packet.name = target.name;
+    }
+    packet.undecoded_bytes = Object.fromEntries(hex.map((v,i) => [i,v]).filter(([i]) => !covered.has(i)));
+    if (info.category === 'ACK') packet.check = bytes.length === 5 ? 'ACK check valid' : 'ACK prefix check valid; trailing bytes unclassified';
+    if (info.typeName === 'SENSOR_VACANT') packet.type = 'BUTTON_SENSOR_FORMAT_0C';
+    if (info.category === 'SENSOR') packet.description = 'Sensor RF packet; occupancy state is not inferred.';
+    if (info.category === 'SENSOR') packet.note = 'Sensor flags are raw values; occupied/vacant meanings are not established for every frame.';
+    if (e.crc_valid === false) packet.description = 'Unverified frame; best-effort decode. ' + packet.description;
+    return packet;
+  }
   function renderEvents() {
     const filter = byId('events-filter').value.trim().toLowerCase();
-    const matching = rows.filter(e => !filter || JSON.stringify(e).toLowerCase().includes(filter));
-    const rendered = matching.slice().reverse().map(e => {
+    const matching = rows.map(e => ({e,packet:packetView(e)})).filter(row => !filter || JSON.stringify(row).toLowerCase().includes(filter));
+    const rendered = matching.slice().reverse().map(({e,packet}) => {
       const d = node('details'), summary = node('summary');
-      const parts = [e.kind || 'CCA event', e.cmd, e.request_id !== undefined ? 'request ' + e.request_id : '',
+      const parts = [e.kind || 'CCA event', packet?.type || (packet ? packet.description : e.cmd), packet?.name,
+        packet?.serial !== undefined ? 'serial ' + packet.serial : '',
+        packet && e.cmd && e.cmd !== 'unknown' ? 'command ' + e.cmd : '', e.request_id ? 'request ' + e.request_id : '',
         e.stage, Number.isFinite(e.at_ms) ? 'node uptime ' + e.at_ms + ' ms' : '',
-        e.rssi !== undefined ? 'RSSI ' + e.rssi : '', e.crc_valid === true ? 'CRC valid' : e.crc_valid === false ? 'CRC invalid' : ''];
+        e.rssi !== undefined ? 'RSSI ' + e.rssi : '', packet?.check,
+        e.crc_valid === true && packet?.category !== 'ACK' ? 'CRC valid' : e.crc_valid === false ? 'CRC invalid' : ''];
       if (e.kind === 'cca.feedback' || e.kind === 'cca.feedback_mapping') {
         if (e.serial !== undefined) parts.push(e.serial === 0 && e.kind === 'cca.feedback' ? 'overall' : 'serial ' + display(e.serial));
         if (e.target_id !== undefined) parts.push('group ' + display(e.target_id));
@@ -177,7 +219,9 @@ var CCAUI = (() => {
         if (e.reason && e.reason !== 'none') parts.push(display(e.reason));
       }
       summary.textContent = parts.filter(Boolean).join(' · ');
-      d.append(summary, node('pre', 'cca-json', JSON.stringify(e, null, 2)));
+      d.append(summary);
+      if (packet) d.append(node('p','small muted',packet.description));
+      d.append(node('pre', 'cca-json', JSON.stringify(packet ? {packet,event:e} : e, null, 2)));
       const key = String(boot) + ':' + e.id;
       d.rowKey = key; d.open = openEvents.has(key);
       d.addEventListener('toggle', () => { if (d.open) openEvents.add(key); else openEvents.delete(key); });
@@ -822,7 +866,7 @@ var CCAUI = (() => {
     mappings: feedbackMappings, canList: () => !!descriptor('feedback_list'), list: listMappings, ready: () => loaded,
     onChange(f) { eventListeners.push(f); },
   };
-  return {show, lutronChanged, local, _test:{levelCommand, feedbackMappings, layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
+  return {show, lutronChanged, local, _test:{levelCommand, feedbackMappings, layoutOf, resolveLayout, selectButton(target, key) { selectedButton = target ? {target:config.targets.find(t => t.id === target), key} : null; renderConfig(); }, config:() => config, parseInteger, asHex, parseField, commandFromForm, eventView, packetView, receiptText, configPayload, setConfig, renderCommandChoices, sendCommand, automation, otaAction,
     setCapabilities(v) { capabilities = v; renderCommandChoices(); }, setStatus(v) { status = v; statusAt = Date.now(); statusView(); },
     state() { return {boot,cursor,rows:clone(rows),activeReceipt,configDirty}; }}};
 })();

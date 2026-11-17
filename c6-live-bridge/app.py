@@ -1739,7 +1739,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized(): return
         if self.path in ("/", "/index.html"):
             return self.send(200, self.server.html, "text/html; charset=utf-8")
-        if self.path in ("/cca.js", "/live.js"):
+        if self.path in ("/cca.js", "/live.js", "/cca-decoder.js"):
             try: return self.send(200, Path(__file__).with_name(self.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
             except OSError: return self.reply(404, {"error": "unknown endpoint"})
         parts = urlsplit(self.path)

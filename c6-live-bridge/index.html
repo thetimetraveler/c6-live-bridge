@@ -1959,4 +1959,4 @@ for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventL
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}
 loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();loadSidecarStatus();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden)loadCcxHealth()},10000);setInterval(()=>{if(!$('panel-setup').hidden||sidecarSending||sidecarCandidate)loadSidecarStatus()},2000);
-</script><script src="cca.js"></script></body></html>
+</script><script src="cca-decoder.js"></script><script src="cca.js"></script></body></html>

@@ -1,3 +1,8 @@
+## 0.22.1
+
+- Decode received CCA activity with the shared protocol decoder instead of displaying the bridge command placeholder `unknown`. Show packet names, serials, fields and remaining undecoded bytes, and search the decoded values.
+- Preserve raw events and CRC status. Sensor flags remain raw where their occupied/vacant meaning is unconfirmed. This update requires no gateway or C6 firmware changes.
+
 ## 0.22.0
 
 - Add a **Local** tab showing the gateway's own programming. Each CCX local rule reads as When → Then with Lutron names for the source keypad and target zone; disabled rules and rules that match every event are marked. The CCA node's shade feedback mappings show each shade group with its motors, and can be listed from the tab.

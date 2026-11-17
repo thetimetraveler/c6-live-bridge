@@ -619,6 +619,21 @@ preset ID), what the command sends and its JSON. **Send now** sends that
 preset once. This programming lives in the add-on: it does not change what a
 physical press of the Pico does in the Lutron system.
 
+### Packet activity (0.22.1)
+
+CCA activity uses the shared protocol decoder to show packet names, serials,
+decoded fields and remaining undecoded bytes. Configured target names appear
+when their device ID matches the packet source. The filter searches decoded
+values as well as raw events. Sensor flags with unconfirmed meanings stay as
+hex values; packet classification does not infer occupancy. The original event
+and CRC status remain visible, and downloads retain the original events.
+No gateway or C6 firmware update is required.
+
+The checked-in browser decoder is generated from `lutron-protocols` with
+`node scripts/build-cca-decoder.mjs /path/to/lutron-protocols` from the app
+repository. It needs that checkout's Node dependencies only when regenerating;
+the installed app uses the bundled asset without a build step.
+
 With the MQTT broker service available, send nonretained QoS 0 requests to
 `ccx_bridge/cca/command`:
 

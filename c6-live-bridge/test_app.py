@@ -197,6 +197,13 @@ class AddonTests(unittest.TestCase):
         for path in ("/app.py","/live.js/../app.py","/test_ui.js"):
             h=self.handler(path=path);h.do_GET();self.assertNotEqual(h.results[0][0],200,path)
 
+    def test_decoder_asset_is_served_only_through_ingress(self):
+        handler=self.handler(path="/cca-decoder.js");handler.do_GET()
+        self.assertEqual(handler.results[0][0],200)
+        self.assertIn(b"CCAProtocol",handler.results[0][1])
+        denied=self.handler(peer="10.0.0.8",path="/cca-decoder.js");denied.do_GET()
+        self.assertEqual(denied.results[0][0],403)
+
     def test_handler_upload_body_cap_and_binary_forward(self):
         binary=b"fw\x00\xff"
         h=self.handler(path="/api/endpoint/update")

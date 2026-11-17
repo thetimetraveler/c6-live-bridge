@@ -96,7 +96,7 @@ const matchZone={zone:1,name:'Office',lutron:{on:true,state:'on',level_x100:5000
   checks:[{key:'lutron',status:'good',title:'Lamp matches Lutron'}],verdict:{tone:'good',title:'In sync'}};
 const zoneSnapshot={config_hash:1,monitoring:{age_s:0,delayed:false},zones:[matchZone],home_assistant:true};
 const zoneCard=()=>view('zones').children[0];
-const cardVerdict=()=>zoneCard().children[0].children[1].children.at(-1);
+const cardVerdict=()=>zoneCard().children[0].children[1].children.find(c=>c.className==='lamp-state');
 health({...status});deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
 if(!view('hero').className.includes('good')||!zoneCard().className.includes('good'))throw Error('fresh readback with complete comparisons should show in sync');
 if(view('hero').hidden||!view('headline').textContent.includes('Everything is working'))throw Error('a healthy bridge says so in one sentence');
@@ -167,7 +167,7 @@ eventView({...sample,lost:0,events:[{...sample.events[0],id:5,stage:'applied'}]}
 if(!document.getElementById('node-n4').className.includes('good')) throw Error('applied event should mark N4 outcome good');
 if(!document.getElementById('edge-gateway-n4').className.includes('flow-pulse')) throw Error('applied event should pulse Gateway→N4');
 statusReceivedAt-=20000;renderFlow(latestStatus);
-if(!view('flow-note').textContent.includes('21s ago')||view('edge-gateway-n4').className.includes('flow-pulse'))throw Error('last event age must advance and its pulse must stop while the snapshot ages');
+if(!view('flow-note').textContent.includes('21 s ago')||view('edge-gateway-n4').className.includes('flow-pulse'))throw Error('last event age must advance and its pulse must stop while the snapshot ages');
 health({...status});
 eventView({boot_id:'boot-b',next:3,next_sequence:4,oldest:1,lost:0,events:[{id:1,ts_ms:200,stage:'report-sent',zone:0}]});
 if(eventCursor!==1||eventRows.length!==1||eventBootId!=='boot-b') throw Error('boot change should reset rows and cursor');
@@ -284,7 +284,7 @@ if(!document.getElementById('headline').textContent.includes('Office A20')) thro
 deviceView(deviceSnapshot);zonesView({...zoneSnapshot,zones:[{...sitting,lamp:{...sitting.lamp,age_ms:120001}}]});
 const descendants=n=>[n,...(n.children||[]).flatMap(descendants)];
 if(descendants(zoneCard()).some(n=>n.tag==='circle'&&(n.getAttribute('class')||'').startsWith('lamp ')))throw Error('a stale hub reading must not be plotted at the current show time');
-zonesView({zones:[]});if(!text(document.getElementById('zones')).includes('No bridged zones')) throw Error('empty zone list needs a message');
+zonesView({zones:[]});if(!text(document.getElementById('zones')).includes('No rooms yet')||!text(document.getElementById('zones')).includes('Open Zone mapping')) throw Error('empty zone list says why and what to do');
 applyHA({available:true,time_zone:'Europe/London',lights:[{entity_id:'light.k',name:'First Floor Kitchen kitchen',zone_id:'1379',serial:null}]});
 if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should match by Lutron zone ID');
 // Direct Zigbee output: the gateway holds commands and never reports them as delivered.
@@ -302,7 +302,7 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   health({...status,output_backend:'something-new'});
   if(view('hero').className.includes('good')||!text(view('summary')).includes('Unknown'))throw Error('an unrecognised backend must not look healthy');
   health(status);
-  if(view('label-n4').textContent!=='N4 output'||text(boards()).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
+  if(view('label-n4').textContent!=='Ketra hub'||text(boards()).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('Ketra hub (N4)'))throw Error('gateways without output_backend write to N4');
   if(text(view('summary')).includes('Zigbee node link'))throw Error('no Zigbee member tile without a reported link');
   health({...status,zigbee_uart:{enabled:true,online:false,bidirectional:false,timeouts:3}});
   if(!heroText().includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
@@ -338,13 +338,13 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
     direct_routing:{session_ready:false,admitted:false,reason:'node_unavailable',lamps:3,resolved:0,uncertain:1,unreachable:0,external_changes:0,counter_next:'10',counter_upper:'4106'}};
   health(fallback);
   const tileText=text(view('summary').children.find(c=>text(c).includes('Lighting output')));
-  if(!tileText.includes('N4 fallback'))throw Error('a hybrid gateway on N4 must show the fallback');
-  if(!(view('headline').textContent+view('headline-detail').textContent).includes('N4 is carrying lighting'))throw Error('the fallback must be named in the overview');
+  if(!tileText.includes('Ketra hub (fallback)'))throw Error('a hybrid gateway on N4 must show the fallback');
+  if(!(view('headline').textContent+view('headline-detail').textContent).includes('the Ketra hub (N4) is carrying lighting'))throw Error('the fallback must be named in the overview');
   if(!text(boards()).includes('Direct Zigbee routing (reported)')||!text(boards()).includes('node unavailable'))throw Error('routing diagnostics must be shown');
   health({...fallback,output_backend:'direct_zigbee',backend:{mode:'hybrid',phase:'direct',switches:3},direct_zigbee:{output_admitted:true,reason:'admitted'}});
-  if(text(view('summary')).includes('N4 fallback')||!text(view('summary')).includes('Direct Zigbee'))throw Error('a hybrid gateway on direct shows Direct Zigbee');
+  if(text(view('summary')).includes('Ketra hub (fallback)')||!text(view('summary')).includes('Direct Zigbee'))throw Error('a hybrid gateway on direct shows Direct Zigbee');
   health(status);
-  if(text(view('summary')).includes('N4 fallback'))throw Error('an N4-only gateway is not a fallback');
+  if(text(view('summary')).includes('Ketra hub (fallback)'))throw Error('an N4-only gateway is not a fallback');
   // The gateway-hosted node session: card, diagnostics and attention items.
   renderZigbeeNode(status);
   if(!view('zigbee-node-card').hidden)throw Error('the node card stays hidden without a gateway-hosted session');
@@ -420,7 +420,7 @@ const mappingChecks=`
     renderSidecar({...initial,monitoring:{...monitor,event_feed_paused:true}});
     if(!view('sidecar-feed-note').textContent.includes('paused')||!view('sidecar-feed-note').textContent.includes('not replayed'))throw Error('sidecar card explains the paused event feed and live baseline');
     ccxEventView({schema_version:1,boot_id:7,cursor:0,events:[],stream:{state:'paused'}});
-    if(view('ccx-stream-pill').textContent!=='Paused for sidecar update')throw Error('Activity identifies the intentional pause');
+    if(view('ccx-stream-pill').textContent!=='Paused for the listener update')throw Error('Activity identifies the intentional pause');
     const report={...initial,boot_id:13,slot:1,elf_sha256:'b'.repeat(64),update:{...initial.update,state:'confirmed',expected_elf_sha256:'b'.repeat(64)}};
     for(const wrong of [{...report,supported:false,online:false,mac:''},{...report,slot:0},{...report,boot_id:12},{...report,boot_id:'13'},{...report,elf_sha256:'c'.repeat(64)},{...report,pending_verify:true},{...report,mac:'10:bd:a3:b2:17:80'}]){
       renderSidecar(wrong);if(!sidecarCandidate||view('sidecar-fw-note').textContent.includes('does not expose'))throw Error('confirmation requires B1, a new boot and slot, complete matching ELF hash and confirmation; transient offline is not an unsupported gateway');
@@ -459,7 +459,7 @@ const mappingChecks=`
         {id:'follow',enabled:false,match:{zone_id:9},action:{type:'select_show',target_zone:44,show_id:3,level:'event'}},{id:'all',enabled:true,match:{},action:{type:'set_level',target_zone:2731,level:0}}]};
       showTab('local');await loadLocalRules();const cards=view('local-rules').children,t=i=>text(cards[i]);
       if(view('panel-automation').hidden||cards.length!==3||view('local-rules-pill').textContent!=='2 of 3 enabled')throw Error('the Local tab shows every gateway rule: '+view('local-rules-pill').textContent);
-      if(!t(0).includes('Button press')||!t(0).includes('from Bedside Position 2 (PJ2-4B-XXX-L31) · serial 82324321')||!t(0).includes('Set office · Master Bedroom (zone 2731) to 75%'))throw Error('a rule reads as When → Then with Lutron names: '+t(0));
+      if(!t(0).includes('Button press')||!t(0).includes('from Bedside Position 2 (PJ2-4B-XXX-L31) · serial 82324321')||!t(0).includes('Set office · Master Bedroom to 75%')||t(0).includes('2731'))throw Error('a rule reads as When → Then with Lutron names: '+t(0));
       if(!cards[1].className.includes('off')||!t(1).includes('Disabled')||!t(1).includes('for zone 9')||!t(1).includes('Select Natural Show 3 on zone 44')||!t(1).includes("at the event's level"))throw Error('a disabled show rule: '+t(1));
       if(!t(2).includes('Any CCX event')||!t(2).includes('Matches every event')||!t(2).includes('to off'))throw Error('a blank match is called out: '+t(2));
       if(!text(view('local-shades')).includes('CCA controls are unavailable'))throw Error('the shade section explains when CCA controls are missing');
@@ -592,9 +592,9 @@ const mappingChecks=`
   health(owned);
   if(heroText().includes('Lighting is not being delivered yet'))throw Error('the warning must clear once a path owns output');
   health(heldStatus);
-  if(heroText().includes('N4 is carrying lighting')||!view('headline').textContent.length)throw Error('during the hold the fallback line must not claim N4 is carrying lighting');
+  if(heroText().includes('the Ketra hub (N4) is carrying lighting')||!view('headline').textContent.length)throw Error('during the hold the fallback line must not claim N4 is carrying lighting');
   health({...heldStatus,backend:{...heldStatus.backend,hold_reason:'none',output_owner:'n4',phase:'n4'}});
-  if(!heroText().includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
+  if(!heroText().includes('the Ketra hub (N4) is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
   if(backendHold({...heldStatus,backend:{...heldStatus.backend,hold_reason:'constructor'}}).text!=='constructor')throw Error('reason names must not resolve through object prototypes');
   // Startup sequence on the overview.
   const startup=()=>{const all=n=>[n,...(n.children||[]).flatMap(all)],g=all(boards()).find(c=>c.children?.[0]?.textContent==='Startup sequence'&&c.children?.[1]?.className==='list');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
@@ -625,15 +625,18 @@ const mappingChecks=`
   health({...status,uart_crc_errors:3,uart_frames_ok:997,diagnostics:{maintenance:false,heap_free:182000,sockets_used:19,socket_limit:20,reset_reason:4}});
   for(const id of ['dev-gateway','dev-endpoint','dev-ketra'])if(!view(id+'-pill').textContent||!view(id+'-vitals').children.length||!view(id+'-readings').children.length)throw Error('each board card shows status, vitals and readings: '+id);
   const att=text(view('diag-attention'));
-  if(!att.includes('Thread endpoint: 3 damaged messages on its wired link')||!att.includes('Gateway is close to its limit of network connections')||!att.includes('Gateway restarted after a crash (panic)'))throw Error('flagged rows read as plain sentences, board first: '+att);
-  if(/CRC|esp_|UART|Sockets in use/.test(att))throw Error('raw field names stay inside All readings: '+att);
-  if(!text(view('dev-endpoint-flags')).includes('3 damaged messages')||!text(view('dev-gateway-flags')).includes('network connections')||view('dev-ketra-flags').children.length)throw Error('each card explains its own flagged readings');
+  if(!att.trim().startsWith('4 readings to check on 2 devices:')||!att.includes('Gateway')||!att.includes('Thread endpoint'))throw Error('one summary line names the devices: '+att);
+  {const flagsText=text(view('dev-endpoint-flags'))+text(view('dev-gateway-flags'));
+    if(!flagsText.includes('Thread endpoint: 3 damaged messages on its wired link')||!flagsText.includes('Gateway is close to its limit of network connections')||!flagsText.includes('Gateway restarted after a crash (panic)'))throw Error('cards hold their flagged readings as sentences: '+flagsText);
+    if(/CRC|esp_|UART|Sockets in use/.test(att+flagsText))throw Error('raw field names stay inside All readings');}
+  {const order=view('health').children;if(order[0]!==view('dev-gateway')||order[1]!==view('dev-endpoint')||order.indexOf(view('dev-ketra'))<2||order.length!==6)throw Error('flagged cards sort first, then the fixed order');
+    if(order.indexOf(view('zigbee-node-card'))>order.indexOf(view('dev-ketra')))throw Error('healthy cards keep the fixed order');}
   if(att.includes('Physical hold available'))throw Error('a build without a configured hold must not be flagged for it');
   if(!view('dev-endpoint-pill').className.includes('warn')||!view('dev-endpoint-pill').textContent.includes('1 to check')||!view('dev-ketra-pill').className.includes('good'))throw Error('a board with something flagged says so on its pill: '+view('dev-endpoint-pill').textContent);
-  {view('dev-endpoint-more').tagName='DETAILS';view('dev-endpoint-more').open=false;const li=view('diag-attention').children[0].children.find(c=>text(c).includes('3 damaged messages'));li.onclick();if(!view('dev-endpoint-more').open)throw Error('a flagged reading opens its board readings');view('dev-endpoint-more').open=false;}
+  {view('dev-endpoint-more').tagName='DETAILS';view('dev-endpoint-more').open=false;const li=view('diag-attention').children[0].children.find(c=>c.tag==='button'&&text(c).includes('Thread endpoint'));li.onclick();if(!view('dev-endpoint-more').open)throw Error('a flagged reading opens its board readings');view('dev-endpoint-more').open=false;}
   if(!view('diag-pill').textContent.endsWith('to check'))throw Error('the diagnostics pill counts flagged rows');
   {const ha=haData,dev=lastDevices;haData={lights:[],integrations:['lutron'],time_zone:'UTC'};lastDevices={...dev,zones:[]};health(status);
-  if(!text(view('diag-attention')).includes('Nothing flagged')||view('diag-pill').textContent!=='All normal')throw Error('a clean snapshot says so');haData=ha;lastDevices=dev}
+  if(!text(view('diag-attention')).includes('Every reading looks normal')||view('diag-pill').textContent!=='All normal')throw Error('a clean snapshot says so');haData=ha;lastDevices=dev}
   // Performance: hop timings from the event feed and the gateway's own timers.
   latestStatus={...status,puts_ok:99,puts_failed:1,diagnostics:{maintenance:false,accepted_count:5,acceptance_last_ms:150,acceptance_p95_ms:300,acceptance_max_ms:400,last_command_ms:210,max_command_ms:900,delivery_failed:0}};
   eventView({boot_id:'perf',boot_epoch_ms:Date.now()-100000,next:20,next_sequence:20,oldest:1,lost:0,events:[
@@ -772,7 +775,7 @@ const navChecks=`(async()=>{
   for(const code of [4,5,6,7])if(endpointIssues({...base,endpoint_health:{present:true,reset_reason:code}}).length!==1)throw Error('panic and watchdog restarts need attention: '+code);
   const brown={...base,endpoint_health:{present:true,reset_reason:9,rom_reset_reason:3,uptime_ms:600000,heap_free:192236,heap_min:187164,link_rx_crc:0,link_rx_framing:0,link_rx_overflow:0,tx_drops:0}};
   health(brown);const b=[...items()].find(li=>text(li).includes('brownout'));
-  if(items().length!==before+1||!b||!b.className.includes('warn')||!text(b).includes('10m 0s ago')||!text(b).includes('power supply'))throw Error('a brownout restart is listed with when and what to do: '+text(view('attention')));
+  if(items().length!==before+1||!b||!b.className.includes('warn')||!text(b).includes('10 min ago')||!text(b).includes('power supply'))throw Error('a brownout restart is listed with when and what to do: '+text(view('attention')));
   const go=b.children.find(c=>c.tag==='button');go.onclick();if(view('panel-devices').hidden)throw Error('the attention item opens the board where it is fixed');
   if(!vt('dev-endpoint-vitals').includes('Brownout (power dip)')||!vt('dev-endpoint-vitals').includes('188 KB')||!text(boards()).includes('Reset reason (esp_reset_reason)'))throw Error('the endpoint card shows the restart reason and memory');
   health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:0,uart_framing_errors:0,uart_overflows:0});
@@ -782,7 +785,7 @@ const navChecks=`(async()=>{
   if(items()[0]!==l)throw Error('faults are listed first');
   // Flagged readings read as sentences on the card and in the list above the cards.
   health(brown);{const flags=vt('dev-endpoint-flags'),top=vt('diag-attention');
-    if(!flags.includes('Thread endpoint restarted after a brownout (power dip) 10m 0s ago.')||!top.includes('Thread endpoint restarted after a brownout')||/esp_reset_reason|\(9\)/.test(top+flags))throw Error('a brownout flag is a plain sentence, board first: '+top)}
+    if(!flags.includes('Thread endpoint restarted after a brownout (power dip) 10 min ago.')||!top.includes('Thread endpoint')||top.includes('brownout')||/esp_reset_reason|\(9\)/.test(top+flags))throw Error('a brownout flag is a plain sentence, board first: '+top)}
   health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:1});if(!vt('dev-endpoint-flags').includes('Thread endpoint: 1 lighting command never reached the gateway.'))throw Error('a lost command flag is a plain sentence: '+vt('dev-endpoint-flags'));
   // The transmit guard is informational: absent shows nothing, zero shows readings only, non-zero adds one neutral line.
   const guard=g=>({...base,endpoint_health:{present:true,reset_reason:3,uptime_ms:60000,...g}}),guardGroup=()=>text(boards()).includes('Transmissions the safety guard refused');
@@ -801,7 +804,7 @@ const navChecks=`(async()=>{
   health({...base,endpoint_cmd_duplicates:2});if(!text(boards()).includes('Resent commands ignored')||vt('dev-endpoint-flags').includes('Resent'))throw Error('duplicates are a reading only');
   // Zone mapping: rows read as text and edit in a side sheet; the draft is still one change.
   replies.config={generation:7,hash:77,editable:true,apply_status:'active',zones:[{zone_id:30861,name:'office lamp',n4_group:'office',serial:90130861,warm_dim_curve:254}]};
-  await loadConfig(true);if(!text(view('zone-rows')).includes('office lamp')||!text(view('zone-rows')).includes('N4 group office · serial 90130861 · warm-dim 254'))throw Error('a mapping row reads as text: '+text(view('zone-rows')));
+  await loadConfig(true);if(!text(view('zone-rows')).includes('office lamp')||!text(view('zone-rows')).includes('hub group office · serial 90130861 · warm-dim 254'))throw Error('a mapping row reads as text: '+text(view('zone-rows')));
   {const row=view('zone-rows').children[0],edit=row.children.find(c=>c.tag==='button');edit.onclick();const r=draftZones[0];
     if(!r.inputs.name||r.inputs.name.value!=='office lamp'||view('zone-sheet-fields').children.length!==5)throw Error('Edit opens the sheet with five labelled fields');
     r.inputs.name.value='Office';r.inputs.name.oninput();r.inputs.serial.value='90130862';r.inputs.serial.oninput();
@@ -811,6 +814,38 @@ const navChecks=`(async()=>{
     draftZones[1].inputs.name.value='Den';draftZones[1].inputs.name.oninput();view('zone-sheet-close').onclick();
     latestStatus.diagnostics={maintenance:true};requests.length=0;await view('save-config').onclick();const put=requests.find(q=>q.key==='config'&&q.opts?.method==='PUT');
     const p=put&&JSON.parse(put.opts.body);if(!p||p.generation!==7||p.zones.length!==2||p.zones[0].name!=='Office'||p.zones[1].name!=='Den')throw Error('all rows are sent as one change: '+JSON.stringify(p));}
+  // One duration format everywhere.
+  for(const [ms,want] of [[0,'0 s'],[999,'0 s'],[45000,'45 s'],[59999,'59 s'],[60000,'1 min'],[1865462,'31 min'],[3599000,'59 min'],[3600000,'1 h'],[7500000,'2 h 5 min'],[86400000,'1 d'],[97200000,'1 d 3 h'],[-5,'0 s'],[NaN,'—'],[undefined,'—']])
+    if(duration(ms)!==want)throw Error('duration('+ms+') is '+duration(ms)+', expected '+want);
+  // Three hard states each say why in a sentence, with no dashes, undefined or NaN.
+  const clean=(label,s)=>{if(/undefined|NaN|—/.test(s))throw Error(label+' shows a placeholder: '+s)};
+  {const saved={latestStatus,lastDevices,lastZones};latestStatus=null;lastDevices=null;lastZones=null;for(const k of ['status','devices','zones','events'])failKeys.add(k);await refresh();for(const k of ['status','devices','zones','events'])failKeys.delete(k);
+    const home=view('headline-detail').textContent+' '+allText(view('zones')),dev=['gateway','endpoint','ketra'].map(k=>allText(view('dev-'+k+'-vitals'))).join(' ');
+    if(!view('headline').textContent.includes("Can't reach the gateway")||!home.includes('no answer from the gateway')||!dev.includes("status is unknown")||!dev.includes('Try again now'))throw Error('an unreachable gateway is said once per card, with an action: '+home+' | '+dev);
+    clean('unreachable gateway',home+dev+allText(view('diag-attention')));latestStatus=saved.latestStatus;lastDevices=saved.lastDevices;lastZones=saved.lastZones}
+  {health({...base,endpoint_online:false,endpoint_health:{present:true,reset_reason:9,uptime_ms:95000},endpoint_cmd_frames:7,endpoint_cmd_lost:1});
+    const t=allText(view('dev-endpoint-vitals'));if(!t.includes('Offline')||!t.includes('has not heard from it recently'))throw Error('an offline endpoint says why: '+t);clean('offline endpoint',t+allText(view('attention')))}
+  {health(base);deviceView({config_hash:1,zones:[],monitoring:{age_s:0,delayed:false}});zonesView({config_hash:1,zones:[],monitoring:{age_s:0,delayed:false}});health(base);
+    const z=allText(view('zones')),sync=allText(view('sync-zones'));if(!z.includes('No rooms yet')||!sync.includes('No zones are mapped yet'))throw Error('a new install explains the empty rooms and programming: '+z+' | '+sync);clean('new install',z+sync)}
+  // Side sheets return focus to the control that opened them.
+  {const opener=new (view('x').constructor)();let focused=null;opener.focus=()=>{focused=opener};document.activeElement=opener;openZoneSheet(draftZones[0]);view('zone-sheet-close').onclick();
+    if(focused!==opener)throw Error('closing the zone sheet returns focus to its opener');focused=null;document.activeElement=opener;openRulesSheet();await closeRulesSheet();if(focused!==opener)throw Error('closing the rules sheet returns focus to its opener');document.activeElement=null}
+  // Command trace: steps group by trace, a superseded command reads as replaced, offsets are plain.
+  {const mk=(id,trace,stage,ts,extra={})=>({id,ts_ms:ts,stage,zone:1,trace,requested:5000,schema_version:2,...extra});
+    const traced=[mk(1,101,'requested',520733),mk(2,101,'readback-policy',520733),mk(3,101,'ketra-dispatch',520734),mk(4,101,'ketra-uart',520739),mk(5,101,'ketra-query',520867),
+      mk(6,102,'requested',520925),mk(7,102,'readback-policy',520925),mk(8,102,'ketra-dispatch',520926),mk(9,102,'ketra-uart',520931),mk(10,102,'ketra-query',521050),mk(11,102,'applied',521086,{confirmed:5000}),mk(12,102,'confirmed',521086,{confirmed:5000}),mk(13,102,'observed',521087,{confirmed:5000}),mk(14,102,'report-sent',521099,{reported:5000,command_seq:0,report_seq:5})];
+    const groups=groupEvents(traced),cmds=groups.filter(g=>g.kind==='command');
+    if(cmds.length!==2||cmds[0].trace!==101||cmds[1].trace!==102||cmds[0].events.length!==5||cmds[1].events.length!==9||groups.length!==2)throw Error('every stage of a traced command joins its trace: '+groups.map(g=>g.kind+':'+g.trace+':'+g.events.length));
+    const s0=commandSummary(cmds[0]),s1=commandSummary(cmds[1]);
+    if(!cmds[0].replaced||s0.label!=='Replaced by a newer command'||s0.tone!=='wait'||cmds[1].replaced)throw Error('a command followed by a newer one is replaced, not stuck: '+s0.label);
+    {const saved=latestStatus;latestStatus={...status,gateway_uptime_ms:900000};if(commandSummary(cmds[0]).label!=='Replaced by a newer command')throw Error('a replaced command never reads as no progress');latestStatus=saved}
+    if(s1.label!=='Reported to Lutron')throw Error('the finished traced command reads as reported: '+s1.label);
+    if(commandSteps(cmds[1])[2][1]!=='good')throw Error('a traced applied stage confirms the lamps: '+commandSteps(cmds[1])[2]);
+    const d=allText(eventDetail(cmds[1],5000));for(const want of ['End to end · 174 ms','+1 ms sent to the Zigbee node','+6 ms sent to the lamps','+161 ms lamp confirmed','+174 ms reported to Lutron','trace 102'])if(!d.includes(want))throw Error('per-step offsets read in plain words: missing '+want+' in '+d);
+    if(!allText(eventDetail(cmds[0],5000)).includes('Replaced by a newer command'))throw Error('the replaced command says so in its steps');
+    const untraced=groupEvents(traced.map(({trace,...e})=>e));if(untraced.some(g=>g.trace))throw Error('without traces the old grouping applies');
+    lastDevices={config_hash:1,zones:[{zone:1,last_trace:102}],monitoring:{age_s:0,delayed:false}};if(zoneTrace(1)!==102||zoneTrace(2)!==null)throw Error('a zone trace is read forgivingly from device data');
+    lastDevices={config_hash:1,zones:[{zone:1,trace:0}],monitoring:{age_s:0,delayed:false}};if(zoneTrace(1)!==null)throw Error('trace 0 means unknown');}
   health(base);showTab('home')}
 })()
 `;

@@ -6,7 +6,7 @@ read-only programming inspection, mapping configuration and endpoint firmware
 uploads through the gateway.
 
 The dashboard has five destinations: Home, Activity, Devices, Automation and
-Settings. CCA support adds CC1101 radio status and node firmware (Devices),
+Settings, and follows the system light or dark setting. CCA support adds CC1101 radio status and node firmware (Devices),
 named targets, presets and native commands (Automation), packet inspection
 (Activity) and Lutron end-device firmware staging. It needs a gateway with CCA
 support and a separate C6/CC1101 connected over I²C. Set that C6's expected

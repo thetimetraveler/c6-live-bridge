@@ -183,7 +183,8 @@ need `application/json` and, like maintenance, bypass the monitoring backoff.
 ## Layout (0.23.0)
 
 The dashboard has five destinations: a left sidebar from 1000 px wide, a
-bottom tab bar below. Each answers one question:
+bottom tab bar below. It follows the system light or dark setting. Each
+destination answers one question:
 
 | Destination | Question | What's there |
 |---|---|---|
@@ -192,6 +193,10 @@ bottom tab bar below. Each answers one question:
 | **Devices** | Which box is unhealthy, and what is it running? | One card per board: gateway, Thread endpoint, Zigbee node, CCX listener, CCA radio, Ketra hub. Each has a status, a few vitals, **All readings**, its firmware update and its own controls |
 | **Automation** | What makes the lights change? | Gateway rules (viewed here, edited in a side sheet), Lutron programming sync and zone programming, CCA targets, presets, shade feedback, presence and **Try a command** |
 | **Settings** | What do I configure rarely? | Zone mapping, Ketra lamps, show time zone, maintenance mode, and a **Danger zone** (disable the endpoint, clear the safety latch) |
+
+Devices opens with one line naming the boards that have readings to check;
+those cards sort first and explain their readings in plain words. Durations
+use one format everywhere (45 s, 31 min, 2 h 5 min).
 
 Older tab names still work: links or calls to `overview`, `diagnostics`,
 `programming`, `local`, `cca` and `setup` open Home, Devices, Automation,

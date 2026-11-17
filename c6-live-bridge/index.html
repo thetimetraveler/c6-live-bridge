@@ -5,7 +5,7 @@
 :root{color-scheme:dark;--c-on-tone:#000;--c-seg-on:#636366;--c-glass:rgba(14,14,16,.97);
   /* Colour: surfaces, text, lines */
   --c-page:#000;--c-side:#0e0e10;--c-surface:#1c1c1e;--c-raised:#2c2c2e;--c-overlay:#3a3a3c;
-  --c-text:#f5f5f7;--c-text-2:#c7c7cc;--c-text-3:#a1a1a6;
+  --c-text:#f5f5f7;--c-text-2:#c7c7cc;--c-text-3:#aeaeb2;
   --c-line:rgba(120,120,128,.42);--c-fill:rgba(120,120,128,.24);--c-fill-2:rgba(120,120,128,.36);
   /* Colour: state (green healthy, amber attention, red fault, grey unknown) and action (blue) */
   --c-good:#30d158;--c-attn:#ff9f0a;--c-fault:#ff6961;--c-unknown:#a1a1a6;
@@ -149,6 +149,7 @@ details.more-card[open]>summary{margin-bottom:var(--sp-3)}
 .vitals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3) var(--sp-4)}
 .vitals[data-n="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
 .vitals:empty{display:none}
+.vitals>.empty-state{grid-column:1/-1}
 @media(max-width:700px){.vitals,.vitals[data-n="4"]{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .vital{min-width:0}
 .vital>span{display:block;font-size:var(--fs-2);color:var(--c-text-2)}
@@ -264,7 +265,8 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .board-flags .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--c-on-tone);background:var(--tone)}
 .board-note{border-left:3px solid var(--c-line);padding-left:var(--sp-2)}
 /* System checks on Home: one line that opens the grid */
-.checks-card>summary{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap}
+.checks-card>summary{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:nowrap}
+.checks-card>summary>span:first-child{flex:none}.checks-line{text-align:right}
 .checks-card>summary>span:first-child{font-size:var(--fs-4);font-weight:600}
 .checks-card>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--c-text-2);border-bottom:2px solid var(--c-text-2);transform:rotate(45deg);margin-left:var(--sp-1)}
 .checks-card[open]>summary::after{transform:rotate(-135deg)}
@@ -287,6 +289,19 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .zone-fields input{background:var(--c-raised)}
 .zone-fields input.invalid{box-shadow:0 0 0 1px var(--c-fault);background:var(--c-fault-t)}
 .zone-fields input.changed{box-shadow:inset 3px 0 var(--c-link)}
+/* Devices summary line, empty-state actions, placeholders */
+.devices-summary{margin:0 0 var(--sp-3);color:var(--c-text-2);font-size:var(--fs-3)}
+.devices-summary button.plain.inline{font-size:var(--fs-3)}
+.devices-summary.good-line{color:var(--c-text-2)}
+.empty-state .actions.center{justify-content:center;margin-top:var(--sp-2)}
+.empty-state>span{display:block;max-width:52ch;margin:0 auto}
+::placeholder{color:var(--c-text-3);opacity:1}
+/* Room rows are buttons: hover and focus states, chevron already drawn */
+.lamp>summary{border-radius:12px;transition:background .15s var(--ease)}
+.lamp>summary:hover{background:var(--c-fill)}
+.lamp>summary:focus-visible{outline:2px solid var(--c-link);outline-offset:-2px}
+.lamp-last{color:var(--c-text-2)!important}
+summary:focus-visible,button:focus-visible,[role=button]:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--c-link);outline-offset:2px}
 /* Side sheet (gateway rule editor) */
 dialog.side-sheet{position:fixed;inset:0 0 0 auto;margin:0;height:100%;max-height:100%;width:min(600px,100vw);max-width:100vw;border:0;padding:0;background:var(--c-surface);color:var(--c-text);box-shadow:var(--e-3)}
 dialog.side-sheet[open]{display:flex;flex-direction:column;animation:side-in .3s var(--ease-out)}
@@ -465,6 +480,8 @@ code{overflow-wrap:anywhere}
 .lamp-level small{display:block;color:var(--label2);font-size:.76rem}
 .lamp-state{display:block;font-size:.82rem;color:var(--tone);font-weight:500;white-space:normal}
 .lamp-last{display:block;font-size:var(--fs-1);color:var(--c-text-2);font-weight:400;white-space:normal}
+button.lamp-last{display:inline;text-align:left;color:var(--c-link)!important;font-size:var(--fs-1);font-weight:500}
+.trace-steps{display:block!important}.trace-steps strong{display:block;margin-bottom:var(--sp-1)}.offsets{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-3);font-size:var(--fs-2);color:var(--c-text-2);font-variant-numeric:tabular-nums}.offsets li{display:block!important;padding:0!important;border:0!important}
 .lamp-body{padding:0 14px 14px}
 .lamp-body .zone-sub{color:var(--label2);font-size:.8rem;margin:0 0 8px}
 @media(max-width:560px){.lamp>summary{grid-template-columns:auto minmax(0,1fr) auto}.lamp>summary::after{display:none}}
@@ -704,7 +721,7 @@ html,body{overflow-anchor:none}
       <li class="link" aria-hidden="true"><i id="edge-uart-gateway" class="edge"></i><i id="return-gateway-uart" class="return"></i></li>
       <li class="stop"><span id="node-gateway" class="node"></span><b>Gateway<span id="gateway-title" class="sr">Gateway board</span></b><span id="detail-gateway" class="detail">waiting</span></li>
       <li class="link" aria-hidden="true"><i id="edge-gateway-n4" class="edge"></i><i id="return-n4-gateway" class="return"></i></li>
-      <li class="stop"><span id="node-n4" class="node"></span><b id="label-n4">N4 output</b><span id="title-n4" class="sr">N4 lighting output the gateway writes to</span><span id="detail-n4" class="detail">unobserved</span></li>
+      <li class="stop"><span id="node-n4" class="node"></span><b id="label-n4">Ketra hub</b><span id="title-n4" class="sr">N4 lighting output the gateway writes to</span><span id="detail-n4" class="detail">unobserved</span></li>
       <li class="link" aria-hidden="true"><i id="edge-n4-report" class="edge"></i><i id="return-report-n4" class="return"></i></li>
       <li class="stop"><span id="node-report" class="node"></span><b>Report</b><span id="detail-report" class="detail">unobserved</span></li>
     </ol>
@@ -802,16 +819,16 @@ html,body{overflow-anchor:none}
       </div></details>
     </section>
     <section class="card device" id="sidecar-firmware-card">
-      <div class="card-head"><h2>CCX listener<small>The passive B1 board that hears keypads and touch bars</small></h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
+      <div class="card-head"><h2>CCX listener<small>The passive listener board that hears keypads and touch bars</small></h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
       <div id="dev-sidecar-vitals" class="vitals"></div>
       <details class="more"><summary>All readings</summary><div id="sidecar-facts" class="more-body groups"></div></details>
-      <details class="more"><summary>Passive CCX listener (B1) firmware</summary><div class="more-body">
-        <p class="hint">A signed <code>.bin</code> image. Only listener input and its actions pause during the update; other bridge lighting continues. The listener needs its external antenna and a one-time USB bootstrap first.</p>
-        <p id="sidecar-feed-note" class="hint">The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.</p>
-        <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">8,192–720,896 bytes, in 4,096-byte blocks</span></label>
+      <details class="more"><summary>CCX listener firmware</summary><div class="more-body">
+        <p class="hint">A signed <code>.bin</code> image. Only listener input and its actions pause during the update; other bridge lighting continues. The listener needs its external antenna and a one-time USB bootstrap first. Its board code (B1) is listed under All readings.</p>
+        <p id="sidecar-feed-note" class="hint">The CCX event feed pauses during a listener update and resumes from a live baseline, without replaying missed events.</p>
+        <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed listener image</strong><span id="sidecar-file-note" class="muted small">8,192–720,896 bytes, in 4,096-byte blocks</span></label>
         <p id="sidecar-progress" class="hint" role="status"></p>
         <div class="meter"><i id="sidecar-progress-bar" style="width:0"></i></div>
-        <div class="actions"><button id="sidecar-upload" disabled>Update sidecar firmware</button></div>
+        <div class="actions"><button id="sidecar-upload" disabled>Update listener firmware</button></div>
       </div></details>
       <p id="sidecar-fw-note" class="hint" role="status">Waiting for sidecar status.</p>
     </section>
@@ -836,7 +853,7 @@ html,body{overflow-anchor:none}
       </div></details>
     </section>
     <section class="card device" id="dev-ketra">
-      <div class="card-head"><h2>Ketra hub<small>The N4 hub, when the gateway sends lighting through it</small></h2><span id="dev-ketra-pill" class="pill wait">Waiting</span></div>
+      <div class="card-head"><h2>Ketra hub<small>Ketra hub (N4): carries lighting when the gateway sends it over the network</small></h2><span id="dev-ketra-pill" class="pill wait">Waiting</span></div>
       <div id="dev-ketra-vitals" class="vitals"></div><ul id="dev-ketra-flags" class="board-flags"></ul>
       <details class="more" id="dev-ketra-more"><summary>All readings</summary><div id="dev-ketra-readings" class="more-body groups"></div></details>
     </section>
@@ -864,7 +881,7 @@ html,body{overflow-anchor:none}
     <div class="card-head"><h2>Zone programming</h2><span class="pill info">Read-only</span></div>
     <div id="program-zones" class="chips" role="group" aria-label="Known zones"></div>
     <div class="toolbar"><label>Zone number <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" class="secondary">Load snapshot</button></div>
-    <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
+    <div id="program-viz"><p class="empty-state">Pick a zone to see its schedule and presets. Zones appear here once the gateway reports them.</p></div>
     <details class="more"><summary>Advanced: raw data</summary><div class="more-body"><pre id="program" class="muted">No programming data loaded.</pre></div></details>
   </section>
   <h2 class="section-h">CCA remotes and shades</h2>
@@ -979,8 +996,8 @@ function val(v){return v===undefined||v===null?'—':typeof v==='object'?JSON.st
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 function cell(row,text){const td=document.createElement('td');td.textContent=text;row.append(td);return td}
 function num(v){return Number.isFinite(Number(v))&&v!==null&&typeof v!=='boolean'?Number(v).toLocaleString():val(v)}
-function clock(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000)),d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);s%=60;return (d?d+'d ':'')+[h,m,s].map(x=>String(x).padStart(2,'0')).join(':')}
-function duration(ms){if(!Number.isFinite(Number(ms)))return '—';let s=Math.max(0,Math.floor(Number(ms)/1000));const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);s%=60;return d?`${d}d ${h}h`:h?`${h}h ${m}m`:m?`${m}m ${s}s`:`${s}s`}
+/* One duration format everywhere: 45 s, 31 min, 2 h 5 min, 3 d 4 h. */
+function duration(ms){if(!Number.isFinite(Number(ms)))return '—';const s=Math.max(0,Math.floor(Number(ms)/1000));if(s<60)return s+' s';const m=Math.floor(s/60);if(m<60)return m+' min';const hr=Math.floor(m/60),d=Math.floor(hr/24);if(d)return hr%24?`${d} d ${hr%24} h`:`${d} d`;return m%60?`${hr} h ${m%60} min`:`${hr} h`}
 function roleName(role){return ({0:'disabled',1:'detached',2:'child',3:'router',4:'leader'})[Number(role)]||'unknown'}
 function hex16(v){return Number.isInteger(Number(v))&&v!==null?'0x'+Number(v).toString(16).toUpperCase().padStart(4,'0'):val(v)}
 const STAGES={'endpoint-online':['Endpoint connected','good'],'endpoint-offline':['Endpoint disconnected','bad'],'config-mismatch':['Endpoint configuration mismatch','bad'],'config-matched':['Endpoint configuration matches','good'],'endpoint-config-changed':['Endpoint configuration changed','info'],requested:['Command from Lutron','good'],'ketra-held':['Held · direct Zigbee output not admitted','warn'],applied:['Sent to the hub','good'],failed:['Hub write unconfirmed (legacy)','warn'],retrying:['Retrying the hub','warn'],superseded:['Replaced by newer command',''], 'delivery-failed':['Couldn’t reach the hub','bad'],observed:['Hub reading','good'],correction:['Hub reports a different level','warn'],confirmed:['Bridge reported the level','info'],'command-dropped':['Command dropped','bad'],'report-sent':['Reported to Lutron','good'],'report-failed':['Report to Lutron failed','bad'],'program-installed':['Programming installed','good'],'wifi-connected':['Gateway Wi-Fi connected','good'],'wifi-disconnected':['Gateway Wi-Fi disconnected','bad'],'ethernet-connected':['Gateway Ethernet connected','good'],'ethernet-disconnected':['Gateway Ethernet disconnected','bad'],'program-rejected':['Programming rejected','bad']};
@@ -995,7 +1012,7 @@ function netUp(s){return s.network_up??s.wifi_up}
    Direct output counts only when the gateway itself reports it admitted. */
 function outputBackend(s){const b=s?.output_backend??'n4',d=s?.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{};
   /* A hybrid gateway (direct preferred) on N4 is falling back. */
-  if(b==='n4'){const fallback=s?.backend?.mode==='hybrid';return {kind:'n4',admitted:true,fallback,name:fallback?'N4 fallback':'N4 hub',reason:fallback&&typeof d.reason==='string'?d.reason:null}}
+  if(b==='n4'){const fallback=s?.backend?.mode==='hybrid';return {kind:'n4',admitted:true,fallback,name:fallback?'Ketra hub (fallback)':'Ketra hub (N4)',reason:fallback&&typeof d.reason==='string'?d.reason:null}}
   if(b==='direct_zigbee')return {kind:'direct',admitted:d.output_admitted===true,name:'Direct Zigbee',reason:typeof d.reason==='string'?d.reason:null};
   return {kind:'unknown',admitted:false,name:'Unrecognised',reason:typeof b==='string'?b:null}}
 const outputHeld=o=>o.kind!=='n4'&&!o.admitted;
@@ -1175,10 +1192,10 @@ function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$(
 function pulse(ids,tone=''){for(const id of ids){const e=$(id);e.setAttribute('class',e.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
 function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway','edge-gateway-n4','edge-n4-report','return-report-n4','return-n4-gateway','return-gateway-uart','return-uart-endpoint','return-endpoint-thread']){$(id).setAttribute('class',$(id).getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,''))}
   const state=endpointHealth(s),current=snapshotFresh(s);node('thread',state.tone,current?(state.tone==='good'?'connected':state.label.toLowerCase()):'unavailable');node('endpoint',current&&s.endpoint_online===true?state.tone:'warn',current?(s.endpoint_online===true?'online':s.endpoint_online===false?'offline':'unavailable'):'unavailable');node('uart',current&&s.endpoint_online===true&&Number(s.uart_frames_ok)>0?'good':'warn',current?`${num(s.uart_frames_ok)} messages · ${num(s.uart_crc_errors)} link errors`:'unavailable');const net=netName(s),netOk=netUp(s);node('gateway',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',current?`${net} ${netOk===true?'up':netOk===false?'down':'unknown'}`:'monitoring delayed');$('gateway-title').textContent=`Gateway board (${net==='Network'?'link not reported':'on '+net})`;node('n4','','no recent outcome');node('report','','no recent report');
-  const out=outputBackend(s);$('label-n4').textContent=out.kind==='n4'?'N4 output':out.kind==='direct'?'Zigbee output':'Output';$('title-n4').textContent=out.kind==='n4'?'N4 lighting output the gateway writes to':out.kind==='direct'?`Direct Zigbee lighting output (${out.admitted?'admitted':'not admitted: commands are held at the gateway'})`:'Lighting output backend not recognised';
+  const out=outputBackend(s);$('label-n4').textContent=out.kind==='n4'?'Ketra hub':out.kind==='direct'?'Zigbee output':'Output';$('title-n4').textContent=out.kind==='n4'?'N4 lighting output the gateway writes to':out.kind==='direct'?`Direct Zigbee lighting output (${out.admitted?'admitted':'not admitted: commands are held at the gateway'})`:'Lighting output backend not recognised';
   if(outputHeld(out))node('n4',out.kind==='direct'?'bad':'warn',out.kind==='direct'?'held · not admitted':'backend unknown');
   const latest=eventRows[eventRows.length-1],stage=latest?.stage;const snapshotSeconds=snapshotAge(s),atSnapshot=typeof s.gateway_uptime_ms==='number'&&typeof latest?.ts_ms==='number'?s.gateway_uptime_ms-latest.ts_ms:NaN;const age=Number.isFinite(atSnapshot)&&atSnapshot>=0&&snapshotSeconds!==null?atSnapshot+snapshotSeconds*1000:NaN;const fresh=current&&!!stage&&Number.isFinite(age)&&age<=10000;
-  let note=stage?`Last event: ${stageInfo(stage)[0]}${latest.zone>=0?` · zone ${latest.zone}`:''}${Number.isFinite(age)?` · ${duration(age)} ago`:Number.isFinite(atSnapshot)&&atSnapshot>=0?` · ${duration(atSnapshot)} before the last snapshot`:''}.`:'No event outcome has been observed yet.';
+  let note=stage?`Last event: ${stageInfo(stage)[0]}${latest.zone>=0?` · ${zoneInfo(latest.zone).title}`:''}${Number.isFinite(age)?` · ${duration(age)} ago`:Number.isFinite(atSnapshot)&&atSnapshot>=0?` · ${duration(atSnapshot)} before the last snapshot`:''}.`:'No event outcome has been observed yet.';
   if(stage==='applied'){node('n4','good',out.kind==='direct'?'sent':'PUT applied');if(fresh)pulse(['edge-gateway-n4'])}else if(['failed','delivery-failed','retrying'].includes(stage)){const bad=stage==='delivery-failed';node('n4',bad?'bad':'warn',bad?'Delivery failed':'Retry / unconfirmed');if(fresh)pulse(['edge-gateway-n4'],bad?'bad':'warn')}else if(['observed','correction'].includes(stage)){node('n4',stage==='correction'?'warn':'good',stage);if(fresh)pulse(['return-n4-gateway','return-gateway-uart','return-uart-endpoint'],stage==='correction'?'warn':'')}else if(stage==='confirmed'){if(fresh)pulse(['return-gateway-uart','return-uart-endpoint'])}else if(REQUEST_STAGES.has(stage)){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'])}else if(['ketra-dispatch','ketra-uart','native-stream','native-queued'].includes(stage)){node('n4','good','sending');if(fresh)pulse(['edge-gateway-n4'])}else if(stage==='ketra-unrouted'||DROP_STAGES.includes(stage)){node('n4',stage==='ketra-unrouted'?'warn':'bad',stageInfo(stage)[0].toLowerCase());if(fresh)pulse(['edge-uart-gateway'],stage==='ketra-unrouted'?'warn':'bad')}else if(stage==='ketra-held'){if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'warn')}else if(stage==='command-dropped'){if(state.tone==='good')node('endpoint','warn','command dropped');if(fresh)pulse(['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway'],'bad')}
   if(['report-sent','report-failed'].includes(stage)){node('report',stage==='report-sent'?'good':'bad',stage);if(fresh)pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='report-failed'?'bad':'')}else if(['program-installed','program-rejected'].includes(stage)){node('report',stage==='program-installed'?'good':'bad',stage);if(fresh)pulse(['return-endpoint-thread','return-uart-endpoint','return-gateway-uart'],stage==='program-rejected'?'bad':'')}
   if(stage&&!fresh)note+=' Arrows are still because the event or monitoring snapshot is not recent.';$('flow-note').textContent=note}
@@ -1220,10 +1237,11 @@ function syncState(){const s=latestStatus,current=!!s&&snapshotFresh(s),zones=Ar
 function syncView(){const st=syncState(),ol=$('sync-steps');$('sync-pill').className='pill '+st.tone;$('sync-pill').textContent=st.label;
   ol.replaceChildren(...st.steps.map(([tone,name,detail],i)=>{const li=el('li',tone==='info'?'info':tone),t=el('div');t.append(el('strong','',name),el('span','d',detail));li.append(el('span','n',String(i+1)),t,pill({good:'Done',info:'OK',wait:'Waiting',warn:'Check',bad:'Problem'}[tone],tone));return li}));
   const body=$('sync-zones');body.replaceChildren(...st.rows.map(({z,e,p,state})=>{const tr=el('tr'),zi=zoneInfo(z.zone);const c1=cell(tr,'');c1.append(el('strong','',z.name||zi.title));if(zi.area)c1.append(el('small','',zi.area));
-    const c2=cell(tr,'');if(e){c2.append(el('span',e.stage==='program-rejected'?'bad-text':'',e.stage==='program-rejected'?'Rejected':'Received'),el('small','',ago(e.wall_ms)))}else c2.append(el('span','muted','—'),el('small','','none in 7 days'));
+    const c2=cell(tr,'');if(e){c2.append(el('span',e.stage==='program-rejected'?'bad-text':'',e.stage==='program-rejected'?'Rejected':'Received'),el('small','',ago(e.wall_ms)))}else c2.append(el('span','muted','None'),el('small','','in the last 7 days'));
     const c3=cell(tr,'');c3.append(el('span','',{unread:'Not read yet',stale:'Out of date',behind:'Re-reading',current:'Current'}[state]),el('small','',p?`read ${duration(p.age_s*1000)} ago${p.programmed===false?' · not programmed':''}`:'the gateway reads one zone every 30 s'));
     const c4=cell(tr,'');const sh=z.show;c4.append(el('span','',sh?.status==='running'?`Show ${val(sh.id)} running`:p?.shows?`${p.shows} installed`:'None'),el('small','',sh?.status==='not_selected'&&p?.shows?'none selected':''));
     if(Number.isInteger(z.zone)){tr.className='pick';tr.title='Show this zone’s programming below';tr.onclick=()=>{$('program-zone').value=String(z.zone);loadProgram();$('program-viz').scrollIntoView?.({behavior:'smooth',block:'start'})}}return tr}));
+  if(!st.rows.length){const tr=el('tr'),td=el('td','empty','No zones are mapped yet, so there is nothing to compare. Map a zone in Settings › Zone mapping.');td.setAttribute('colspan','4');tr.append(td);body.replaceChildren(tr)}
   $('sync-note').textContent=st.rows.length?'“Last from Lutron” comes from the endpoint’s programming events, kept for seven days in the add-on’s archive.':'';
   const b=$('program-badge');b.textContent=['warn','bad'].includes(st.tone)?'​':'';b.title=['warn','bad'].includes(st.tone)?'Programming needs a look':'';return st}
 /* Overview tiles open the place that explains them. */
@@ -1337,7 +1355,7 @@ function endpointHealthRows(h){const v=k=>typeof h[k]==='number'&&Number.isFinit
   if(v('age_ms'))r.push(['Reported',duration(h.age_ms)+' ago',h.age_ms>30000?'warn':'']);
   if(v('reset_reason'))r.push(['Reset reason (esp_reset_reason)',`${RESET_REASON[h.reset_reason]?.[0]||'Unknown'} (${h.reset_reason})`,RESET_REASON[h.reset_reason]?.[1]||'',`Thread endpoint restarted after a ${(RESET_REASON[h.reset_reason]?.[0]||'fault').toLowerCase()}${v('uptime_ms')?' '+duration(h.uptime_ms)+' ago':''}.`]);
   if(v('rom_reset_reason'))r.push(['ROM reset reason',String(h.rom_reset_reason)]);
-  if(v('uptime_ms'))r.push(['Uptime',clock(h.uptime_ms)]);
+  if(v('uptime_ms'))r.push(['Uptime',duration(h.uptime_ms)]);
   if(v('heap_free'))r.push(['Free heap',bytes(h.heap_free)]);if(v('heap_min'))r.push(['Lowest free heap',bytes(h.heap_min),h.heap_min<16384?'warn':'']);
   if(v('stack_min'))r.push(['Lowest stack headroom',num(h.stack_min)+' bytes']);
   for(const [k,label] of [['link_rx_crc','Link CRC errors received'],['link_rx_framing','Link framing errors received'],['link_rx_overflow','Link receive overflows'],['tx_drops','Transmit drops']])if(v(k))r.push([label,num(h[k]),errTone(h[k])]);
@@ -1358,6 +1376,16 @@ function issueLink(t,out){t=String(t);
   if(/lamp/i.test(t))return ['home','lights-card','Rooms'];
   if(/output|N4|delivered/i.test(t))return out?.kind==='direct'&&zigbeeArming(latestStatus)?['devices','zigbee-node-card','Zigbee node']:['devices','dev-ketra','Lighting output'];
   return ['devices','dev-endpoint','Thread endpoint']}
+/* Devices: one summary line under the title whose board names open that card; flagged cards sort first. */
+const BOARD_ORDER=[['gateway','dev-gateway','Gateway'],['endpoint','dev-endpoint','Thread endpoint'],['zigbee','zigbee-node-card','Zigbee node'],['sidecar','sidecar-firmware-card','CCX listener'],['cca','dev-cca','CCA radio'],['ketra','dev-ketra','Ketra hub']];
+function renderDevicesSummary(flags){const counts=new Map();for(const f of flags)counts.set(f.board,(counts.get(f.board)||0)+1);
+  const box=$('diag-attention'),boards=BOARD_ORDER.filter(([k])=>counts.has(k));
+  if(!flags.length)box.replaceChildren(el('p','devices-summary good-line','Every reading looks normal on every device.'));
+  else{const p=el('p','devices-summary');p.append(`${plural(flags.length,'reading','readings')} to check on ${plural(boards.length,'device','devices')}: `);
+    boards.forEach(([k,id,name],i)=>{const b=el('button','plain inline',name);b.type='button';b.setAttribute('aria-label',`Open ${name}: ${plural(counts.get(k),'reading','readings')} to check`);b.onclick=()=>goTo('devices','dev-'+k+'-more');if(i)p.append(i===boards.length-1?' and ':', ');p.append(b)});p.append('.');box.replaceChildren(p)}
+  const health=$('health'),flagged=k=>counts.has(k)||/\b(warn|bad)\b/.test(($(k==='sidecar'?'sidecar-pill':k==='cca'?'cca-status-pill':'dev-'+k+'-pill')?.className)||''),
+    want=[...BOARD_ORDER.filter(([k])=>flagged(k)),...BOARD_ORDER.filter(([k])=>!flagged(k))].map(([,id])=>$(id)),cur=[...(health.children||[])];
+  if(want.some((e,i)=>cur[i]!==e))health.replaceChildren(...want)}
 function renderAttention(issues,out){const items=[...issues].sort((a,b)=>(b[0]==='bad')-(a[0]==='bad'));
   $('attention').replaceChildren(...items.map(([tone,title,detail,link,since])=>{const li=el('li',tone),t=el('div'),go=link||issueLink(title,out);
     li.append(el('span','ic',tone==='bad'?'✕':'!'));t.append(el('strong','',title));const sub=[since,detail].filter(Boolean).join(' · ');if(sub)t.append(el('span','since',sub));li.append(t);
@@ -1372,8 +1400,9 @@ function renderBoard(key,name,{tone,label,vitals,groups}){const flags=flaggedRow
   $('dev-'+key+'-readings').replaceChildren(...groups);
   const more=$('dev-'+key+'-more');if(!more._wired){more._wired=true;more.addEventListener('toggle',()=>{boardOpen[key]=more.open})}more.open=!!boardOpen[key];
   return flags}
-function zigbeeVitals(s,out,held){const r=s.direct_routing||{},a=r.arming||{},lamps=Number(r.lamps);
-  return [['Lighting output',out.kind==='direct'?(held?'Held':'Admitted'):'Not in use',held&&out.kind==='direct'?'bad':'',out.kind==='direct'?(held?'Commands wait at the gateway':'Carrying lighting'):'N4 carries lighting'],
+function zigbeeVitals(s,out,held){const r=s.direct_routing||{},a=r.arming||{},lamps=Number(r.lamps),zu=s.zigbee_uart||{},sha=typeof zu.build_elf_sha256==='string'&&zu.build_elf_sha256?zu.build_elf_sha256.slice(0,12):null;
+  return [['Status',out.kind==='direct'?(held?'Lighting held':'Carrying lighting'):'Standing by',held&&out.kind==='direct'?'bad':'',out.kind==='direct'?(held?'commands wait at the gateway':'the gateway drives the lamps through it'):'the Ketra hub carries lighting'],
+    ...(sha?[['Firmware',sha,'','as the node reports it']]:[]),
     ['Lamps found',Number.isFinite(lamps)?`${num(r.resolved)} of ${num(lamps)}`:'Not reported',Number(r.unreachable)>0?'bad':'',Number(r.unreachable)>0?`${num(r.unreachable)} unreachable`:Number.isFinite(lamps)?'all reachable':''],
     ['Commands applied',num(r.applied),'','since the gateway started'],
     ['Restarts by the gateway',num(a.node_resets),Number(a.node_resets)>0?'warn':'']]}
@@ -1382,7 +1411,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   const out=outputBackend(s),held=outputHeld(out),zl=zigbeeLink(s),dz=s.direct_zigbee&&typeof s.direct_zigbee==='object'?s.direct_zigbee:{},zu=s.zigbee_uart&&typeof s.zigbee_uart==='object'?s.zigbee_uart:{};
   /* While no path owns output, N4 is not carrying lighting either: say that instead of the fallback line. */
   const hold=backendHold(s),unowned=!!(hold&&!hold.owned);
-  if(out.fallback&&!unowned)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; N4 is carrying lighting`,'Lighting still works through the N4 hub. Devices → Zigbee node shows why direct Zigbee is unavailable.']);
+  if(out.fallback&&!unowned)issues.push(['warn',`Direct Zigbee unavailable${out.reason?' ('+out.reason.replace(/_/g,' ')+')':''}; the Ketra hub (N4) is carrying lighting`,'Lighting still works through the Ketra hub. Devices → Zigbee node shows why direct Zigbee is unavailable.']);
   if(unowned)issues.push(['warn',`Lighting is not being delivered yet: ${hold.text}`]);
   const arm=zigbeeArming(s);
   if(arm==='not_enrolled')issues.push(['warn','Zigbee node not enrolled: enroll it after the supervised install','Devices → Zigbee node explains when to enroll.']);
@@ -1391,7 +1420,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   if(zl?.enabled&&zl.tone!=='good')issues.push(['warn','Zigbee member link not responding']);
   const sceneIssue=sceneCacheIssue(latestNative);if(sceneIssue)issues.push(sceneIssue);
   // A held output already explains every lamp; repeating it per lamp adds nothing.
-  if(!held){if(!lampStats.current)issues.push(['warn','Lamp comparisons unavailable']);else if(lampStats.issues.length){const i=lampStats.assessed.findIndex(v=>['bad','warn'].includes(v.tone));issues.push([lampStats.assessed[i].tone,lampStats.issues.length===1?`${lampStats.lamps[i].name||'Lamp'}: ${lampStats.assessed[i].title}`:`${lampStats.issues.length} lamps need attention`,'Lutron is the reference: set the level again from Lutron to bring a lamp back in line. Open the lamp below for details.'])}else{const stale=lampStats.assessed.filter(v=>/^No recent/.test(v.title)).length;if(stale)issues.push(['warn',`${stale} lamp${stale===1?' has':'s have'} not reported recently`,isDirect(lampStats.lamps[0])?'Check Settings → Ketra lamps for unreachable lamps.':'Check that the N4 hub is reporting.'])}}
+  if(!held&&(lampStats.lamps.length||lastDevices?.zones?.length)){if(!lampStats.current)issues.push(['warn','Lamp comparisons unavailable']);else if(lampStats.issues.length){const i=lampStats.assessed.findIndex(v=>['bad','warn'].includes(v.tone));issues.push([lampStats.assessed[i].tone,lampStats.issues.length===1?`${lampStats.lamps[i].name||'Lamp'}: ${lampStats.assessed[i].title}`:`${lampStats.issues.length} lamps need attention`,'Lutron is the reference: set the level again from Lutron to bring a lamp back in line. Open the lamp below for details.'])}else{const stale=lampStats.assessed.filter(v=>/^No recent/.test(v.title)).length;if(stale)issues.push(['warn',`${stale} lamp${stale===1?' has':'s have'} not reported recently`,isDirect(lampStats.lamps[0])?'Check Settings → Ketra lamps for unreachable lamps.':'Check that the N4 hub is reporting.'])}}
   /* Mapping is already its own line above; other programming steps that need a look join the summary. */
   const sync=syncView(),syncIssue=sync.steps.find(x=>['warn','bad'].includes(x[0])&&x[1]!=='Zone mapping on both boards'&&!(sceneIssue&&x[2].startsWith(sceneIssue[1])));if(syncIssue)issues.push([syncIssue[0],syncIssue[0]==='bad'?'Programming from Lutron was rejected':`Programming: ${syncIssue[1]} needs a look`,syncIssue[2]]);
   if(current)issues.push(...endpointIssues(s));
@@ -1403,7 +1432,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
     tile('Thread network',!current?'Unknown':state.tone==='good'?'Connected':state.label,state.tone,!current?'Current status unknown':state.tone==='good'?'as a child device':state.title,['devices','dev-endpoint','Devices']),
     tile('Thread endpoint',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000),['devices','dev-endpoint','Devices']),
     tile('Zone mapping',current?(s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown'):'Unavailable',current&&s.config_match===true?'good':'warn',s.config_match===true?'Same on both boards':'Hash '+val(s.config_hash),['automation','sync-card','Lutron programming']),
-    tile('Lighting output',!current?'Unavailable':out.fallback?'N4 fallback':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; N4 carrying output':out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Gateway drives the lamps over Zigbee'):'Backend '+val(out.reason),out.kind==='direct'&&zigbeeArming(s)?['devices','zigbee-node-card','Zigbee node']:['devices','dev-ketra','Ketra hub']),
+    tile('Lighting output',!current?'Unavailable':out.fallback?'Ketra hub (fallback)':out.kind==='n4'?'Ketra hub (N4)':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; the Ketra hub carries lighting':out.kind==='n4'?'over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Gateway drives the lamps over Zigbee'):'Backend '+val(out.reason),out.kind==='direct'&&zigbeeArming(s)?['devices','zigbee-node-card','Zigbee node']:['devices','dev-ketra','Ketra hub']),
     ...(zl?.enabled?[tile('Zigbee node link',current?zl.label:'Unavailable',current?zl.tone:'warn','Wired link to the node only',['devices','zigbee-node-card','Zigbee node'])]:[]),
     tile('Programming',current?sync.label:'Unavailable',!current?'warn':sync.tone==='wait'?'wait':sync.tone,sync.steps.find(x=>x[0]===sync.tone&&sync.tone!=='good')?.[1]||'Lutron → bridge → lamps',['automation','sync-card','Lutron programming']),
     tile('Lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length?'warn':lampStats.pending?'wait':'good',held?'Commands are held at the gateway':!lampStats.current?'Current comparisons unavailable':lampStats.pending?`${lampStats.pending} waiting for a reading`:'Compared with Lutron',['home','lights-card','Rooms']));
@@ -1416,7 +1445,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
     ...(eb.framing!==null?[['Framing errors',num(eb.framing),errTone(eb.framing)]]:[]),...(eb.overflows!==null?[['Receive overflows',...overflowRow(eb.overflows,s.gateway_uptime_ms)]]:[]),
     ...(eb.frames!==null?[['Command frames received',num(eb.frames)]]:[]),...(eb.lost!==null?[['Commands lost',num(eb.lost),eb.lost>0?'bad':'']]:[]),...(eb.dups!==null?[['Resent commands ignored',num(eb.dups)]]:[]),...clockRows(s)];
   const endpointGroups=[
-      group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
+      group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'Not reported':duration(Number(s.endpoint_uptime_s)*1000)],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
       group('Link to the gateway (UART)',linkRows),
       group('Endpoint board health (reported)',eb.h?endpointHealthRows(eb.h):[['Status','Not reported by this gateway']]),
       ...(guardRows(eb.h)?[group('Transmissions the safety guard refused',guardRows(eb.h))]:[]),
@@ -1424,7 +1453,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       group('Endpoint safety (reported)',[['Available',yn(q.present),q.present===false?'warn':''],['Phase',val(q.phase)],['Fault bits',num(q.faults),errTone(q.faults)],['May send',yn(q.may_send),q.may_send===false?'warn':''],['Mesh-local prefix',val(q.mesh_local_prefix)],['Prefix status',val(q.prefix_status),q.prefix_status!==undefined&&q.prefix_status!==0?'warn':''],['Extended PAN verified',yn(q.ext_pan_ok),q.ext_pan_ok===false?'warn':''],['Active timestamp valid',yn(q.active_timestamp_valid),q.active_timestamp_valid===false?'warn':''],['Startup gate remaining',q.gate_remaining_s===undefined?'—':q.gate_remaining_s+' s'],['Router adverts in window',num(q.gate_adverts)],['Role fault (R1)',yn(q.r1_role_fault),q.r1_role_fault===true?'bad':''],['Prefix fault (R3)',yn(q.r3_prefix_fault),q.r3_prefix_fault===true?'bad':''],['Interrupted session',yn(q.interrupted_session),q.interrupted_session===true?'bad':''],['Partition ID',val(q.partition_id)],['Leader router ID',val(q.leader_router_id)],['Routers heard',num(q.router_count)],['Transmissions blocked',num(q.tx_blocked)]]),
       group('Gateway endpoint protection (reported)',[['Enabled',yn(p.enabled),p.enabled===false?'warn':''],['Physical hold available',yn(p.physical_hold_available),p.physical_hold_available===false&&p.configured!==false?'warn':''],['Hold requested',yn(p.hold_requested),p.hold_requested===true?'warn':''],['Hold asserted',yn(p.held),p.held===true?'warn':''],['State',val(p.state)],['Startup hold remaining',p.boot_hold_remaining_s===undefined?'—':p.boot_hold_remaining_s+' s',Number(p.boot_hold_remaining_s)>0?'warn':''],['Link lost',yn(p.link_lost),p.link_lost===true?'bad':''],['Timer error',yn(p.timer_error),p.timer_error===true?'bad':''],['Storage error',yn(p.storage_error),p.storage_error===true?'bad':''],['Hardware error',yn(p.hardware_error),p.hardware_error===true?'bad':''],['Watchdog error',yn(p.watchdog_error),p.watchdog_error===true?'bad':''],['Persistence pending',yn(p.persistence_pending),p.persistence_pending===true?'warn':''],['Violation',val(p.violation),p.violation&&p.violation!=='none'?'bad':''],['Recovering',yn(p.recovering),p.recovering===true?'warn':''],['Recovery state',val(p.recovery_state)]])];
   const gatewayGroups=[
-      group('Network',[['Link',net==='Network'?'Not reported':net],['Connected',yn(netOk),netOk===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'—':clock(s.gateway_uptime_ms)],['Disconnects since boot',num(disconnects),Number(disconnects)>0?'warn':''],
+      group('Network',[['Link',net==='Network'?'Not reported':net],['Connected',yn(netOk),netOk===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'Not reported':duration(s.gateway_uptime_ms)],['Disconnects since boot',num(disconnects),Number(disconnects)>0?'warn':''],
         ...(net==='Ethernet'?[]:opt('wifi_reason',['Last Wi-Fi reason',val(dg.link_reason??dg.wifi_reason)])),...opt('wifi_reconnect_ms',['Last reconnect took',Number(dg.wifi_reconnect_ms)>0?duration(dg.wifi_reconnect_ms):'—']),...opt('reset_reason',['Last restart cause',RESET_REASON[dg.reset_reason]?`${RESET_REASON[dg.reset_reason][0]} (${dg.reset_reason})`:val(dg.reset_reason),RESET_REASON[dg.reset_reason]?.[1]||'',`Gateway restarted after a ${(RESET_REASON[dg.reset_reason]?.[0]||'fault').toLowerCase()}${s.gateway_uptime_ms===undefined?'':' '+duration(s.gateway_uptime_ms)+' ago'}.`])]),
       group('Configuration',[['Zone mapping on both boards',s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown',s.config_match===false?'warn':''],['Configuration hash',val(s.config_hash)],['Maintenance mode',dg.maintenance?'Active':'Off',dg.maintenance?'warn':'']]),
       ...(['heap_free','sockets_used','http_stack_free_units','management_clients'].some(has)?[group('Resources',[...opt('heap_free',['Free memory',bytes(dg.heap_free)]),...opt('heap_min',['Lowest free memory since boot',bytes(dg.heap_min),Number(dg.heap_min)<16384?'warn':'']),...opt('heap_largest',['Largest free block',bytes(dg.heap_largest)]),
@@ -1435,34 +1464,34 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       ...(s.direct_routing&&typeof s.direct_routing==='object'?[routingGroup(s)]:[]),
       ...(out.kind!=='n4'?[group('Direct Zigbee output (reported)',[['Backend',out.kind==='direct'?'Direct Zigbee':val(out.reason)],['Output admitted',yn(dz.output_admitted),dz.output_admitted===true?'':'bad'],['Reason',val(dz.reason)],['Radio UART pins configured',yn(dz.pins_configured)],['Receiver started',yn(dz.receiver_started)],['Diagnostic HELLO in last 15 s',yn(dz.hello_online)],['Role (unverified claim)',dz.unverified_role===undefined?'—':zigbeeRole(dz.unverified_role)],['Bytes',num(dz.uart_bytes)],['Frames OK',num(dz.frames_ok)],['CRC errors',num(dz.crc_errors),errTone(dz.crc_errors)],['Valid HELLOs',num(dz.valid_hellos)],['Rejected HELLOs',num(dz.rejected_hellos),errTone(dz.rejected_hellos)]])]:[]),
       ...(zl?.enabled?[group('Zigbee member link (reported)',[['Responding',yn(zu.online===true&&zu.bidirectional===true),zl.tone==='good'?'':'warn'],['Last response',Number.isFinite(zu.last_response_age_ms)&&zu.last_response_age_ms>0?duration(zu.last_response_age_ms)+' ago':'—'],['UART2 TX / RX GPIO',`${val(zu.tx_gpio)} / ${val(zu.rx_gpio)}`],['Baud',num(zu.baud)],['Receiver started',yn(zu.receiver_started),zu.receiver_started===false?'warn':''],['Requests',num(zu.requests)],['Valid responses',num(zu.valid_responses)],['Rejected responses',num(zu.rejected_responses),errTone(zu.rejected_responses)],['Timeouts',num(zu.timeouts),errTone(zu.timeouts)],['Partial-line timeouts',num(zu.partial_timeouts),errTone(zu.partial_timeouts)],['Overflows',num(zu.overflows),errTone(zu.overflows)],['Send failures',num(zu.tx_failures),errTone(zu.tx_failures)],['Receiver errors',num(zu.receiver_errors),errTone(zu.receiver_errors)],['Device (claimed)',val(zu.device||null)],['Board (claimed)',val(zu.board||null)],['Base MAC (claimed)',val(zu.base_mac||null)],['IEEE address (claimed)',val(zu.ieee_address||null)],['Build SHA-256 (claimed)',typeof zu.build_elf_sha256==='string'&&zu.build_elf_sha256?zu.build_elf_sha256.slice(0,12)+'…':'—'],['Boot ID (claimed)',val(zu.boot_id||null)],['Role (claimed)',val(zu.role||null)],['Role verified (claim)',yn(zu.role_verified_claim)],['Member state (claimed)',val(zu.state||null)],['Radio (claimed)',val(zu.radio||null)],['Identity authenticated',yn(zu.identity_authenticated)],['RF membership verified',yn(zu.rf_membership_verified)]])]:[])];
-  const hubActive=out.kind==='n4'||Number(s.puts_ok)>0,ketraGroups=[
+  const hubActive=out.kind==='n4',hubUsed=hubActive||Number(s.puts_ok)>0,ketraGroups=[
       group('Output',[['Lighting output',out.name+(held?' · held':''),held?(out.kind==='direct'?'bad':'warn'):''],['Zigbee member link',zl?zl.label:'Not reported',zl?.enabled&&zl.tone!=='good'?'warn':'']]),
-      ...(hubActive?[group('N4 hub delivery',[['Writes succeeded',num(s.puts_ok)],['Unconfirmed attempts (includes retries)',num(s.puts_failed)],...opt('retries',['Retries',num(dg.retries)]),['Exhausted deliveries',num(dg.delivery_failed),errTone(dg.delivery_failed)],['Superseded commands',num(dg.superseded)],
+      ...(hubUsed?[group('N4 hub delivery',[['Writes succeeded',num(s.puts_ok)],['Unconfirmed attempts (includes retries)',num(s.puts_failed)],...opt('retries',['Retries',num(dg.retries)]),['Exhausted deliveries',num(dg.delivery_failed),errTone(dg.delivery_failed)],['Superseded commands',num(dg.superseded)],
         ...opt('wss_connected',['Hub WebSocket',dg.wss_connected?'Connected':'Not connected']),...opt('wss_connections',['WebSocket connections',num(dg.wss_connections)]),...opt('wss_failures',['WebSocket failures',num(dg.wss_failures),errTone(dg.wss_failures)])])]:[]),
       ...(zigbeeCard?[]:zigbeeGroups)];
-  const nodeUp=s.endpoint_online===true,flags=[
+  const nodeUp=s.endpoint_online===true,gwReset=has('reset_reason')?RESET_REASON[dg.reset_reason]||['Restart code '+dg.reset_reason,'']:null,flags=[
     ...renderBoard('gateway','Gateway',{tone:!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',label:!current?'Unavailable':netOk===true?'Online':netOk===false?'Network down':'Unknown',groups:gatewayGroups,vitals:[
-      ['Network',netOk===true?(net==='Network'?'Connected':net):netOk===false?'Down':'Unknown',netOk===false?'bad':'',disconnects===undefined?'':`${num(disconnects)} disconnect${Number(disconnects)===1?'':'s'} since start`],
-      ['Running for',s.gateway_uptime_ms===undefined?notRep:duration(s.gateway_uptime_ms)],
-      ['Last restart',has('reset_reason')?(RESET_REASON[dg.reset_reason]?.[0]||'Code '+dg.reset_reason):notRep,RESET_REASON[dg.reset_reason]?.[1]||''],
+      ['Status',!current?'Unknown':netOk===true?'Online':netOk===false?'Network down':'Unknown',netOk===false?'bad':'',[net==='Network'?'':'on '+net,disconnects===undefined?'':plural(Number(disconnects),'disconnect','disconnects')+' since start'].filter(Boolean).join(' · ')],
+      ['Last restart',gwReset?gwReset[0]:notRep,gwReset?.[1]||'',s.gateway_uptime_ms===undefined?'':duration(s.gateway_uptime_ms)+' ago'],
       ['Free memory',has('heap_free')?bytes(dg.heap_free):notRep,'',has('heap_min')?'lowest '+bytes(dg.heap_min):''],
       ['Zone mapping',s.config_match===true?'Same on both boards':s.config_match===false?'Out of sync':'Unknown',s.config_match===false?'warn':''],
-      ['Maintenance',dg.maintenance?'On':'Off',dg.maintenance?'warn':'']]}),
-    ...renderBoard('endpoint','Thread endpoint',{tone:current&&nodeUp?state.tone:'warn',label:!current?'Unavailable':s.endpoint_online===false?'Offline':state.tone==='good'?'Online':state.label,groups:endpointGroups,vitals:[
-      ['Thread',!current?'Unknown':nodeUp?`Online · ${role}`:s.endpoint_online===false?'Offline':'Unknown',current&&nodeUp?(state.tone==='good'?'':state.tone):'warn',current?state.title:'Monitoring is delayed'],
-      ['Running for',eb.uptime===null?notRep:duration(eb.uptime)],
-      ['Last restart',eb.why?eb.why[0]:notRep,eb.why?.[1]||'',eb.why&&eb.uptime!==null?duration(eb.uptime)+' ago':''],
+      ['Home Assistant',haData?'Connected':'Not connected',haData?'':'warn',haData?.time_zone||''],
+      ['Maintenance',dg.maintenance?'On':'Off',dg.maintenance?'warn':'',dg.maintenance?'lighting output is paused':'']]}),
+    ...renderBoard('endpoint','Thread endpoint',{tone:current&&nodeUp?state.tone:'warn',label:!current?'Unavailable':s.endpoint_online===false?'Offline':state.tone==='good'?'Connected':state.label,groups:endpointGroups,vitals:[
+      ['Status',!current?'Unknown':nodeUp?(state.tone==='good'?"Connected to Lutron's Thread network":state.title):s.endpoint_online===false?'Offline':'Unknown',current&&nodeUp?(state.tone==='good'?'':state.tone):'warn',!current?'Monitoring is delayed':nodeUp&&state.tone==='good'?'as a child device (never a router)':s.endpoint_online===false?'the gateway has not heard from it recently':''],
+      ['Last restart',eb.why?eb.why[0]:notRep,eb.why?.[1]||'',eb.uptime!==null?duration(eb.uptime)+' ago':''],
       ['Lost commands',eb.lost===null?notRep:eb.lost===0?'None':num(eb.lost),eb.lost>0?'bad':'',eb.frames!==null?`of ${num(eb.frames)} received since the gateway started`:''],
       ['Link errors',`${num((Number(s.uart_crc_errors)||0)+(eb.framing||0)+(eb.endpointLinkErrors||0))}`,'',eb.overflows!==null?`the gateway fell behind ${eb.overflows===1?'once':num(eb.overflows)+' times'}`:'on the wired link to the gateway'],
-      ['Free memory',eb.heap===null?notRep:bytes(eb.heap),'',eb.heapMin===null?'':'lowest '+bytes(eb.heapMin)]]}),
-    ...renderBoard('ketra','Ketra hub',{tone:!hubActive?'wait':held?'warn':'good',label:!hubActive?'Not in use':out.fallback?'Fallback in use':'Carrying lighting',groups:ketraGroups,vitals:[
-      ['Lighting output',out.name+(held?' · held':''),held?'warn':'',out.kind==='direct'?'The gateway drives the lamps over Zigbee':''],
-      ['Hub writes',num(s.puts_ok),'',hubActive?'since the gateway started':'none while direct Zigbee carries lighting'],
+      ['Free memory',eb.heap===null?notRep:bytes(eb.heap),'',eb.heapMin===null?'':'lowest '+bytes(eb.heapMin)],
+      ['Messages heard',num(s.endpoint_rx_messages),'','from Lutron since it started']]}),
+    ...renderBoard('ketra','Ketra hub',{tone:!hubActive?'wait':held?'warn':'good',label:!hubActive?'Standing by':out.fallback?'Fallback in use':'Carrying lighting',groups:ketraGroups,vitals:[
+      ['Status',!hubActive?'Standing by':out.fallback?'Carrying lighting as the fallback':'Carrying lighting',held?'warn':'',out.kind==='direct'?'the gateway drives the lamps over Zigbee instead':''],
+      ['Hub writes',num(s.puts_ok),'',hubActive?'since the gateway started':'none while Zigbee carries lighting'],
       ['Unconfirmed attempts',num(s.puts_failed),Number(s.puts_failed)>0?'warn':''],
       ['Hub connection',has('wss_connected')?(dg.wss_connected?'Connected':'Not connected'):notRep,has('wss_connected')&&!dg.wss_connected&&hubActive?'warn':'']]}),
     ...(zigbeeCard?renderBoard('zigbee','Zigbee node',{groups:zigbeeGroups,vitals:zigbeeVitals(s,out,held)}):($('dev-zigbee-readings').replaceChildren(),[]))];
   {const g=guardTotal(eb.h);$('dev-endpoint-note').textContent=g>0?`The safety guard refused ${plural(g,'transmission','transmissions')} since the last restart; this protects the Lutron network and is not a fault by itself.`:''}
-  $('diag-attention').replaceChildren(attentionList([{flags}]));{const n=flags.length,b=$('diag-badge');b.textContent=n?'​':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
+  renderDevicesSummary(flags);{const n=flags.length,b=$('diag-badge');b.textContent=n?'​':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
   const flagCount=flags.length,flagTone=flags.some(f=>f.tone==='bad')?'bad':flagCount?'warn':'good';$('diag-pill').className='pill '+flagTone;$('diag-pill').textContent=flagCount?`${flagCount} reading${flagCount===1?'':'s'} to check`:'All normal';
   renderAttention(issues,out);
   $('health-note').textContent=age===null?'Update time unavailable.':`Updated ${age<1.5?'just now':Math.round(age)+' s ago'}${current?'':'; current endpoint state is unknown'}.`;
@@ -1569,31 +1598,44 @@ function staleChecks(z,checks){const kept=checks.filter(c=>c.status!=='good');if
 const openLamps=new Set();
 function lampRowLevel(z,observed){const box=el('span','lamp-level'),l=observed?z.lamp:null,lu=z.lutron;
   const main=l&&Number.isInteger(l.level_x100)?l:z.sent&&Number.isInteger(z.sent?.level_x100)?z.sent:lu&&lu.on===false?{level_x100:0}:lu&&Number.isInteger(lu.level_x100)?lu:null;
-  box.append(main?pct(main.level_x100):'—');const k=main&&Number.isInteger(main.cct)?main.cct+' K':'';
+  box.append(main?pct(main.level_x100):'No reading');const k=main&&Number.isInteger(main.cct)?main.cct+' K':'';
   box.append(el('small','',l?['lamp',k].filter(Boolean).join(' · '):main===z.sent&&main?'last sent':main?'Lutron':'no reading'));return box}
 /* One line under a lamp that is not in sync: the two numbers that disagree. */
 function lampDelta(z,observed){const l=observed?z.lamp:null,lu=z.lutron;if(!l||!lu||typeof lu.on!=='boolean')return '';
   const lut=lu.on?(Number.isInteger(lu.level_x100)?pct(lu.level_x100):'on'):'Off';return `Lamp ${pct(l.level_x100)}${Number.isInteger(l.cct)?' · '+l.cct+' K':''} · Lutron ${lut}${lu.on&&Number.isInteger(lu.cct)?' · '+lu.cct+' K':''}`}
 /* Rooms: when the zone last got a command and how long the lamps took to follow it. */
 function zoneTimings(){const m=new Map();try{for(const t of commandTimings(groupEvents(eventRows)))if(Number.isInteger(t.g.zone))m.set(t.g.zone,t)}catch{}return m}
-function lastCommandText(z,elapsed,timed){const s=z?.sent;if(!s||typeof s!=='object'||typeof s.age_ms!=='number'||!Number.isFinite(s.age_ms))return '';
-  const t=timed?.get(z.zone),ms=t?(t.ms('lamp')??t.ms('hub')):null;return `Last command ${duration(s.age_ms+elapsed)} ago`+(Number.isFinite(ms)?` · lamps followed in ${msText(ms)}`:'')}
+function openTrace(trace,zone){showTab('activity');activityView('commands');const g=groupEvents(eventRows).find(x=>x.trace===trace);
+  if(g){expandedEvents.add('c:'+String(eventBootId)+':'+String(g.events[0].id));$('filter-zone').value='';$('filter-stage').value='';$('filter-problems').checked=false}else if(zone!==undefined&&zone!==null)$('filter-zone').value=String(zone);
+  renderEvents();$('events-card').scrollIntoView?.({behavior:'smooth',block:'start'})}
+function lastCommandText(z,elapsed,timed){const s=z?.sent,t=timed?.get(z.zone),ms=t?(t.ms('lamp')??t.ms('hub')):null,up=Number(latestStatus?.gateway_uptime_ms);
+  const age=s&&typeof s==='object'&&Number.isFinite(s.age_ms)?s.age_ms+elapsed:t&&Number.isFinite(up)&&up>=t.start?up-t.start+Math.max(0,Date.now()-statusReceivedAt):null;
+  if(age===null)return '';return `Last command ${duration(age)} ago`+(Number.isFinite(ms)?` · lamps followed in ${msText(ms)}`:'')}
+/* Empty state: one sentence saying why, and one action. */
+function emptyState(title,why,action,run){const d=el('div','empty-state');d.append(el('strong','',title),el('span','',why));if(action){const b=el('button','secondary',action);b.type='button';b.onclick=run;const a=el('div','actions center');a.append(b);d.append(a)}return d}
+/* Before any gateway snapshot arrives: say so once on each card instead of empty vitals. */
+function renderNoStatus(err){const why=`The app has had no answer from the gateway${err?` (${err})`:''}.`;
+  setHero('warn',"Can't reach the gateway",why+' Check that the gateway is powered and on the network; the app keeps trying every second.',false);
+  for(const k of ['gateway','endpoint','ketra']){const p=$('dev-'+k+'-pill');p.className='pill wait';p.textContent='Unknown';$('dev-'+k+'-vitals').replaceChildren(emptyState('Status unknown',`No answer from the gateway yet, so this board's status is unknown.`,'Try again now',()=>refresh()));$('dev-'+k+'-flags').replaceChildren();$('dev-'+k+'-readings').replaceChildren()}
+  if(!lastZones)$('zones').replaceChildren(emptyState('No room data yet',"Rooms appear once the gateway answers.",'Try again now',()=>refresh()));
+  $('device-note').textContent='';$('ha-note').textContent='';$('checks-summary').textContent='Waiting for the gateway';$('diag-attention').replaceChildren(el('p','devices-summary','No readings yet: the gateway has not answered.'));
+  $('diag-pill').className='pill wait';$('diag-pill').textContent='Waiting';try{syncView()}catch{}}
 function zonesView(data,receivedAt){if(data!==lastZones||receivedAt!==undefined){lastZones=data;zonesReceivedAt=receivedAt??Date.now()}const zones=Array.isArray(data?.zones)?data.zones:[],current=lampInputsCurrent(),elapsed=Math.max(0,Date.now()-zonesReceivedAt),cards=[],timed=zoneTimings();
   for(const raw of zones){const z=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{},v=lampAssessment(z,current),tone=CHECK_TONE[v.tone]||'wait',key=String(z.zone??z.zone_id),card=el('details','zone lamp '+tone),sm=el('summary'),name=el('span','lamp-name');
     const title=z.name||z.lutron?.name||'Zone '+val(z.zone),lz=leapZone(z.zone_id),where=lz?.path||z.lutron?.area;name.append(title);if(where&&normName(where)!==normName(title))name.append(el('small','',where));
     const observed=current&&freshLampObservation(z);
     const delta=['warn','bad'].includes(tone)?lampDelta(z,observed):'';
-    name.append(el('span','lamp-state',v.title+(delta&&!v.title.includes('Lutron shows')?' · '+delta:'')));{const last=lastCommandText(z,elapsed,timed);if(last)name.append(el('span','lamp-last',last))}sm.append(bulb(zoneLight(z),true),name,lampRowLevel(z,observed));
+    name.append(el('span','lamp-state',v.title+(delta&&!v.title.includes('Lutron shows')?' · '+delta:'')));{const last=lastCommandText(z,elapsed,timed),tr=zoneTrace(z.zone)??timed?.get(z.zone)?.g?.trace??null;if(last){if(tr){const b=el('button','plain inline lamp-last',last+' ›');b.type='button';b.setAttribute('aria-label',`${last}: show this command in Activity`);b.onclick=e=>{e.preventDefault?.();e.stopPropagation?.();openTrace(tr,z.zone)};name.append(b)}else name.append(el('span','lamp-last',last))}}sm.append(bulb(zoneLight(z),true),name,lampRowLevel(z,observed));
     const rawChecks=Array.isArray(z.checks)?z.checks.filter(c=>c&&typeof c==='object'):[];
     const checks=!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:staleChecks(z,rawChecks);
     const body=el('div','lamp-body'),sub=[z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null,isDirect(z)?'Direct Zigbee':null,fixtureText(lz)||null].filter(Boolean).join(' · ');if(sub)body.append(el('p','zone-sub',sub));
     const trio=el('div','trio flow');trio.append(lutronSide(z.lutron),el('span','flow-arrow','→'),sentSide(z.sent,elapsed),el('span','flow-arrow','→'),lampSide(z.lamp,elapsed,z.output));body.append(levelRail(z),trio,showBlock(z,current,observed),checkList(checks));
     card.append(sm,body);card.open=openLamps.has(key);card.addEventListener('toggle',()=>{if(card.open)openLamps.add(key);else openLamps.delete(key)});cards.push(card)}
-  $('zones').replaceChildren(...(cards.length?cards:[el('p','empty','No bridged zones reported yet.')]));
+  $('zones').replaceChildren(...(cards.length?cards:[emptyState('No rooms yet','The bridge has no Lutron zones mapped. Map your first zone to see it here.','Open Zone mapping',()=>goTo('settings','mapping-card'))]));
   const stats=lampSummary();
   const out=data?.output&&typeof data.output==='object'?data.output:null,heldNote=out&&out.backend!=='n4'&&out.admitted!==true?'Lighting output is held at the gateway: commands from Lutron are recorded but not sent to the lamps. ':'';
-  $('device-note').textContent=heldNote+(zones.length?(!current?'Current lamp comparisons are unavailable.':stats.issues.length?`${stats.issues.length} of ${zones.length} lamp${zones.length===1?' needs':'s need'} attention.`:stats.pending?`${stats.good} of ${zones.length} lamps in sync; ${stats.pending} not compared yet.`:`All ${stats.good} lamps are in sync with Lutron.`)+` Show times use ${data.time_zone||'an unknown time zone'}.`:'Waiting for live device data.');
-  $('ha-note').textContent=data?.home_assistant?'Lutron states come from Home Assistant’s Lutron integration and refresh about every 15 seconds.':'Home Assistant isn’t reachable, so Lutron states can’t be compared.'}
+  $('device-note').textContent=heldNote+(zones.length?(!current?'Current lamp comparisons are unavailable.':stats.issues.length?`${stats.issues.length} of ${zones.length} lamp${zones.length===1?' needs':'s need'} attention.`:stats.pending?`${stats.good} of ${zones.length} lamps in sync; ${stats.pending} not compared yet.`:`All ${stats.good} lamps are in sync with Lutron.`)+` Show times use ${data.time_zone||'an unknown time zone'}.`:'');
+  $('ha-note').textContent=!zones.length?'':data?.home_assistant?'Lutron states come from Home Assistant’s Lutron integration and refresh about every 15 seconds.':'Home Assistant isn’t reachable, so Lutron states can’t be compared.'}
 const zoneOf=d=>d.zone??d.zone_id;
 let gatewayTimezone=null;
 let haData=null,haError='',haIndex={zone:new Map(),serial:new Map(),name:new Map()},haLabelSig='',haSunSig='',lastDevices=null,devicesReceivedAt=0,lastProgram=null,zoneFilterSig='';
@@ -1628,7 +1670,7 @@ function haGroup(){const rows=[['Status',haData?'Connected':'Not available',haDa
 
 let programChips=[],programSig='';
 function renderProgramZones(rows){const known=rows.filter(d=>Number.isInteger(Number(zoneOf(d)))&&zoneOf(d)!==null&&zoneOf(d)!==undefined);const sig=JSON.stringify(known.map(d=>[zoneOf(d),d.name]))+haLabelSig;if(sig===programSig)return;programSig=sig;
-  programChips=known.map(d=>{const z=Number(zoneOf(d)),b=el('button','chip');b.type='button';const info=zoneInfo(z);b.append(el('span','',info.title),el('small','',[info.area,String(z)].filter(Boolean).join(' · ')));b.onclick=()=>{$('program-zone').value=String(z);loadProgram()};return {z,b}});$('program-zones').replaceChildren(...programChips.map(c=>c.b));markProgramZone()}
+  programChips=known.map(d=>{const z=Number(zoneOf(d)),b=el('button','chip');b.type='button';const info=zoneInfo(z);b.append(el('span','',info.title));if(info.area||info.title==='Zone '+z)b.append(el('small','',info.area||String(z)));b.onclick=()=>{$('program-zone').value=String(z);loadProgram()};return {z,b}});$('program-zones').replaceChildren(...programChips.map(c=>c.b));markProgramZone()}
 function markProgramZone(){const z=Number($('program-zone').value);for(const c of programChips)c.b.setAttribute('aria-pressed',String(c.z===z))}
 function section(title,...nodes){const s=el('div','prog-section');s.append(el('h3','',title),...nodes);return s}
 function svgEl(svg,tag,attrs){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)e.setAttribute(k,String(attrs[k]));svg.append(e);return e}
@@ -1753,17 +1795,24 @@ const CLOSING_STAGES=['report-sent','command-dropped','delivery-failed','superse
 const closed=g=>CLOSING_STAGES.some(s=>g.stages.has(s));
 function commandSeq(e){const seq=e.schema_version>=2?e.command_seq:e.seq;return Number.isInteger(seq)&&seq>=0?seq:null}
 // A direct lamp confirmation belongs to a command only when the gateway explicitly correlates it.
-function directApplied(g){const req=g.events.find(e=>REQUEST_STAGES.has(e.stage)),seq=req?commandSeq(req):null;
+function directApplied(g){if(g.trace)return g.events.find(e=>e.stage==='applied'&&e.confirmed!==-1)||null;const req=g.events.find(e=>REQUEST_STAGES.has(e.stage)),seq=req?commandSeq(req):null;
   return seq!==null&&req.zone===g.zone&&Number.isFinite(req.ts_ms)?g.events.find(e=>e.stage==='applied'&&e.zone===g.zone&&commandSeq(e)===seq&&Number.isFinite(e.ts_ms)&&e.ts_ms>=req.ts_ms):null}
 function reportSeq(e){const seq=e.schema_version>=2?e.report_seq:e.requested;return Number.isInteger(seq)&&seq>=0?seq:null}
 function reportLevel(e){return e.schema_version>=2?e.reported:e.confirmed}
 const REPORT_REASONS={'command-settled':'Command settled','observed-brightness-change':'Brightness changed','observed-color-change':'Color changed','periodic-refresh':'Periodic refresh',correction:'Hub correction','retry-after-failure':'Retry after failure','query-reply':'Property query reply','initial-observation':'Initial observation'};
 function reportReason(e){return REPORT_REASONS[e.reason]||e.reason||null}
-function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),solo=new Map();
+/* The gateway's command trace (events[].trace): one id per lighting command per boot, shared by every stage.
+   Absent on older gateways, which keep the zone and command_seq grouping below. */
+const traceOf=e=>{const t=e?.trace;return Number.isInteger(t)&&t>0&&t<=0xffffffff?t:null};
+/* A zone's latest command trace from /api/devices, under whichever key the gateway uses. */
+function zoneTrace(zone){const d=(lastDevices?.zones||[]).find(x=>x&&x.zone===zone);if(!d)return null;for(const k of ['trace','last_trace','command_trace','trace_id']){const t=traceOf({trace:d[k]});if(t!==null)return t}return null}
+function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),solo=new Map(),traces=new Map();
   const single=(z,e)=>{const mine=solo.get(z)||new Map(),prev=mine.get(e.stage),p=prev?.events[0];solo.set(z,mine);
     if(p&&(REPORT_STAGES.has(e.stage)&&z!==null&&p.reason===e.reason||e.stage==='observed'&&p.confirmed===e.confirmed&&p.requested===e.requested||e.stage==='ketra-query')){prev.events.push(e);return}
     const g={kind:'single',zone:z,events:[e]};groups.push(g);mine.set(e.stage,g)};
-  for(const e of rows){const z=Number.isInteger(e.zone)&&e.zone>=0?e.zone:null,seq=commandSeq(e);
+  for(const e of rows){const z=Number.isInteger(e.zone)&&e.zone>=0?e.zone:null,seq=commandSeq(e),tr=traceOf(e);
+    if(tr!==null){let g=traces.get(tr);if(!g){g={kind:'command',zone:z,events:[],stages:new Set(),trace:tr};groups.push(g);traces.set(tr,g);if(z!==null){const list=commands.get(z)||[];commands.set(z,list);list.push(g)}}
+      else if(g.zone===null&&z!==null)g.zone=z;g.events.push(e);g.stages.add(e.stage);solo.delete(z);continue}
     if(z===null||!COMMAND_STAGES.has(e.stage)){single(z,e);continue}
     // Explicitly uncorrelated v2 reports (including queries) cannot finish a command.
     if(REPORT_STAGES.has(e.stage)&&e.schema_version>=2&&seq===null){single(z,e);continue}
@@ -1776,16 +1825,18 @@ function groupEvents(rows){const groups=[],bySeq=new Map(),commands=new Map(),so
     solo.delete(z);
     if(!g){g={kind:'command',zone:z,events:[],stages:new Set()};groups.push(g);list.push(g);if(seq!==null)bySeq.set(z+':'+seq,g)}
     g.events.push(e);g.stages.add(e.stage)}
+  /* A traced command that never finished, followed by a newer command for the same zone, was replaced rather than stuck. */
+  for(const list of commands.values())list.forEach((g,i)=>{if(g.trace&&!FINAL_STAGES.some(s=>g.stages.has(s))&&!g.stages.has('applied')&&!g.stages.has('confirmed')&&list.slice(i+1).some(n=>[...n.stages].some(x=>REQUEST_STAGES.has(x))))g.replaced=true});
   return groups}
 function commandSummary(g){const has=x=>g.stages.has(x),ev=g.events,last=ev[ev.length-1];
   const asked=ev.filter(e=>!NO_LEVEL_STAGES.has(e.stage)&&!REPORT_STAGES.has(e.stage)).map(e=>e.requested).filter(known),lights=ev.filter(e=>!NO_LEVEL_STAGES.has(e.stage)).map(e=>REPORT_STAGES.has(e.stage)?reportLevel(e):e.confirmed).filter(known);
   const zb=directCmd(g),applied=zb?!!directApplied(g):has('applied'),drop=DROP_STAGES.find(has);
   const req=asked.find(isLevel)??asked[0],conf=lights.slice().reverse().find(isLevel)??lights[lights.length-1];
-  let [label,tone]=drop?[DROP_TEXT[drop],'bad']:has('command-dropped')?['Dropped by the endpoint','bad']:has('ketra-unrouted')&&!applied?['No Ketra lamps for this zone · held until one is added','warn']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Reported to Lutron · hub corrected the level','warn']:['Reported to Lutron','info']):has('ketra-held')?['Held at the bridge · direct Zigbee output not admitted','warn']:has('confirmed')&&!(zb&&has('correction'))?['Result reported · forwarding to Lutron','info']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:applied?[zb?'Lamps at the commanded level · awaiting report':'Accepted · awaiting report','info']:zb&&(has('ketra-dispatch')||has('ketra-uart'))?['Sent to lamps · waiting for readback','info']:zb&&has('native-stream')?['Queued for the Zigbee node','info']:zb&&has('selection-ready')?['Selection checked · lamp submission not recorded','info']:zb?['Received · waiting for the Ketra engine','info']:['Sent · waiting for hub','info'];
-  const age=Number(latestStatus?.gateway_uptime_ms)-Number(last.ts_ms);if(!FINAL_STAGES.some(has)&&!has('confirmed')&&!has('ketra-held')&&Number.isFinite(age)&&age>120000)[label,tone]=[`No progress for ${duration(age)}`,'warn'];
+  let [label,tone]=drop?[DROP_TEXT[drop],'bad']:has('command-dropped')?['Dropped by the endpoint','bad']:has('ketra-unrouted')&&!applied?['No Ketra lamps for this zone · held until one is added','warn']:has('delivery-failed')?['Couldn’t reach the hub','bad']:has('superseded')||g.replaced?['Replaced by a newer command','wait']:has('report-failed')?['Report to Lutron failed','bad']:has('report-sent')?(has('correction')?['Reported to Lutron · hub corrected the level','warn']:['Reported to Lutron','info']):has('ketra-held')?['Held at the bridge · direct Zigbee output not admitted','warn']:has('confirmed')&&!(zb&&has('correction'))?['Result reported · forwarding to Lutron','info']:has('correction')?['Hub corrected the level','warn']:has('retrying')||has('failed')?['Retrying','warn']:applied?[zb?'Lamps at the commanded level · awaiting report':'Accepted · awaiting report','info']:zb&&(has('ketra-dispatch')||has('ketra-uart'))?['Sent to lamps · waiting for readback','info']:zb&&has('native-stream')?['Queued for the Zigbee node','info']:zb&&has('selection-ready')?['Selection checked · lamp submission not recorded','info']:zb?['Received · waiting for the Ketra engine','info']:['Sent · waiting for hub','info'];
+  const age=Number(latestStatus?.gateway_uptime_ms)-Number(last.ts_ms);if(!g.replaced&&!FINAL_STAGES.some(has)&&!has('confirmed')&&!has('ketra-held')&&Number.isFinite(age)&&age>120000)[label,tone]=[`No progress for ${duration(age)}`,'warn'];
   const title=isLevel(req)?(req===0?'Turn off':'Set to '+pct(req)):[...g.stages].some(x=>REQUEST_STAGES.has(x))?'Command':'Command (start no longer in feed)';
   return {title,label,tone,req,conf,corrected:has('correction')}}
-function commandSteps(g){const has=x=>g.stages.has(x),drop=DROP_STAGES.find(has),stopped=has('superseded')||has('command-dropped')||has('delivery-failed')||!!drop,held=has('ketra-held'),zb=held||directCmd(g),applied=zb?!!directApplied(g):has('applied'),sent=has('ketra-dispatch')||has('ketra-uart');
+function commandSteps(g){const has=x=>g.stages.has(x),drop=DROP_STAGES.find(has),stopped=has('superseded')||!!g.replaced||has('command-dropped')||has('delivery-failed')||!!drop,held=has('ketra-held'),zb=held||directCmd(g),applied=zb?!!directApplied(g):has('applied'),sent=has('ketra-dispatch')||has('ketra-uart');
   const hub=drop?['bad',DROP_TEXT[drop]]:held&&!stopped?['warn','Held at the bridge: direct Zigbee output is not admitted']:zb&&has('ketra-unrouted')&&!sent&&!applied?['warn','No Ketra lamps are listed for this zone (Settings → Ketra lamps)']:zb&&(sent||applied)?['good','Sent to the lamps through the Zigbee node']:zb&&has('selection-ready')&&!has('native-stream')?['pending','Selection checked · lamp submission not recorded']:zb&&(has('native-stream')||has('native-queued'))?['pending','Queued for the Zigbee node']:!zb&&applied?['good','Accepted by the Ketra hub (N4)']:has('command-dropped')?['bad','Dropped before reaching the hub']:has('delivery-failed')?['bad','Never reached the hub']:has('correction')?['warn','The hub reported a different level']:has('retrying')||has('failed')?['warn','Retrying the hub']:stopped?['skip','Skipped']:['pending','Waiting for the hub'];
   return [['From Lutron',...([...g.stages].some(x=>REQUEST_STAGES.has(x))?['good','Command received from Lutron']:['missing','The start of this command is no longer in the feed'])],[zb?'To lamps':'To hub',...hub],
     [zb?'Lamp reading':'Hub reading',...(held?['skip','The gateway takes no lamp readings while direct Zigbee output is held']:has('correction')?['warn',zb?'The lamp reports a different level':'The hub reports the lights at a different level']:zb&&applied?['good','Every lamp in the zone read back the commanded level']:has('confirmed')?['pending',`A command result was reported; ${zb?'lamp':'hub'} readback is not established`]:stopped?['skip','Skipped']:['pending',zb?'Waiting for a lamp reading':'Waiting for a hub reading'])],
@@ -1808,10 +1859,15 @@ function stepLevels(e,asked){const s=e.stage,out=[],add=(k,v,cls)=>{if(!known(v)
   else{add('Asked',e.requested);add('Lights',e.confirmed)}
   return out}
 function rawFields(e){return ['requested','confirmed','command_seq','report_seq','reported','reason','endpoint_ts_ms'].filter(k=>present(e[k])).map(k=>`${k} ${val(e[k])}`).join(' · ')}
-function eventDetail(g,asked){const list=el('ol','event-steps'),first=g.events[0];
+/* What each step means, for the "+164 ms lamp confirmed" offsets of a traced command. */
+const STEP_PLAIN={requested:'received from Lutron','native-requested':'received from Lutron','readback-policy':'readback planned','ketra-dispatch':'sent to the Zigbee node','ketra-uart':'sent to the lamps','ketra-query':'lamp reading requested','native-stream':'queued for the lamps',applied:'lamp confirmed',confirmed:'result sent to the endpoint',observed:'lamp reading','report-sent':'reported to Lutron','report-failed':'report to Lutron failed',superseded:'replaced by a newer command',correction:'lamp reported a different level','delivery-failed':'could not reach the lamps'};
+const stepPlain=(stage,zb)=>stage==='applied'&&!zb?'accepted by the Ketra hub':STEP_PLAIN[stage]||stageInfo(stage)[0].toLowerCase();
+function eventDetail(g,asked){const list=el('ol','event-steps'),first=g.events[0],zb=g.stages?directCmd(g):false;
+  if(g.trace){const end=Number(g.events[g.events.length-1].ts_ms)-Number(first.ts_ms),offs=el('ol','offsets');for(const e of g.events){const d=Number(e.ts_ms)-Number(first.ts_ms);offs.append(el('li','',e===first?stepPlain(e.stage,zb):`+${msText(d)} ${stepPlain(e.stage,zb)}`))}
+    const box=el('li','trace-steps');box.append(el('strong','',`${g.replaced?'Replaced by a newer command':'End to end'} · ${msText(end)}`),offs);list.append(box)}
   for(const e of g.events){const li=el('li'),at=wallTime(e),[label,tone]=stageInfo(e.stage),p=pill(label,tone),d=Number(e.ts_ms)-Number(first.ts_ms);p.title=val(e.stage);
     const lv=el('span','lv');lv.append(...stepLevels(e,asked));const raw=rawFields(e),path=HOPS[e.stage]?.[2],seq=commandSeq(e),report=reportSeq(e);if(REPORT_STAGES.has(e.stage)){const reason=reportReason(e);if(reason)lv.append(el('span','sub',reason))}
-    li.append(el('span','when',(at===null?'Uptime '+clock(e.ts_ms):wallClock(at))+(e!==first&&Number.isFinite(d)?` · +${since(d)}`:'')),hopChip(e.stage)||el('span'),p,lv,el('span','code',`Event #${val(e.id)} · ${val(e.stage)}${path?' · '+path:''} · uptime ${clock(e.ts_ms)}${seq!==null?' · command seq '+seq:''}${REPORT_STAGES.has(e.stage)&&report!==null?' · report seq '+report:''}${Number.isInteger(e.endpoint_ts_ms)?' · endpoint uptime '+clock(e.endpoint_ts_ms):''}${raw?' · raw '+raw:''}`));list.append(li)}
+    li.append(el('span','when',(at===null?'Uptime '+duration(e.ts_ms):wallClock(at))+(e!==first&&Number.isFinite(d)?` · +${since(d)}`:'')),hopChip(e.stage)||el('span'),p,lv,el('span','code',`Event #${val(e.id)} · ${val(e.stage)}${path?' · '+path:''} · uptime ${duration(e.ts_ms)}${seq!==null?' · command seq '+seq:''}${REPORT_STAGES.has(e.stage)&&report!==null?' · report seq '+report:''}${Number.isInteger(e.endpoint_ts_ms)?' · endpoint uptime '+duration(e.endpoint_ts_ms):''}${traceOf(e)!==null?' · trace '+traceOf(e):''}${raw?' · raw '+raw:''}`));list.append(li)}
   return list}
 function eventView(data){if(!Array.isArray(data.events))throw Error('Gateway event response has no events list');if(data.boot_id!==undefined&&data.boot_id!==eventBootId){eventBootId=data.boot_id;eventRows=[];eventKeys.clear();eventCursor=0;eventAnchor=null;expandedEvents.clear()}if(Number.isFinite(data.boot_epoch_ms))eventAnchor=data.boot_epoch_ms;for(const e of data.events){const key=String(eventBootId)+':'+String(e.id);if(!eventKeys.has(key)){eventKeys.add(key);eventRows.push(e);if(Number.isInteger(e.id))eventCursor=Math.max(eventCursor,e.id)}}if(eventRows.length>500){eventRows=eventRows.slice(-500);eventKeys=new Set(eventRows.map(e=>String(eventBootId)+':'+String(e.id)))}
   eventLost=Number(data.lost)||0;eventOldest=Number(data.oldest);$('cursor-note').textContent=`Technical: boot ${val(eventBootId)} · delivered cursor ${eventCursor} · next sequence ${data.next_sequence??data.next??'—'}`+(eventLost?` · ${eventLost} events missed`:'');renderEvents()}
@@ -1827,11 +1883,11 @@ function drawEvents(){const tz=activityZone(),abbr=zoned(Date.now(),{timeZoneNam
     const key=g.kind[0]+':'+String(eventBootId)+':'+String(first.id),open=expandedEvents.has(key),at=wallTime(first);shown++;seen.add(key);
     if(at!==null&&dayKey(at)!==day){day=dayKey(at);const tr=el('tr','day'),td=el('td','',dayLabel(at));td.setAttribute('colspan','5');tr.append(td);body.append(tr)}
     const tr=el('tr',eventLost&&g.events.some(e=>Number(e.id)===eventOldest)?'gap':'');if(shownEvents.size&&!shownEvents.has(key))tr.setAttribute('data-new','');tr.onclick=()=>{if(!expandedEvents.delete(key))expandedEvents.add(key);renderEvents()};tr.rowKey=key;tr.rowOpen=open;
-    const tc=cell(tr,'');tc.title='Gateway uptime '+clock(first.ts_ms);if(at!==null)tc.append(el('strong','time',wallClock(at)),el('span','sub',ago(at)));else tc.append(el('span','time','Uptime '+clock(first.ts_ms)),el('span','sub','Clock time unavailable'));
-    const zc=cell(tr,'');if(g.zone===null)zc.textContent=first.zone===-1?'Bridge':val(first.zone);else{const zi=zoneInfo(g.zone);zc.append(el('strong','',zi.title));const sub=[zi.area,zi.title==='Zone '+g.zone?null:'Zone '+g.zone].filter(Boolean).join(' · ');if(sub)zc.append(el('span','sub',sub))}
-    const wc=cell(tr,''),p=pill(label,tone),last=g.events[g.events.length-1],n=g.events.length;if(sum)wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));else{p.title=val(first.stage);const hop=hopChip(first.stage);if(REPORT_STAGES.has(first.stage))wc.append(el('span','what',n>1?'Status updates':'Status update'));wc.append(p);if(hop)wc.append(' ',hop);if(REPORT_STAGES.has(first.stage)&&reportReason(first))wc.append(el('span','sub',reportReason(first)));
+    const tc=cell(tr,'');tc.title='Gateway uptime '+duration(first.ts_ms);if(at!==null)tc.append(el('strong','time',wallClock(at)),el('span','sub',ago(at)));else tc.append(el('span','time','Uptime '+duration(first.ts_ms)),el('span','sub','Clock time unavailable'));
+    const zc=cell(tr,'');if(g.zone===null)zc.textContent=first.zone===-1?'Bridge':val(first.zone);else{const zi=zoneInfo(g.zone);zc.append(el('strong','',zi.title));const sub=[zi.area].filter(Boolean).join(' · ');if(sub)zc.append(el('span','sub',sub))}
+    const wc=cell(tr,''),p=pill(label,tone),last=g.events[g.events.length-1],n=g.events.length;if(sum){wc.append(el('span','what',sum.title),p,stepTrack(commandSteps(g)));if(g.trace&&n>1&&!g.replaced)wc.append(el('span','sub',`End to end ${msText(Number(last.ts_ms)-Number(first.ts_ms))}`))}else{p.title=val(first.stage);const hop=hopChip(first.stage);if(REPORT_STAGES.has(first.stage))wc.append(el('span','what',n>1?'Status updates':'Status update'));wc.append(p);if(hop)wc.append(' ',hop);if(REPORT_STAGES.has(first.stage)&&reportReason(first))wc.append(el('span','sub',reportReason(first)));
       if(n>1){const end=wallTime(last);wc.append(el('span','sub',REPORT_STAGES.has(first.stage)?`${n} reports${at!==null&&end!==null?` · ${wallClock(at)}–${wallClock(end)}`:''} · not part of a command`:`${n} identical readings`))}else if(REPORT_STAGES.has(first.stage))wc.append(el('span','sub','Not part of a command'))}
-    const lc=cell(tr,'');if(sum){const req=sum.req,conf=sum.conf;if(known(req))lc.append(levelLine('Asked',req));if(known(conf)){lc.append(levelLine(sum.corrected?'Hub reading':'Reported',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}}else lc.append(...stepLevels(last));if(!lc.children.length)lc.append(el('span','muted','—'));
+    const lc=cell(tr,'');if(sum){const req=sum.req,conf=sum.conf;if(known(req))lc.append(levelLine('Asked',req));if(known(conf)){lc.append(levelLine(sum.corrected?'Hub reading':'Reported',conf,sum?.corrected&&isLevel(req)&&req!==conf?'warn-text':''));if(isLevel(conf)){const m=el('span','meter'),bar=el('i');bar.style.width=conf/100+'%';m.append(bar);lc.append(m)}}}else lc.append(...stepLevels(last));if(!lc.children.length)lc.append(el('span','sr','No level'));
     const btn=el('button','disclose','›');btn.setAttribute('aria-expanded',String(open));btn.setAttribute('aria-label',open?'Hide steps':'Show steps');const dc=cell(tr,'');dc.className='disc';dc.append(btn);body.append(tr);
     if(open){const d=el('tr','detail'),td=el('td');d.rowKey=key+'/steps';d.rowOpen=true;d.rowDetail=true;td.setAttribute('colspan','5');td.append(eventDetail(g,sum?.req));d.append(td);body.append(d)}}
   shownEvents=shownEvents.size>2000?seen:new Set([...shownEvents,...seen]);
@@ -1889,7 +1945,7 @@ function perfView(groups=groupEvents(eventRows)){const timings=commandTimings(gr
     d.append(head,v,el('span','stat-s',`Since gateway startup · Command count excludes native Shows · ${num(r.sends)} send requests, including polls · ${num(r.observed)} zone readbacks${unrouted?` · ${num(unrouted)} without lamps`:''}${Number(r.unreachable)>0?` · ${num(r.unreachable)} lamps unreachable`:''}`));d.title='Counters from the gateway\'s direct routing engine. Commands without lamps had no lamp in the Ketra inventory for their zone.';blocks.push(d)}
   $('perf-stats').replaceChildren(...blocks);
   const recent=timings.slice(-10).reverse(),scale=Math.max(300,...recent.map(t=>t.marks.length?t.marks[t.marks.length-1][1]:0)),rows=[];
-  for(const t of recent){const r=el('div','wf'),name=el('span','wf-name'),track=el('div','wf-track'),zi=zoneInfo(t.g.zone),at=wallTime(t.g.events[0]);name.append(zi.title,el('small','',at===null?'Uptime '+clock(t.start):wallClock(at)));name.title=zi.title;
+  for(const t of recent){const r=el('div','wf'),name=el('span','wf-name'),track=el('div','wf-track'),zi=zoneInfo(t.g.zone),at=wallTime(t.g.events[0]);name.append(zi.title,el('small','',at===null?'Uptime '+duration(t.start):wallClock(at)));name.title=zi.title;
     let prev=0;const seg=(cls,w,tip)=>{const i=el('i',cls);i.style.width=Math.max(.6,w/scale*100)+'%';i.title=tip;track.append(i)};
     for(const [k,ms] of t.marks){seg('seg-'+k,ms-prev,`${markLabel(k)} at +${msText(ms)} (this hop ${msText(ms-prev)})`);prev=ms}
     const tail=t.fail?'seg-fail':t.held?'seg-held':t.replaced?'seg-replaced':null;if(tail&&t.span>prev)seg(tail,Math.min(t.span,scale)-prev,`${t.fail||(t.held?'Held at the bridge':'Replaced by a newer command')} at +${msText(t.span)}`);
@@ -1897,7 +1953,7 @@ function perfView(groups=groupEvents(eventRows)){const timings=commandTimings(gr
     total.title=end?`${markLabel(end[0])} after ${msText(end[1])}`:'';r.append(name,track,total);rows.push(r)}
   $('perf-waterfall').replaceChildren(...(rows.length?rows:[el('p','empty','No commands from Lutron in the feed yet. Change a light to see its timing.')]));
   const timed=timings.filter(t=>t.marks.length).length,untimed=timings.length-timed;
-  $('perf-count').textContent=timings.length?`${timed} command${timed===1?'':'s'} timed${untimed?` · ${untimed} without timing`:''}`:'';
+  $('perf-count').textContent=timings.length?`${timed} command${timed===1?'':'s'} timed${untimed?` · ${untimed} without timing`:''}${timings.some(t=>t.g.trace)?' · by command trace':''}`:'';
   $('perf-note').textContent=`Times come from the gateway's clock, so they leave out Home Assistant and browser delays; Thread transit into the endpoint isn't included because the endpoint keeps its own clock. ${direct?'On direct Zigbee, "sent to lamps" is when the gateway hands the frame to the Zigbee node. "Lamp reading" requires a matching command confirmation that every lamp in the zone read back the commanded level. Shows are sampled periodically; their readbacks do not measure per-command latency. Missing confirmation does not imply a delay or failure.':'"Lutron → lamp reading" uses the zone\'s first hub reading within 15 seconds.'}${pollMs===null?'':` This dashboard's last set of cache requests took ${msText(pollMs)}.`}`}
 
 // The CCX stream has its own boot/cursor and does not share lighting-command grouping.
@@ -1922,7 +1978,7 @@ function ccxEventView(data){if(data?.schema_version!==1||!Array.isArray(data.eve
   for(const e of data.events){if(!e||!Number.isInteger(e.id))continue;const key=String(ccxBoot)+':'+e.id;if(!ccxKeys.has(key)){ccxKeys.add(key);ccxRows.push(e);ccxCursor=Math.max(ccxCursor,e.id)}}
   if(Number.isInteger(data.cursor)&&data.cursor>=0)ccxCursor=Math.max(ccxCursor,data.cursor);
   if(ccxRows.length>500){ccxRows=ccxRows.slice(-500);ccxKeys=new Set(ccxRows.map(e=>String(ccxBoot)+':'+e.id));for(const k of ccxOpen)if(!ccxKeys.has(k))ccxOpen.delete(k)}
-  const stream=data.stream||{},mqtt=data.mqtt||{},state=stream.state||'connecting';$('ccx-stream-pill').textContent={online:'Live',unsupported:'Not supported',disconnected:'Disconnected',connecting:'Connecting',pausing:'Pausing for sidecar update',paused:'Paused for sidecar update'}[state]||state;
+  const stream=data.stream||{},mqtt=data.mqtt||{},state=stream.state||'connecting';$('ccx-stream-pill').textContent={online:'Live',unsupported:'Not supported',disconnected:'Disconnected',connecting:'Connecting',pausing:'Pausing for the listener update',paused:'Paused for the listener update'}[state]||state;
   $('ccx-stream-pill').className='pill '+(state==='online'?'good':state==='disconnected'?'warn':'wait');
   $('ccx-stream-note').textContent=`Stream ${state} · boot ${val(ccxBoot)} · cursor ${ccxCursor}`+(stream.missed?` · ${stream.missed} events missed`:'')+(data.lost?` · ${data.lost} missing from this view`:'')+(mqtt.online!==undefined?` · MQTT ${mqtt.online?'online':'offline'}, ${num(mqtt.sent_to_socket)} sent to socket, ${num(mqtt.dropped)} dropped`:' · MQTT unavailable');
   $('ccx-latency').textContent=ccxTiming([...ccxRows].reverse().find(e=>e.kind!=='ccx.action_stage')||ccxRows[ccxRows.length-1],mqtt)+' · Gateway → app is unknown without a clock mapping. App → MQTT and browser cache fetch are separate; submission is not lamp confirmation.';
@@ -1950,17 +2006,17 @@ function localRuleCard(r){const m=r.match||{},a=r.action||{},card=el('div','rule
   head.append(el('strong','',String(r.id)),pill(r.enabled?'Enabled':'Disabled',r.enabled?'good':'wait'));
   when.append(el('b','','When'),el('span','',!('kind' in m)?'Any CCX event':m.kind===''?'An event with an empty kind':CCX_KINDS[m.kind]||m.kind));
   if(m.serial!==undefined)when.append(el('span','','from '+(sourceName(m.serial)?`${sourceName(m.serial)} · serial ${m.serial}`:'serial '+m.serial)));
-  if(m.zone_id!==undefined)when.append(el('span','','for '+(lutronZoneName(m.zone_id)?`${lutronZoneName(m.zone_id)} · zone ${m.zone_id}`:'zone '+m.zone_id)));
+  if(m.zone_id!==undefined)when.append(el('span','','for '+(lutronZoneName(m.zone_id)||'zone '+m.zone_id)));
   if(m.message_type!==undefined)when.append(el('span','muted','message type '+m.message_type));
   if(!('kind' in m)&&m.serial===undefined&&m.zone_id===undefined&&m.message_type===undefined)when.append(el('span','warn-text','Matches every event'));
-  const zone=Number.isInteger(a.target_zone)?(lutronZoneName(a.target_zone)?`${lutronZoneName(a.target_zone)} (zone ${a.target_zone})`:'zone '+a.target_zone):'—';
+  const zone=Number.isInteger(a.target_zone)?(lutronZoneName(a.target_zone)||'zone '+a.target_zone):'no zone';
   then.append(el('b','','Then'));
   if(a.type==='select_show'){then.append(el('span','',`Select Natural Show ${a.show_id} on ${zone}`));if('level' in a)then.append(el('span','','at '+ruleLevel(a.level)))}
   else then.append(el('span','',`Set ${zone} to ${ruleLevel(a.level)}`));
   flow.append(when,el('span','','→'),then);card.append(head,flow);return card}
 async function loadLocalRules(){$('local-rules-note').textContent='Reading the gateway\'s rules…';
   try{const data=await req('ccx/rules');if(!Array.isArray(data?.rules))throw Error('invalid rules response');localRules=data.rules;renderLocalRules();$('local-rules-note').textContent=''}
-  catch(e){localRules=null;$('local-rules-pill').textContent='Unavailable';$('local-rules-pill').className='pill wait';$('local-rules').replaceChildren();$('local-rules-note').textContent='Rules unavailable or unsupported: '+e.message}}
+  catch(e){localRules=null;$('local-rules-pill').textContent='Unavailable';$('local-rules-pill').className='pill wait';$('local-rules').replaceChildren();$('local-rules-note').textContent=`The gateway's rules can't be read right now (${e.message}). Select Reload once the gateway is back.`}}
 function renderLocalRules(){if(!localRules)return;const on=localRules.filter(r=>r.enabled).length;$('local-rules-pill').textContent=localRules.length?`${on} of ${localRules.length} enabled`:'No rules';$('local-rules-pill').className='pill '+(on?'good':'wait');
   $('local-rules').replaceChildren(...(localRules.length?localRules.map(localRuleCard):[el('p','empty-state','The gateway has no rules yet. Select Edit rules to add one; new rules start disabled.')]))}
 function renderLocalShades(){const box=$('local-shades'),cca=typeof CCAUI!=='undefined'?CCAUI.local:null;if(!cca){box.replaceChildren(el('p','empty','CCA controls are unavailable.'));return}
@@ -2015,8 +2071,11 @@ function renderCcxRules(){ccxRuleHints();const forms=(ccxRules||[]).map((r,i)=>{
     if(r.action==='select_show')field(then,'show_id','Show ID',{list:'ccx-show-ids',mode:'numeric',placeholder:'0 needs a level'});
     f.append(head,when,then);return f});
   $('ccx-rule-rows').replaceChildren(...(forms.length?forms:[el('p','empty-state',ccxRules===null?'Rules are not loaded yet.':'No rules yet. Add one below; it starts disabled.')]));$('ccx-add-rule').disabled=ccxRules===null||ccxRules.length>=16;ccxRulesChanged()}
-function openRulesSheet(){const d=$('rules-sheet');if(typeof d.showModal==='function'&&!d.open)d.showModal();if(ccxRules===null)loadCcxRules();else renderCcxRules()}
-async function closeRulesSheet(){if(ccxRulesChanged()&&!await confirmSheet('Discard rule changes?','Your unsaved rule edits will be lost.','Discard'))return;if(ccxRulesBase)ccxRules=JSON.parse(JSON.stringify(ccxRulesBase));$('rules-sheet').close?.();loadLocalRules()}
+let sheetOpener=null;
+function rememberOpener(){sheetOpener=document.activeElement||null}
+function returnFocus(){const o=sheetOpener;sheetOpener=null;o?.focus?.()}
+function openRulesSheet(){rememberOpener();const d=$('rules-sheet');if(typeof d.showModal==='function'&&!d.open)d.showModal();if(ccxRules===null)loadCcxRules();else renderCcxRules()}
+async function closeRulesSheet(){if(ccxRulesChanged()&&!await confirmSheet('Discard rule changes?','Your unsaved rule edits will be lost.','Discard'))return;if(ccxRulesBase)ccxRules=JSON.parse(JSON.stringify(ccxRulesBase));$('rules-sheet').close?.();loadLocalRules();returnFocus()}
 async function loadCcxRules(){try{const data=await req('ccx/rules');if(!Array.isArray(data?.rules))throw Error('invalid rules response');ccxRules=data.rules.map(ccxDraftRule);ccxRulesBase=JSON.parse(JSON.stringify(ccxRules));$('ccx-rules-pill').textContent='Loaded';$('ccx-rules-pill').className='pill good';$('ccx-rules-note').textContent=`${ccxRules.length} rule${ccxRules.length===1?'':'s'} on the gateway.`;renderCcxRules()}
   catch(e){$('ccx-rules-pill').textContent='Unavailable';$('ccx-rules-pill').className='pill wait';$('ccx-rules-note').textContent='Rules unavailable or unsupported: '+e.message}}
 $('ccx-add-rule').onclick=()=>{if(ccxRules===null||ccxRules.length>=16)return;ccxRules.push(ccxDraftRule({id:'rule-'+(ccxRules.length+1),enabled:false,match:{},action:{type:'set_level',level:'event'}}));renderCcxRules()};
@@ -2037,22 +2096,22 @@ function isDirty(){return !!draftFrom&&(!!jsonError||JSON.stringify(draftList())
 function draftStale(){return !!draftFrom&&!!configBase&&(draftFrom.generation!==configBase.generation||draftFrom.hash!==configBase.hash)}
 function zoneErrors(){const errs=[],seen=new Set();draftZones.forEach((r,i)=>{const id=r.z.zone_id;if(!Number.isInteger(id)||id<0)errs.push([r,`Row ${i+1}: zone ID must be a whole number.`]);else if(seen.has(id))errs.push([r,`Zone ID ${id} is used more than once.`]);else seen.add(id)});return errs}
 /* Zone mapping: one text row per zone; Edit opens a side sheet with labelled fields. The draft is still applied as one change. */
-const ZONE_LABELS={zone_id:'Zone ID',name:'Name',n4_group:'N4 group',serial:'Lutron serial',warm_dim_curve:'Warm-dim curve'};
+const ZONE_LABELS={zone_id:'Zone ID',name:'Name',n4_group:'Ketra hub (N4) group',serial:'Lutron serial',warm_dim_curve:'Warm-dim curve'};
 let zoneEditing=null;
 function zoneChanged(r){return !r.orig||ZONE_FIELDS.some(([k])=>JSON.stringify(r.z[k])!==JSON.stringify(r.orig[k]))}
 function renderZones(){const locked=configBase?.editable===false,bad=new Set(zoneErrors().map(e=>e[0]));const rows=draftZones.map((r,i)=>{const z=r.z,row=el('div','zrow'+(bad.has(r)?' invalid':zoneChanged(r)?' changed':'')),t=el('div');
-    t.append(el('strong','',z.name||`Unnamed zone`),el('span','zmeta',[`Zone ${fieldText(z.zone_id)||'—'}`,z.n4_group!==undefined?`N4 group ${fieldText(z.n4_group)}`:null,z.serial!==undefined?`serial ${fieldText(z.serial)}`:null,z.warm_dim_curve!==undefined?`warm-dim ${fieldText(z.warm_dim_curve)}`:null].filter(Boolean).join(' · ')));
+    t.append(el('strong','',z.name||`Unnamed zone`),el('span','zmeta',[`Zone ${fieldText(z.zone_id)||'—'}`,z.n4_group!==undefined?`hub group ${fieldText(z.n4_group)}`:null,z.serial!==undefined?`serial ${fieldText(z.serial)}`:null,z.warm_dim_curve!==undefined?`warm-dim ${fieldText(z.warm_dim_curve)}`:null].filter(Boolean).join(' · ')));
     const hc=el('span','zha');hc.hidden=!haData;r.haCell=hc;t.append(hc);if(bad.has(r)||zoneChanged(r))t.append(el('span','zstate',bad.has(r)?'Check the zone ID':!r.orig?'New · not applied yet':'Edited · not applied yet'));
     const b=el('button','secondary',locked?'View':'Edit');b.type='button';b.setAttribute('aria-label',`${locked?'View':'Edit'} ${z.name||'zone '+(i+1)}`);b.onclick=()=>openZoneSheet(r);row.append(t,b);return row});
   if(!rows.length)rows.push(el('p','empty-state','No zones mapped yet. Select Add zone to create one.'));
   $('zone-rows').replaceChildren(...rows);$('add-zone').disabled=locked;editorChanged(true)}
-function openZoneSheet(r){const locked=configBase?.editable===false,i=draftZones.indexOf(r);zoneEditing=r;r.inputs={};
+function openZoneSheet(r){if(!zoneEditing)rememberOpener();const locked=configBase?.editable===false,i=draftZones.indexOf(r);zoneEditing=r;r.inputs={};
   const fields=ZONE_FIELDS.map(([key,hint,mode])=>{const l=el('label','field'),input=el('input');l.append(ZONE_LABELS[key]);input.value=fieldText(r.z[key]);input.placeholder=hint;input.disabled=locked;input.setAttribute('aria-label',`Row ${i+1} ${key.replace(/_/g,' ')}`);if(mode)input.setAttribute('inputmode',mode);if(key==='serial')input.setAttribute('list','ha-serials');
     input.addEventListener('input',()=>{const v=parseField(key,input.value,r.orig?.[key]);if(v===undefined)delete r.z[key];else r.z[key]=v;renderZones()});r.inputs[key]=input;l.append(input);return l});
   $('zone-sheet-fields').replaceChildren(...fields);$('zone-sheet-title').textContent=r.orig?`Edit ${r.z.name||'zone'}`:'Add a zone';$('zone-sheet-remove').disabled=locked;$('zone-sheet-remove').textContent=r.orig?'Remove this zone':'Discard this zone';
   const m=haFor(r.z);$('zone-sheet-ha').textContent=haData?(m?`Home Assistant: ${m.light.name||m.light.entity_id}${m.light.area?' · '+m.light.area:''}`:'No matching Home Assistant light.'):'';
   const d=$('zone-sheet');if(typeof d.showModal==='function'&&!d.open)d.showModal();editorChanged(false);r.inputs.name?.focus?.()}
-function closeZoneSheet(){if(zoneEditing)zoneEditing.inputs={};zoneEditing=null;$('zone-sheet').close?.();renderZones()}
+function closeZoneSheet(){if(zoneEditing)zoneEditing.inputs={};zoneEditing=null;$('zone-sheet').close?.();renderZones();returnFocus()}
 $('zone-sheet-close').onclick=closeZoneSheet;$('zone-sheet').addEventListener('close',()=>{if(zoneEditing)closeZoneSheet()});
 $('zone-sheet-remove').onclick=()=>{const r=zoneEditing;if(!r)return;draftZones.splice(draftZones.indexOf(r),1);closeZoneSheet()};
 function updateZoneMatches(){let fillable=0;for(const r of draftZones){const c=r.haCell;if(!c)continue;c.hidden=!haData;if(!haData){c.replaceChildren();continue}const m=haFor(r.z);if(!m){c.replaceChildren('Home Assistant: no match');continue}const l=m.light;c.replaceChildren(`Home Assistant: ${l.name||l.entity_id}${l.area?' · '+l.area:''} (${{zone:'by zone ID',serial:'by serial'}[m.by]||'by name'})`);if(!r.z.name&&l.name&&configBase?.editable!==false){fillable++;const b=el('button','plain inline',' Use this name');b.type='button';b.onclick=()=>useHAName(r,l.name);c.append(b)}}$('fill-names').hidden=!fillable}
@@ -2187,7 +2246,7 @@ async function refresh(){
       const s=results[0].value;health(s,startedAt);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;trackFirmwareStatus(s);renderZigbeeNode(s);
     }else{
       if(latestStatus)health({...latestStatus,monitoring:{age_s:snapshotAge(latestStatus),delayed:true}});
-      else setHero('warn','Monitoring unavailable','Waiting for a valid gateway snapshot. '+(results[0].reason?.message||''),false);
+      else renderNoStatus(results[0].reason?.message||'');
       trackFirmwareStatus(null);
     }
     if(results[1].status==='fulfilled'&&results[1].value&&typeof results[1].value==='object'&&!Array.isArray(results[1].value)&&Array.isArray(results[1].value.zones))deviceView(results[1].value,startedAt);
@@ -2196,7 +2255,7 @@ async function refresh(){
     else $('events-note').textContent='Event feed unavailable; retrying: '+(results[2].reason?.message||'invalid response');
     if(results[3].status==='fulfilled'&&results[3].value&&typeof results[3].value==='object'&&!Array.isArray(results[3].value)&&Array.isArray(results[3].value.zones))zonesView(results[3].value,startedAt);
     else if(lastZones)zonesView({...lastZones,monitoring:{age_s:zoneSnapshotAge(lastZones),delayed:true}});
-    else $('device-note').textContent='Lamp comparisons unavailable.';
+    else if(latestStatus)$('device-note').textContent='Lamp comparisons unavailable.';
     if(Date.now()-nativeRequestedAt>=30000){nativeRequestedAt=Date.now();req('ketra/native').then(n=>{if(n&&typeof n==='object'&&!Array.isArray(n))latestNative=n}).catch(()=>{})}
     if(latestStatus)health(latestStatus);
     if(configAutoPoll&&Date.now()>=configPollAfter)loadConfig().catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message);
@@ -2272,10 +2331,10 @@ function sidecarConfirmed(s,baseline){const u=s?.update,h=u?.expected_elf_sha256
   (s.slot===0||s.slot===1)&&Number.isSafeInteger(s.boot_id)&&s.boot_id>=0&&(!baseline||(s.boot_id!==baseline.boot&&s.slot!==baseline.slot)))}
 function renderSidecar(s){const pill=$('sidecar-pill'),facts=$('sidecar-facts'),u=s?.update||{},m=s?.monitoring||{};
   const supported=s?.schema_version===1&&s.supported===true,unknown=!s||m.delayed===true;
-  $('sidecar-feed-note').textContent=m.event_feed_paused?'The CCX event feed is pausing or paused for this update and reconciliation. It will resume from a live baseline; missed events are not replayed.':'The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.';
+  $('sidecar-feed-note').textContent=m.event_feed_paused?'The CCX event feed is pausing or paused for this update and reconciliation. It will resume from a live baseline; missed events are not replayed.':'The CCX event feed pauses during a listener update and resumes from a live baseline, without replaying missed events.';
   pill.textContent=unknown?'Unavailable':s.gateway_unsupported?'Unsupported':!s.online?'Offline':!supported?'Updater unavailable':'Online';pill.className='pill '+(unknown?'wait':!supported||!s.online?'warn':'good');
-  facts.replaceChildren(...(supported?[group('Running sidecar',[
-    ['Board MAC',val(s.mac)],['Antenna',val(s.antenna),s.antenna==='external'?'good':'warn'],['Version',val(s.version)],['Slot',val(s.slot)],
+  facts.replaceChildren(...(supported?[group('Running listener',[
+    ['Board','B1 (passive listener)'],['Board MAC',val(s.mac)],['Antenna',val(s.antenna),s.antenna==='external'?'good':'warn'],['Version',val(s.version)],['Slot',val(s.slot)],
     ['Full ELF SHA-256',val(s.elf_sha256)],['Boot ID',val(s.boot_id)],['Confirmed',s.confirmed===true?'Yes':s.pending_verify===true?'Pending verification':'No']])]:[]));
   {const v=$('dev-sidecar-vitals'),vital=(k,value,t,small)=>{const d=el('div','vital'+(t?' '+t:''));d.append(el('span','',k),el('strong','',value));if(small)d.append(el('small','',small));return d};
     v.setAttribute('data-n','4');v.replaceChildren(...(unknown?[]:[vital('Status',s.gateway_unsupported?'Not supported':s.online?'Online':'Offline',s.online||s.gateway_unsupported?'':'warn'),
@@ -2287,21 +2346,21 @@ function renderSidecar(s){const pill=$('sidecar-pill'),facts=$('sidecar-facts'),
   if(sidecarCandidate&&!sidecarSending&&sidecarFresh(s)&&sidecarConfirmed(s,sidecarCandidate)){
     sidecarCandidate=null;sidecarMessage='Update confirmed on the new boot and slot; the full ELF hash matches the gateway’s expected image.'}
   let note=sidecarMessage;
-  if(!s)note='Sidecar status unavailable. Updates are disabled until fresh status returns.';
-  else if(m.delayed||m.awaiting_fresh_status)note='Waiting for fresh sidecar status. The outcome may be uncertain; the image will not be sent again automatically.';
+  if(!s)note='Listener status unavailable. Updates are disabled until fresh status returns.';
+  else if(m.delayed||m.awaiting_fresh_status)note='Waiting for fresh listener status. The outcome may be uncertain; the image will not be sent again automatically.';
   else if(sidecarCandidate&&!sidecarSending){note=`Update outcome is uncertain (${val(u.state)}${u.error?': '+u.error:''}). The image will not be resent automatically. ${sidecarReady(s)?'The gateway permits a manual retry.':'Wait for the gateway to permit a retry; use USB recovery if the updater is unavailable.'}`}
-  else if(s.gateway_unsupported)note='This gateway does not expose sidecar updates. The sidecar also needs the one-time USB bootstrap before three-wire updates.';
-  else if(!supported&&!sidecarSending)note='The sidecar updater is unavailable or offline. It needs the one-time USB bootstrap; use USB recovery if its updater cannot run.';
+  else if(s.gateway_unsupported)note='This gateway does not expose listener updates. The listener also needs the one-time USB bootstrap before three-wire updates.';
+  else if(!supported&&!sidecarSending)note='The listener updater is unavailable or offline. It needs the one-time USB bootstrap; use USB recovery if its updater cannot run.';
   else if(u.state==='uncertain'||u.state==='failed')note=`Update ${u.state}${u.error?': '+u.error:''}. The image will not be resent automatically. ${sidecarReady(s)?'The gateway permits a manual retry.':'Wait for the gateway to permit a retry; use USB recovery if the updater is unavailable.'}`;
-  else if(u.busy||m.upload_in_flight)note='A sidecar update is in progress; other bridge lighting continues.';
+  else if(u.busy||m.upload_in_flight)note='A listener update is in progress; other bridge lighting continues.';
   else if(!note&&s.antenna!=='external')note='The external antenna is required before updating.';
-  else if(!note&&s.online!==true)note='The sidecar is offline. If its updater cannot run, recover it over USB.';
+  else if(!note&&s.online!==true)note='The listener is offline. If its updater cannot run, recover it over USB.';
   else if(!note&&sidecarFresh(s)&&sidecarConfirmed(s,null))note='The gateway reports the running image confirmed, with a matching full ELF hash.';
   $('sidecar-fw-note').textContent=note||'Choose a signed image when the gateway permits an update.';
   $('sidecar-upload').disabled=!(sidecarFile&&sidecarFileValid&&sidecarReady(s));
 }
 async function loadSidecarStatus(){if(sidecarFetching)return;sidecarFetching=true;try{sidecarStatus=await req('sidecar/status');sidecarStatusAt=Date.now();renderSidecar(sidecarStatus)}catch(e){sidecarStatus=null;renderSidecar(null)}finally{sidecarFetching=false}}
-async function pickSidecar(f){sidecarFile=f||null;sidecarFileValid=false;$('sidecar-firmware-name').textContent=f?`${f.name} · ${f.size.toLocaleString()} bytes`:'Choose a signed sidecar image';
+async function pickSidecar(f){sidecarFile=f||null;sidecarFileValid=false;$('sidecar-firmware-name').textContent=f?`${f.name} · ${f.size.toLocaleString()} bytes`:'Choose a signed listener image';
   $('sidecar-file-note').textContent='8,192–720,896 bytes, in 4,096-byte blocks';renderSidecar(sidecarStatus);if(!f)return;
   if(f.size<SIDECAR_MIN||f.size>SIDECAR_LIMIT||f.size%4096){$('sidecar-file-note').textContent='Image must be 8,192–720,896 bytes in 4,096-byte blocks.';return}
   try{const b=new Uint8Array(await f.slice(0,1).arrayBuffer());if(sidecarFile!==f)return;
@@ -2309,8 +2368,8 @@ async function pickSidecar(f){sidecarFile=f||null;sidecarFileValid=false;$('side
   catch{if(sidecarFile!==f)return;$('sidecar-file-note').textContent='Could not read the image header.'}renderSidecar(sidecarStatus)}
 $('sidecar-firmware').onchange=e=>pickSidecar(e.target.files[0]||null);
 $('sidecar-upload').onclick=async()=>{const f=sidecarFile;let s=sidecarStatus;if(!f||!sidecarFileValid||!sidecarReady(s))return;
-  if(!await confirmSheet('Update the sidecar?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent once. Sidecar input and actions pause; other bridge lighting continues.`,'Update'))return;
-  s=sidecarStatus;if(f!==sidecarFile||!sidecarFileValid||!sidecarReady(s)){sidecarMessage='Sidecar status changed; wait until it permits an update.';renderSidecar(s);return}
+  if(!await confirmSheet('Update the CCX listener?',`${f.name} (${f.size.toLocaleString()} bytes) will be sent once. Sidecar input and actions pause; other bridge lighting continues.`,'Update'))return;
+  s=sidecarStatus;if(f!==sidecarFile||!sidecarFileValid||!sidecarReady(s)){sidecarMessage='Listener status changed; wait until it permits an update.';renderSidecar(s);return}
   sidecarCandidate={boot:s.boot_id,slot:s.slot};sidecarSending=true;sidecarMessage='Sending once. Waiting for gateway progress and confirmation.';renderSidecar(s);
   try{await req('sidecar/update',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f});sidecarMessage='Transfer response received; checking the running image.'}
   catch(e){sidecarMessage='The upload response was lost or rejected; the outcome is uncertain. Checking status without resending.'}

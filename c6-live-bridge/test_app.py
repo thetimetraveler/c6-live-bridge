@@ -154,6 +154,23 @@ class AddonTests(unittest.TestCase):
         self.assertEqual({k:rows[0][k] for k in event},event)
         self.assertEqual(rows[0]["boot_id"],1)
 
+    def test_command_trace_survives_snapshot_cache_and_archive(self):
+        event={"schema_version":2,"id":1,"ts_ms":524586,"stage":"report-sent","zone":3,"trace":2864434397,
+               "requested":5000,"confirmed":5000,"command_seq":4,"report_seq":9,"reported":5000,"reason":"command-settled"}
+        class TracedGateway(StubGateway):
+            def request(self,path,*args,**kwargs):
+                code,ctype,raw=super().request(path,*args,**kwargs)
+                data=json.loads(raw)
+                if path.startswith("/api/snapshot"):
+                    data["events"]["events"]=[event]
+                return code,ctype,json.dumps(data).encode()
+        self.panel.gateway=TracedGateway()
+        self.collect()
+        cached=json.loads(self.panel.proxy("events",[("after","0")])[2])["events"][0]
+        self.assertEqual(cached["trace"],2864434397)
+        rows=[json.loads(line) for f in self.archive.root.glob("*.jsonl") for line in f.read_text().splitlines()]
+        self.assertEqual(rows[0]["trace"],2864434397)
+
     def test_upload_limit_and_bytes_forward_exactly(self):
         self.assertEqual(app.MAX_FIRMWARE,786432)
         firmware=b"header\x00\xffimage"

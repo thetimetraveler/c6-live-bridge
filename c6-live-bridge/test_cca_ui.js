@@ -31,7 +31,7 @@ const get = id => document.getElementById('cca-' + id);
 const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'cca.js'),'utf8');
 const html = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
 assert.match(html, /id="dev-cca"/); // CCA radio card on Devices
-assert.match(html, /Passive CCX listener \(B1\) firmware/);
+assert.match(html, /CCX listener firmware/);
 assert.match(html, /CCA node firmware/);
 assert.match(html, /Lutron end-device firmware over CCA/);
 assert.match(html, /<script src="cca\.js"><\/script>/);
@@ -346,7 +346,7 @@ t.setStatus(nodeStatus({online:false})); assert.equal(get('node-pill').textConte
 t.setStatus(nodeStatus({supported:false})); assert.equal(get('node-pill').textContent,'Unavailable'); assert.equal(get('node-upload').disabled,true);
 t.setStatus(nodeStatus({phase:'failed',error:'signature'})); assert.match(get('node-note').textContent,/Update failed: signature.*will not resend/);
 t.setStatus(nodeStatus({})); assert.equal(get('vitals').children.length,4,'a ready radio shows four vitals');
-assert.match(text(get('vitals')),/Link to gateway.*Online.*Radio.*Present.*Board identity.*Matches/s);
+assert.match(text(get('vitals')),/Status.*Online.*board identity matches.*Firmware.*Radio.*Present.*Packets received/s,'status, then firmware, then radio');
 t.setStatus({supported:false}); assert.equal(get('vitals').children.length,0);
 assert.match(text(get('status-facts')),/not available on this gateway/,'an unsupported gateway gets one reason, not a grid of dashes');
 assert.doesNotMatch(text(get('status-facts')),/—/);

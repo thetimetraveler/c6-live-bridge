@@ -120,12 +120,14 @@ var CCAUI = (() => {
       const empty = node('div', 'empty-state'); empty.append(node('strong', '', why[0]), node('span', '', why[1]));
       byId('status-facts').replaceChildren(empty);
     } else {
+      const nodeInfo = s.node_update && typeof s.node_update === 'object' ? s.node_update : null;
       const vital = (label, value, tone, small) => { const d = node('div', 'vital' + (tone ? ' ' + tone : '')); d.append(node('span', '', label), node('strong', '', value)); if (small) d.append(node('small', '', small)); return d; };
       byId('vitals').setAttribute('data-n', '4');
       byId('vitals').replaceChildren(
-        vital('Link to gateway', available ? 'Online' : link.online === false ? 'Offline' : 'Stale', available ? '' : 'warn', 'status ' + age + ' old'),
+        vital('Status', !available ? (link.online === false ? 'Offline' : 'Status is out of date') : !isMatch ? 'Check the board' : 'Online', available && isMatch ? '' : 'warn',
+          !available ? 'last status ' + age + ' old' : isMatch ? 'board identity matches' : !expected ? 'expected board not set' : 'board identity does not match'),
+        vital('Firmware', nodeInfo?.version ? display(nodeInfo.version) : /^[0-9a-f]{64}$/i.test(nodeInfo?.running_elf_sha256 || '') ? nodeInfo.running_elf_sha256.slice(0, 12) : 'Not reported', '', nodeInfo?.version ? '' : nodeInfo?.running_elf_sha256 ? 'image fingerprint' : ''),
         vital('Radio', peer.radio_present === true ? 'Present' : peer.radio_present === false ? 'Missing' : 'Not reported', peer.radio_present === false ? 'bad' : ''),
-        vital('Board identity', isMatch ? 'Matches' : !expected ? 'Not set' : !observed ? 'Waiting' : 'Mismatch', isMatch ? '' : 'warn', observed || ''),
         vital('Packets received', display(peer.rx_packets), '', Number.isFinite(peer.crc_errors) ? display(peer.crc_errors) + ' damaged' : ''));
     byId('status-facts').replaceChildren(
       facts('Identity and link', [['Observed MAC', peer.mac], ['Expected MAC', expected || null], ['Identity', identity],

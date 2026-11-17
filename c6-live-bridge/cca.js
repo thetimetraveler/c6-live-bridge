@@ -223,6 +223,26 @@ var CCAUI = (() => {
   }
   // Hold the reader's place while packets arrive (live.js); without it the list just redraws.
   const liveRender = (box, draw) => typeof LiveFeed === 'undefined' ? draw() : LiveFeed.render(box, box, draw);
+  // Format 0x0E: byte 12 is the state (03 occupied, 00 vacant), byte 11 is 06 for a change, 26 for a status report.
+  // Mirrors cca_occupancy.py; other sensor formats are not decoded.
+  function occupancyOf(b) {
+    if (b.length < 20 || b[0] < 0x88 || b[0] > 0x8b || b[7] !== 0x0e || b[8] !== 0x04 || b[10] !== 0x02 || b[18] !== 0x47) return null;
+    if (![0x06,0x26].includes(b[11]) || ![0x00,0x03].includes(b[12]) || [0,1,2,3].some(i => b[2+i] !== b[13+i]) || !(b[2]|b[3]|b[4]|b[5])) return null;
+    return {occupied:b[12] === 0x03, report:b[11] === 0x06 ? 'change' : 'status'};
+  }
+  function renderOccupancy() {
+    const box = byId('occupancy-list'); if (!box) return;
+    const sensors = Array.isArray(status?.occupancy) ? status.occupancy : [];
+    if (!sensors.length) { const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'No sensor heard yet. A sensor appears after its next report.'; box.replaceChildren(p); return; }
+    box.replaceChildren(...sensors.map(s => {
+      const row = document.createElement('div'), name = document.createElement('span'), state = document.createElement('strong');
+      row.className = 'row';
+      name.textContent = `${s.name} · serial ${s.serial}${Number.isInteger(s.rssi) ? ' · ' + s.rssi + ' dBm' : ''}`;
+      const since = Number.isFinite(s.changed_at) ? ' since ' + new Date(s.changed_at * 1000).toLocaleTimeString() : '';
+      state.textContent = (s.occupied ? 'Occupied' : 'Vacant') + since;
+      row.append(name, state); return row;
+    }));
+  }
   function packetView(e) {
     if (!['cca.rx','cca.tx'].includes(e.kind)) return null;
     if (typeof CCAProtocol === 'undefined') return {description:'Packet decoder unavailable'};
@@ -259,6 +279,11 @@ var CCAUI = (() => {
     if (info.typeName === 'SENSOR_VACANT') packet.type = 'BUTTON_SENSOR_FORMAT_0C';
     if (info.category === 'SENSOR') packet.description = 'Sensor RF packet; occupancy state is not inferred.';
     if (info.category === 'SENSOR') packet.note = 'Sensor flags are raw values; occupied/vacant meanings are not established for every frame.';
+    const occupancy = occupancyOf(bytes);
+    if (occupancy) {
+      packet.description = `Occupancy sensor: ${occupancy.occupied ? 'occupied' : 'vacant'} (${occupancy.report === 'change' ? 'state change' : 'status report'})`;
+      packet.note = e.crc_valid === true ? 'Verified; this state is applied to the occupancy sensor.' : 'Not applied: only CRC-verified frames set occupancy.';
+    }
     if (e.crc_valid === false) packet.description = 'Unverified frame; best-effort decode. ' + packet.description;
     return packet;
   }
@@ -316,7 +341,7 @@ var CCAUI = (() => {
       }
       const operation = s?.status?.latest_operation;
       if (activeReceipt && operation) updateReceipt({...operation,kind:'cca.command',node_boot_id:peerBoot});
-      statusView();
+      statusView(); renderOccupancy();
     } catch (e) { status = {...(status || {}), status_age_s:null, error:e.message}; statusAt = Date.now(); statusView(); }
     finally { fetchingStatus = false; }
   }

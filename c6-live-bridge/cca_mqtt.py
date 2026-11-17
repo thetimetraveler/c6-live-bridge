@@ -18,6 +18,8 @@ class CcaMqtt:
     PRESENCE = ROOT + "presence/set"
     STATE = ROOT + "state"
     DISCOVERY = "homeassistant/sensor/ccx_bridge_cca/status/config"
+    OCCUPANCY_DISCOVERY = "homeassistant/binary_sensor/ccx_bridge_cca/occupancy_%08x/config"
+    DEVICE = {"identifiers": ["ccx_bridge_cca"], "name": "CCX Bridge CCA"}
 
     def __init__(self, service, connect, capacity=256):
         self.service, self.connect = service, connect
@@ -26,6 +28,8 @@ class CcaMqtt:
         self.lock = threading.Lock()
         self.online = False
         self.seen = OrderedDict()
+        self.announced = {}
+        self.occupancy_latest = {}
         self.thread = None
         self.client = None
 
@@ -43,6 +47,40 @@ class CcaMqtt:
             try: self.pending.put_nowait((suffix, payload))
             except queue.Full: return False
         return True
+
+    def occupancy(self, entry):
+        # Latest state per sensor, outside the bounded event queue: a burst of events cannot drop a change.
+        with self.lock:
+            if not self.online: return False
+            self.occupancy_latest[entry["serial"]] = entry
+        return True
+
+    def _occupancy_available(self, serial, online):
+        self.client.publish(ROOT + "occupancy/%08x/availability" % serial, "online" if online else "offline", retain=True)
+
+    def _occupancy(self, entry):
+        """Retained discovery, per-sensor availability and state for one sensor.
+
+        A sensor is available only while the add-on is online and the sensor has been heard since
+        the add-on started, so neither a stopped nor a restarted bridge shows an old state as current."""
+        serial = entry["serial"]
+        topic = ROOT + "occupancy/%08x" % serial
+        name = entry.get("name") or "Occupancy %08X" % serial
+        if self.announced.get(serial) != name:
+            discovery = {"name": name, "unique_id": "ccx_bridge_cca_occupancy_%08x" % serial, "device_class": "occupancy",
+                         "state_topic": topic, "availability_mode": "all",
+                         "availability": [{"topic": self.AVAILABILITY}, {"topic": topic + "/availability"}],
+                         "value_template": "{{ 'ON' if value_json.occupied else 'OFF' }}",
+                         "json_attributes_topic": topic, "device": self.DEVICE}
+            self.client.publish(self.OCCUPANCY_DISCOVERY % serial, json.dumps(discovery, separators=(",", ":")), retain=True)
+            self.announced[serial] = name
+        state = {k: entry.get(k) for k in ("occupied", "report", "rssi", "serial")}
+        self.client.publish(topic, json.dumps(state, separators=(",", ":")), retain=True)
+        self._occupancy_available(serial, True)
+
+    def _occupancy_flush(self):
+        with self.lock: latest, self.occupancy_latest = self.occupancy_latest, {}
+        for _, entry in sorted(latest.items()): self._occupancy(entry)
 
     def snapshot(self):
         with self.lock: return {"online": self.online, "queued": self.pending.qsize()}
@@ -110,9 +148,13 @@ class CcaMqtt:
                              "state_topic": self.STATE, "availability_topic": self.AVAILABILITY,
                              "value_template": "{{ 'online' if value_json.online else 'offline' }}",
                              "json_attributes_topic": self.STATE, "entity_category": "diagnostic",
-                             "device": {"identifiers": ["ccx_bridge_cca"], "name": "CCX Bridge CCA"}}
+                             "device": self.DEVICE}
                 self.client.publish(self.DISCOVERY, json.dumps(discovery, separators=(",", ":")), retain=True)
-                with self.lock: self.online = True
+                self.announced = {}
+                for serial in getattr(self.service, "occupancy_unheard", lambda: [])(): self._occupancy_available(serial, False)
+                with self.lock: self.online = True; self.occupancy_latest = {}
+                # After going online, so a change during the snapshot is kept rather than lost.
+                for entry in getattr(self.service, "occupancy_snapshot", lambda: [])(): self._occupancy(entry)
                 retry, next_state = 1, 0
                 while not self.stop_event.is_set():
                     for topic, raw, retained in self.client.service():
@@ -120,6 +162,7 @@ class CcaMqtt:
                     if time.monotonic() >= next_state:
                         self._publish("state", self._state(), retain=True)
                         next_state = time.monotonic() + 10
+                    self._occupancy_flush()
                     try: suffix, payload = self.pending.get(timeout=.2)
                     except queue.Empty: continue
                     self._publish(suffix, payload)

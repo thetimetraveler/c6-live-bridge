@@ -1,3 +1,9 @@
+## 0.24.0
+
+- Add Lutron occupancy sensors. A sensor heard by the CCA radio appears in Home Assistant as an occupancy binary sensor on the CCX Bridge CCA device, and in a new **Occupancy sensors** card. Received sensor packets read "occupied" or "vacant" in the activity list.
+- Only CRC-verified format 0x0E frames set the state; other sensor formats stay raw. A sensor is listed after its first report since the app started. A sensor reads unavailable, never vacant, while the app is stopped and after a restart until that sensor is heard again.
+- Name a sensor by adding a target whose device ID is the sensor's serial. This update requires no gateway or C6 firmware changes.
+
 ## 0.23.0
 
 - Redesign the dashboard around five destinations instead of seven tabs: **Home** (is it working, what needs me), **Activity** (what just happened, and how fast), **Devices** (one card per board), **Automation** (what makes the lights change) and **Settings** (rare configuration). A left sidebar from 1000 px, a bottom tab bar below; no truncated labels. Old tab names, `#hash` links and `showTab()` calls open the new destinations.

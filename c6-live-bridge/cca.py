@@ -1,5 +1,6 @@
 """CCA ingress coordinator: cached reads, one command path, and resumable staging."""
 from collections import deque
+import cca_occupancy
 import hashlib
 import http.client
 import json
@@ -73,6 +74,9 @@ class CcaService:
         self.publisher = publisher
         self.events = CcxFeed(None, self)
         self.results = deque(maxlen=128)
+        self.occupancy = {}
+        self.occupancy_path = self.directory / "cca-occupancy.json"
+        self.occupancy_known = set()
         self.config = {"expected_mac": "", "targets": [], "presets": []}
         self.capabilities = None
         self.gateway_status = None
@@ -91,6 +95,11 @@ class CcaService:
             pass
         except (OSError, ValueError, TypeError):
             self.error = "CCA configuration could not be read"
+        try:
+            known = json.loads(self.occupancy_path.read_text())
+            self.occupancy_known = {v for v in known if type(v) is int and 0 < v <= 0xffffffff} if isinstance(known, list) else set()
+        except (OSError, ValueError):
+            pass
         try:
             if 0 < self.upload_path.stat().st_size <= MAX_BODY:
                 body = self.upload_path.read_bytes()
@@ -205,6 +214,7 @@ class CcaService:
             return {"supported": self.supported, "status": self.gateway_status,
                     "status_age_s": None if self.status_at is None else max(0, time.monotonic() - self.status_at),
                     "ota": dict(self.job), "error": self.error, "results": list(self.results),
+                    "occupancy": self._occupancy_list(),
                     "node_upload": {"in_flight": self.node_in_flight, "awaiting_status": self.node_awaiting_status}}
 
     def node_update(self, image):
@@ -257,6 +267,47 @@ class CcaService:
         if event.get("kind") in ("cca.command", "cca.feedback", "cca.feedback_mapping"):
             with self.lock: self.results.append(event)
         if self.publisher: self.publisher.offer("events", event)
+        # Only CRC-verified frames set occupancy; a corrupted byte 12 would read as the other state.
+        if event.get("kind") == "cca.rx" and event.get("crc_valid") is True:
+            seen = cca_occupancy.decode(event.get("raw_hex"))
+            if seen: self._occupancy(seen, event.get("rssi"))
+
+    MAX_SENSORS = 64
+
+    def _sensor_name(self, serial):
+        target = next((t for t in self.config["targets"] if t.get("device_id") == serial), None)
+        return target["name"] if target else "Occupancy %08X" % serial
+
+    def _occupancy(self, seen, rssi):
+        now = time.time()
+        with self.lock:
+            entry = self.occupancy.get(seen["serial"])
+            if entry is None:
+                if len(self.occupancy) >= self.MAX_SENSORS: return
+                entry = self.occupancy[seen["serial"]] = {"serial": seen["serial"], "occupied": None, "changed_at": now}
+                if seen["serial"] not in self.occupancy_known:
+                    # Remembered so a restarted app can mark the sensor unavailable until it is heard again.
+                    self.occupancy_known.add(seen["serial"])
+                    try: atomic_write(self.occupancy_path, json.dumps(sorted(self.occupancy_known)).encode())
+                    except OSError: pass
+            changed = entry["occupied"] != seen["occupied"]
+            if changed: entry["changed_at"] = now
+            entry.update(occupied=seen["occupied"], report=seen["report"], seen_at=now,
+                         rssi=rssi if type(rssi) is int else None, name=self._sensor_name(seen["serial"]))
+            entry = dict(entry)
+        # One MQTT state per change; a burst's repeated copies are not republished.
+        if changed and self.publisher and hasattr(self.publisher, "occupancy"): self.publisher.occupancy(entry)
+
+    def _occupancy_list(self):
+        with self.lock:
+            return [dict(e, name=self._sensor_name(e["serial"])) for _, e in sorted(self.occupancy.items())]
+
+    def occupancy_snapshot(self):
+        return self._occupancy_list()
+
+    def occupancy_unheard(self):
+        """Sensors known from an earlier run and not heard since this start."""
+        with self.lock: return sorted(self.occupancy_known - set(self.occupancy))
 
     def snapshot(self):
         return self.publisher.snapshot() if self.publisher and hasattr(self.publisher, "snapshot") else {"online": False, "queued": 0}

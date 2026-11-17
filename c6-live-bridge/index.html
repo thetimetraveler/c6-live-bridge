@@ -910,6 +910,11 @@ html,body{overflow-anchor:none}
     <div class="actions"><button id="cca-command-send">Send command</button><button id="cca-save-preset" class="secondary">Save as preset</button></div>
     <p id="cca-command-note" class="hint" role="status"></p>
   </section>
+  <section class="card" id="cca-occupancy-card">
+    <div class="card-head"><h2>Occupancy sensors</h2></div>
+    <p class="hint">Lutron occupancy sensors heard by the CCA radio since the app started. Each appears in Home Assistant as an occupancy binary sensor on the CCX Bridge CCA device. To name one, add a target with the sensor's serial as its device ID.</p>
+    <div id="cca-occupancy-list" class="list"></div>
+  </section>
   <section class="card" id="cca-presence-card">
     <div class="card-head"><h2>Presence</h2></div>
     <p class="hint">Set a manual presence state, or copy the Home Assistant example. These inputs do not send RF packets.</p>

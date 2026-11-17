@@ -185,7 +185,12 @@ assert.doesNotMatch(received.children[0].textContent,/unknown|request 0/);
 assert.match(text(received),/"event_flags"/);
 assert.match(text(received),/"21": "02"/,'unmapped byte 21 remains visible');
 assert.match(text(received),/"raw_hex"/,'original event remains visible');
-assert.match(t.packetView(sensor).note,/meanings are not established/);
+assert.match(t.packetView(sensor).description,/^Occupancy sensor: vacant \(status report\)$/);
+assert.match(t.packetView(sensor).note,/Verified; this state is applied/);
+assert.match(t.packetView({...sensor,raw_hex:sensor.raw_hex.replace('022600','020603')}).description,/occupied \(state change\)/);
+assert.match(t.packetView({...sensor,crc_valid:false}).note,/Not applied/);
+// An unknown state byte is not decoded as occupancy.
+assert.match(t.packetView({...sensor,raw_hex:sensor.raw_hex.replace('022600','022601')}).note,/meanings are not established/);
 assert.equal(t.packetView({...sensor,truncated:true}).type,undefined);
 assert.equal(t.packetView({...sensor,raw_hex:'8800deadbeef'}).serial,undefined);
 assert.equal(t.packetView({...sensor,raw_hex:'ff'}).category,'unknown');
@@ -537,5 +542,34 @@ await tick();
   t.config().targets[1].buttons = {on:'x'};
   assert.deepEqual(plain(t.configPayload().targets[1]),{id:'lamp',name:'Lamp',device_id:9,layout:'dimmer'});
   context.haData = null;
+}
+// Occupancy sensors card: status.occupancy arrives with cca/status and is drawn as text, in the order given.
+{
+  assert.match(html, /<section[^>]*id="cca-occupancy-card"[^>]*>[\s\S]*id="cca-occupancy-list"[\s\S]*?<\/section>/,'occupancy list lives inside the occupancy card');
+  const savedStatus = state.status, list = () => get('occupancy-list'), rows = () => list().children;
+  const showOccupancy = async occupancy => { state.status = {...status, occupancy}; await ui.show(); };
+  const empty = /No sensor heard yet\. A sensor appears after its next report\./;
+  for (const missing of [undefined, null, 'x', {serial:1}, 7]) {
+    await showOccupancy(missing);
+    assert.equal(rows().length,1,'a missing or non-array occupancy list is the empty state'); assert.match(rows()[0].textContent,empty);
+  }
+  state.status = {supported:true}; await ui.show(); assert.match(text(list()),empty,'a status without occupancy is the empty state');
+  await showOccupancy([]); assert.equal(rows().length,1); assert.equal(rows()[0].className,'hint'); assert.match(text(list()),empty);
+  const t0 = 1794944770.3;
+  await showOccupancy([{serial:169552957,name:'Loft sensor',occupied:true,report:'change',rssi:-60,changed_at:t0,seen_at:t0},
+    {serial:3735928559,name:'Hall sensor',occupied:false,report:'status',rssi:null,changed_at:t0}]);
+  assert.equal(rows().length,2); assert.ok(rows().every(r => r.className === 'row'));
+  const [loft, hall] = rows().map(r => r.children.map(c => c.textContent));
+  assert.match(loft[0],/^Loft sensor · serial 169552957 · -60 dBm$/,'name, decimal serial and integer signal'); assert.match(loft[1],/^Occupied since /);
+  assert.match(hall[0],/^Hall sensor · serial 3735928559$/,'a null signal omits dBm'); assert.doesNotMatch(hall[0],/dBm/); assert.match(hall[1],/^Vacant since /);
+  assert.equal(rows()[0].children[1].tag,'strong');
+  await showOccupancy([{serial:1,name:'Quiet',occupied:false,rssi:-60.5}]);
+  assert.equal(rows()[0].children[0].textContent,'Quiet · serial 1','a non-integer signal is omitted');
+  assert.equal(rows()[0].children[1].textContent,'Vacant','no change time shows no since');
+  await showOccupancy([{serial:2,name:'<img src=x onerror=1>',occupied:true,rssi:-70,changed_at:t0}]);
+  assert.match(rows()[0].children[0].textContent,/^<img src=x onerror=1> · serial 2 · -70 dBm$/,'HTML in a name stays text');
+  assert.equal(walk(list()).filter(n => n.tag === 'img').length,0,'no element is created from a name'); assert.equal(rows()[0].children.length,2);
+  await showOccupancy(undefined); assert.match(text(list()),empty,'sensors clear when the status no longer lists any');
+  state.status = savedStatus; await ui.show();
 }
 console.log('CCA dashboard metadata, commands, events, settings, presence and OTA tests passed');

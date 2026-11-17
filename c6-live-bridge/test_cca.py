@@ -352,6 +352,85 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual([payload for _, payload in published], cached)
 
 
+class OccupancyTests(unittest.TestCase):
+    # Shaped like frames matched to RA3 occupancy group changes on 2026-11-17; serials replaced, CRC bytes not valid.
+    OCCUPIED = "8a010a1b2c3d210e04000206030a1b2c3d004700ff028fdd"
+    VACANT = "8b000a1b2c3d210e04000206000a1b2c3d004701ff02dd06"
+    STATUS_OCCUPIED = "89000a1b2c3e210e04000226030a1b2c3e004706fe008172"
+    STATUS_VACANT = "89000a1b2c3f210e04000226000a1b2c3f004707ff007b42"
+
+    def test_decode(self):
+        import cca_occupancy
+        self.assertEqual(cca_occupancy.decode(self.OCCUPIED), {"serial": 0x0a1b2c3d, "occupied": True, "report": "change"})
+        self.assertEqual(cca_occupancy.decode(self.VACANT), {"serial": 0x0a1b2c3d, "occupied": False, "report": "change"})
+        self.assertEqual(cca_occupancy.decode(self.STATUS_OCCUPIED), {"serial": 0x0a1b2c3e, "occupied": True, "report": "status"})
+        self.assertEqual(cca_occupancy.decode(self.STATUS_VACANT), {"serial": 0x0a1b2c3f, "occupied": False, "report": "status"})
+        # Unknown state or report byte, mismatched repeated serial, other formats, bad input: never guessed.
+        for raw in (self.OCCUPIED[:24] + "01" + self.OCCUPIED[26:], self.OCCUPIED[:22] + "16" + self.OCCUPIED[24:],
+                    self.OCCUPIED[:26] + "0a1b2c3c" + self.OCCUPIED[34:], self.OCCUPIED[:14] + "0b" + self.OCCUPIED[16:],
+                    self.OCCUPIED[:30], "zz", None, ""):
+            self.assertIsNone(cca_occupancy.decode(raw), raw)
+
+    def test_state_changes_reach_status_and_mqtt_once(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        service = FastService(Gateway(), tmp.name, timeout=.15)
+        service.put_config({"expected_mac": MAC, "presets": [],
+                            "targets": [{"id": "loft", "name": "Loft sensor", "device_id": 0x0a1b2c3d}]})
+        sent = []
+        mqtt = CcaMqtt(service, None, capacity=2); mqtt.online = True
+        mqtt.client = SimpleNamespace(publish=lambda *a, **k: sent.append((a, k)))
+        service.publisher = mqtt
+        rx = lambda raw, crc=True: service.offer({"kind": "cca.rx", "raw_hex": raw, "crc_valid": crc, "rssi": -60})
+        topics = lambda: [a[0] for a, _ in sent]
+        states = lambda: [(a[0][-8:], json.loads(a[1])["occupied"]) for a, _ in sent if a[0].startswith("ccx_bridge/cca/occupancy/") and not a[0].endswith("availability")]
+        rx(self.VACANT, False); rx(self.VACANT, None)           # unverified frames never set state
+        self.assertEqual(service.status_snapshot()["occupancy"], [])
+        # The event queue (capacity 2) is already full: occupancy changes must not depend on it.
+        self.assertTrue(mqtt.pending.full())
+        rx(self.OCCUPIED); rx(self.OCCUPIED); mqtt._occupancy_flush()
+        rx(self.STATUS_VACANT); rx(self.VACANT); mqtt._occupancy_flush()
+        rx(self.VACANT); mqtt._occupancy_flush()                # an unchanged repeat publishes nothing
+        self.assertEqual(states(), [("0a1b2c3d", True), ("0a1b2c3d", False), ("0a1b2c3f", False)])
+        listed = service.status_snapshot()["occupancy"]
+        self.assertEqual([(e["name"], e["occupied"], e["report"]) for e in listed],
+                         [("Loft sensor", False, "change"), ("Occupancy 0A1B2C3F", False, "status")])
+        self.assertEqual(topics().count("homeassistant/binary_sensor/ccx_bridge_cca/occupancy_0a1b2c3d/config"), 1)
+        self.assertEqual(topics().count("ccx_bridge/cca/occupancy/0a1b2c3d/availability"), 2)
+        self.assertTrue(all(kw.get("retain") for _, kw in sent))
+        discovery = json.loads(next(a[1] for a, _ in sent if a[0].endswith("occupancy_0a1b2c3d/config")))
+        self.assertEqual((discovery["name"], discovery["device_class"], discovery["availability_mode"]), ("Loft sensor", "occupancy", "all"))
+        self.assertEqual([a["topic"] for a in discovery["availability"]],
+                         [CcaMqtt.AVAILABILITY, "ccx_bridge/cca/occupancy/0a1b2c3d/availability"])
+        # A rename reaches Home Assistant with the sensor's next change.
+        service.put_config({"expected_mac": MAC, "presets": [],
+                            "targets": [{"id": "loft", "name": "Loft", "device_id": 0x0a1b2c3d}]})
+        rx(self.OCCUPIED); mqtt._occupancy_flush()
+        self.assertEqual(json.loads([a[1] for a, _ in sent if a[0].endswith("occupancy_0a1b2c3d/config")][-1])["name"], "Loft")
+        # Offline: nothing is kept; the reconnect snapshot republishes instead.
+        mqtt.online = False; rx(self.VACANT)
+        self.assertEqual(mqtt.occupancy_latest, {})
+        service.stop()
+
+    def test_restart_marks_unheard_sensors_unavailable(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        first = FastService(Gateway(), tmp.name, timeout=.15)
+        first.offer({"kind": "cca.rx", "raw_hex": self.OCCUPIED, "crc_valid": True, "rssi": -60})
+        first.offer({"kind": "cca.rx", "raw_hex": self.STATUS_VACANT, "crc_valid": True, "rssi": -60})
+        self.assertEqual(first.occupancy_unheard(), []); first.stop()
+        again = FastService(Gateway(), tmp.name, timeout=.15)
+        self.assertEqual(again.status_snapshot()["occupancy"], [])
+        self.assertEqual(again.occupancy_unheard(), [0x0a1b2c3d, 0x0a1b2c3f])
+        again.offer({"kind": "cca.rx", "raw_hex": self.VACANT, "crc_valid": True, "rssi": -60})
+        self.assertEqual(again.occupancy_unheard(), [0x0a1b2c3f])
+        sent = []
+        mqtt = CcaMqtt(again, None); mqtt.client = SimpleNamespace(publish=lambda *a, **k: sent.append((a, k)))
+        for serial in again.occupancy_unheard(): mqtt._occupancy_available(serial, False)
+        self.assertEqual(sent, [(("ccx_bridge/cca/occupancy/0a1b2c3f/availability", "offline"), {"retain": True})])
+        (Path(tmp.name) / "cca-occupancy.json").write_text("not json")
+        self.assertEqual(FastService(Gateway(), tmp.name, timeout=.15).occupancy_unheard(), [])
+        again.stop()
+
+
 class MqttTests(unittest.TestCase):
     def test_retained_duplicate_and_preset(self):
         calls, sent = [], []

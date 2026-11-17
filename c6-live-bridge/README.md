@@ -658,8 +658,10 @@ physical press of the Pico does in the Lutron system.
 CCA activity uses the shared protocol decoder to show packet names, serials,
 decoded fields and remaining undecoded bytes. Configured target names appear
 when their device ID matches the packet source. The filter searches decoded
-values as well as raw events. Sensor flags with unconfirmed meanings stay as
-hex values; packet classification does not infer occupancy. The original event
+values as well as raw events. CRC-verified format 0x0E occupancy sensor frames read as occupied or vacant and
+set a Home Assistant occupancy binary sensor per sensor (MQTT discovery, on the
+CCX Bridge CCA device); the Occupancy sensors card lists them. Other sensor
+formats and flags with unconfirmed meanings stay as hex values. The original event
 and CRC status remain visible, and downloads retain the original events.
 No gateway or C6 firmware update is required.
 

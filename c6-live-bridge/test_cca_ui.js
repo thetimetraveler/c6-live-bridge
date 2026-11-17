@@ -339,6 +339,18 @@ for (const file of [image(8191),image(8193),image(1048577),image(8192,0)]) {
 await t.pickNodeFile(image(8192)); assert.equal(get('node-upload').disabled,false);
 t.setStatus(nodeStatus({mac:'aa:bb:cc:dd:ee:ff'})); assert.equal(get('node-upload').disabled,true);
 t.setStatus(nodeStatus({}, {status_age_s:16})); assert.equal(get('node-upload').disabled,true);
+// The node firmware card's pill states, and the radio card's one-reason empty state.
+t.setStatus(nodeStatus({})); assert.equal(get('node-pill').textContent,'Online'); assert.match(get('node-pill').className,/good/);
+t.setStatus(nodeStatus({busy:true})); assert.equal(get('node-pill').textContent,'Updating'); assert.equal(get('node-upload').disabled,true,'no upload while the node is updating');
+t.setStatus(nodeStatus({online:false})); assert.equal(get('node-pill').textContent,'Offline'); assert.match(get('node-note').textContent,/USB recovery/);
+t.setStatus(nodeStatus({supported:false})); assert.equal(get('node-pill').textContent,'Unavailable'); assert.equal(get('node-upload').disabled,true);
+t.setStatus(nodeStatus({phase:'failed',error:'signature'})); assert.match(get('node-note').textContent,/Update failed: signature.*will not resend/);
+t.setStatus(nodeStatus({})); assert.equal(get('vitals').children.length,4,'a ready radio shows four vitals');
+assert.match(text(get('vitals')),/Link to gateway.*Online.*Radio.*Present.*Board identity.*Matches/s);
+t.setStatus({supported:false}); assert.equal(get('vitals').children.length,0);
+assert.match(text(get('status-facts')),/not available on this gateway/,'an unsupported gateway gets one reason, not a grid of dashes');
+assert.doesNotMatch(text(get('status-facts')),/—/);
+t.setStatus({error:'connection refused'}); assert.match(text(get('status-facts')),/could not read it: connection refused/);
 t.setStatus(nodeStatus({}));
 nodeAfterPost = nodeStatus({busy:true,retry_allowed:false,phase:'receiving',offset:4096,total:8192});
 let nodePosts=count('cca/node-update'), commandPosts=count('cca/command'), otaPosts=count('cca/ota/action');

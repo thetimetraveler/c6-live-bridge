@@ -49,7 +49,8 @@ if(!html.includes('<script src="live.js"></script><script>'))throw Error('live.j
 const code=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'live.js'),'utf8')+'\n'+html.split('<script>',2)[1].split('</script>',1)[0];
 const checks=`
 const view=id=>document.getElementById(id);
-const heroText=()=>view('headline').textContent+' '+view('headline-detail').textContent;
+const allText=n=>typeof n==='string'?n:(n.textContent||'')+' '+(n.children||[]).map(allText).join(' ');
+const heroText=()=>view('headline').textContent+' '+view('headline-detail').textContent+' '+allText(view('attention'));
 const safetyPatch=(safety={},power={})=>({...status,endpoint_safety:{...status.endpoint_safety,...safety},endpoint_power:{...status.endpoint_power,...power}});
 const assertNotSafe=(s,why)=>{health(s);if(view('hero').className.includes('good')||view('node-thread').className.includes('good')||view('summary').children[1].className.includes('good'))throw Error(why+' must not be shown as safe');};
 health(status);
@@ -98,11 +99,12 @@ const zoneCard=()=>view('zones').children[0];
 const cardVerdict=()=>zoneCard().children[0].children[1].children.at(-1);
 health({...status});deviceView(deviceSnapshot);zonesView(zoneSnapshot);health(latestStatus);
 if(!view('hero').className.includes('good')||!zoneCard().className.includes('good'))throw Error('fresh readback with complete comparisons should show in sync');
-if(!view('hero').hidden)throw Error('a healthy bridge shows no banner');
+if(view('hero').hidden||!view('headline').textContent.includes('Everything is working'))throw Error('a healthy bridge says so in one sentence');
+if(!view('attention-card').hidden||view('attention').children.length)throw Error('a healthy bridge has nothing in Needs attention');
 if(view('headline').textContent!=='Everything is working'||!heroText().includes('1 of 1 lamps in sync'))throw Error('a healthy bridge says so plainly: '+view('headline').textContent+' / '+view('headline-detail').textContent);
 health({...status,endpoint_safety:undefined,endpoint_power:undefined});
 if(view('hero').className.includes('good')||view('node-thread').className.includes('good'))throw Error('green lamp comparisons must not hide unavailable endpoint safety');
-if(view('hero').hidden)throw Error('the banner returns when something needs a look');
+if(view('attention-card').hidden||!view('attention').children.length)throw Error('Needs attention lists what needs a look');
 health({...status,monitoring:{age_s:9,delayed:true}});
 if(zoneCard().className.includes('good')||!cardVerdict().textContent.includes('unavailable'))throw Error('stale status must invalidate the displayed lamp comparison');
 health({...status});deviceView({...deviceSnapshot,monitoring:{age_s:9,delayed:false}});
@@ -351,13 +353,13 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   health(mismatch);renderZigbeeNode(mismatch);
   if(view('zigbee-node-card').hidden||view('zigbee-node-pill').textContent!=='Record mismatch (held)'||!view('zigbee-node-pill').className.includes('bad'))
     throw Error('a record mismatch must be shown as held');
-  if(!(view('headline').textContent+view('headline-detail').textContent+text(view('summary'))).includes('does not match the gateway journal'))
+  if(!(heroText()+text(view('summary'))).includes('does not match the gateway journal'))
     throw Error('a record mismatch needs attention in the overview');
   if(!text(boards()).includes('Node session')||!text(boards()).includes('Record mismatch'))throw Error('diagnostics show the node session');
   const fresh={...mismatch,direct_routing:{...mismatch.direct_routing,arming:{...mismatch.direct_routing.arming,state:'not_enrolled',enrolled:false},
     firmware:{transfer:'sending',offset:2048,size:4096}}};
   health(fresh);renderZigbeeNode(fresh);
-  if(!(view('headline').textContent+view('headline-detail').textContent+text(view('summary'))).includes('not enrolled'))throw Error('an unenrolled node needs attention');
+  if(!(heroText()+text(view('summary'))).includes('not enrolled'))throw Error('an unenrolled node needs attention');
   if(!text(view('zigbee-node-facts')).includes('2,048 of 4,096'))throw Error('the transfer progress is shown');
   const running={...fresh,direct_routing:{...fresh.direct_routing,arming:{...fresh.direct_routing.arming,state:'running',enrolled:true}}};
   health(running);renderZigbeeNode(running);
@@ -615,14 +617,12 @@ const mappingChecks=`
   // Diagnostics: sections in command order, flagged rows listed first, no-hold builds not flagged.
   const tree=n=>[n,...(n.children||[]).flatMap(tree)];
   health({...status,uart_crc_errors:3,uart_frames_ok:997,diagnostics:{maintenance:false,heap_free:182000,sockets_used:19,socket_limit:20,reset_reason:4}});
-  const secs=boards().children;
-  if(secs.length!==5||!secs.every(x=>x.className.startsWith('dsec')))throw Error('diagnostics must be one section per part of the bridge');
-  const titles=secs.map(x=>text(x.children[0]));
-  for(const want of ['Thread & endpoint','Endpoint ↔ gateway link','Gateway','Lighting output','Home Assistant'])if(!titles.some(t=>t.includes(want)))throw Error('missing diagnostics section '+want);
+  for(const id of ['dev-gateway','dev-endpoint','dev-ketra'])if(!view(id+'-pill').textContent||!view(id+'-vitals').children.length||!view(id+'-readings').children.length)throw Error('each board card shows status, vitals and readings: '+id);
   const att=text(view('diag-attention'));
   if(!att.includes('CRC errors: 3')||!att.includes('Sockets in use')||!att.includes('Crash (panic)'))throw Error('flagged rows must be listed first: '+att);
   if(att.includes('Physical hold available'))throw Error('a build without a configured hold must not be flagged for it');
-  if(!secs[1].open||!secs[1].className.includes('warn')||secs[0].open)throw Error('only sections with something flagged open themselves');
+  if(!view('dev-endpoint-pill').className.includes('warn')||!view('dev-endpoint-pill').textContent.includes('1 to check')||!view('dev-ketra-pill').className.includes('good'))throw Error('a board with something flagged says so on its pill: '+view('dev-endpoint-pill').textContent);
+  {view('dev-endpoint-more').tagName='DETAILS';view('dev-endpoint-more').open=false;const li=view('diag-attention').children[0].children.find(c=>text(c).includes('CRC errors: 3'));li.onclick();if(!view('dev-endpoint-more').open)throw Error('a flagged reading opens its board readings');view('dev-endpoint-more').open=false;}
   if(!view('diag-pill').textContent.endsWith('to check'))throw Error('the diagnostics pill counts flagged rows');
   {const ha=haData,dev=lastDevices;haData={lights:[],integrations:['lutron'],time_zone:'UTC'};lastDevices={...dev,zones:[]};health(status);
   if(!text(view('diag-attention')).includes('Nothing flagged')||view('diag-pill').textContent!=='All normal')throw Error('a clean snapshot says so');haData=ha;lastDevices=dev}
@@ -753,6 +753,26 @@ const navChecks=`
   showTab('home');view('tab-home').onkeydown({key:'ArrowRight',preventDefault(){}});if(view('panel-activity').hidden)throw Error('arrow keys move between destinations');
   view('tab-activity').onkeydown({key:'End',preventDefault(){}});if(view('panel-settings').hidden)throw Error('End opens the last destination');
   view('tab-settings').onkeydown({key:'ArrowRight',preventDefault(){}});if(view('panel-home').hidden)throw Error('arrow keys wrap around');}
+// Endpoint telemetry: absent on older gateways, a brownout and a lost command reach Needs attention.
+{const vt=id=>text(view(id)),items=()=>view('attention').children,base={...status};
+  health(base);const before=items().length;
+  if(endpointIssues(base).length||endpointBoard(base).lost!==null||endpointBoard(base).why!==null)throw Error('an old gateway without the new fields raises nothing');
+  if(!vt('dev-endpoint-vitals').includes('Not reported')||/Lost commands\s+None|Lost commands\s+0/.test(vt('dev-endpoint-vitals')))throw Error('absent counters read Not reported, never zero: '+vt('dev-endpoint-vitals'));
+  if(!text(boards()).includes('Not reported by this gateway')||text(boards()).includes('Commands lost'))throw Error('absent endpoint health is said once, without zero rows');
+  if(endpointIssues({...base,endpoint_health:{present:false,reset_reason:9}}).length)throw Error('endpoint health marked not present is ignored');
+  if(endpointIssues({...base,endpoint_health:{present:true,reset_reason:1,uptime_ms:5000}}).length||endpointIssues({...base,endpoint_health:{present:true,reset_reason:3}}).length)throw Error('a power-on or software restart needs nothing');
+  for(const code of [4,5,6,7])if(endpointIssues({...base,endpoint_health:{present:true,reset_reason:code}}).length!==1)throw Error('panic and watchdog restarts need attention: '+code);
+  const brown={...base,endpoint_health:{present:true,reset_reason:9,rom_reset_reason:3,uptime_ms:600000,heap_free:192236,heap_min:187164,link_rx_crc:0,link_rx_framing:0,link_rx_overflow:0,tx_drops:0}};
+  health(brown);const b=[...items()].find(li=>text(li).includes('brownout'));
+  if(items().length!==before+1||!b||!b.className.includes('warn')||!text(b).includes('10m 0s ago')||!text(b).includes('power supply'))throw Error('a brownout restart is listed with when and what to do: '+text(view('attention')));
+  const go=b.children.find(c=>c.tag==='button');go.onclick();if(view('panel-devices').hidden)throw Error('the attention item opens the board where it is fixed');
+  if(!vt('dev-endpoint-vitals').includes('Brownout (power dip)')||!vt('dev-endpoint-vitals').includes('188 KB')||!text(boards()).includes('Reset reason (esp_reset_reason)'))throw Error('the endpoint card shows the restart reason and memory');
+  health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:0,uart_framing_errors:0,uart_overflows:0});
+  if(items().length!==before||!vt('dev-endpoint-vitals').includes('None'))throw Error('zero lost commands is shown as none and needs nothing');
+  health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:1});const l=[...items()].find(li=>text(li).includes('lost'));
+  if(!l||!l.className.includes('bad')||!text(l).includes('1 lighting command was lost')||!view('hero').className.includes('bad')||!text(boards()).includes('Commands lost'))throw Error('a lost command is a fault in Needs attention: '+text(view('attention')));
+  if(items()[0]!==l)throw Error('faults are listed first');
+  health(base);showTab('home')}
 `;
 vm.createContext(context);
 await vm.runInContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});

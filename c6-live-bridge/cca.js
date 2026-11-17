@@ -111,6 +111,22 @@ var CCAUI = (() => {
     pill('status-pill', wrapper.supported === false ? 'Unsupported' : !available ? 'Unavailable or stale' :
       !isMatch ? 'Check identity' : peer.radio_present === true && s.ready === true ? 'Ready' : 'Not ready',
       wrapper.supported === false || !available ? 'wait' : !isMatch || peer.radio_present !== true || s.ready !== true ? 'warn' : 'good');
+    // One reason instead of a grid of dashes when there is nothing to show.
+    const why = wrapper.supported === false ? ['CCA is not available on this gateway', 'Its firmware does not expose CCA. Nothing to do unless you add a CCA board.'] :
+      wrapper.error && !wrapper.status ? ['CCA status unavailable', 'The add-on could not read it: ' + wrapper.error + '. It retries every few seconds.'] :
+      !status || !wrapper.status ? ['Waiting for CCA status', 'The first reading arrives within a few seconds of opening this page.'] : null;
+    if (why) {
+      byId('vitals').replaceChildren();
+      const empty = node('div', 'empty-state'); empty.append(node('strong', '', why[0]), node('span', '', why[1]));
+      byId('status-facts').replaceChildren(empty);
+    } else {
+      const vital = (label, value, tone, small) => { const d = node('div', 'vital' + (tone ? ' ' + tone : '')); d.append(node('span', '', label), node('strong', '', value)); if (small) d.append(node('small', '', small)); return d; };
+      byId('vitals').setAttribute('data-n', '4');
+      byId('vitals').replaceChildren(
+        vital('Link to gateway', available ? 'Online' : link.online === false ? 'Offline' : 'Stale', available ? '' : 'warn', 'status ' + age + ' old'),
+        vital('Radio', peer.radio_present === true ? 'Present' : peer.radio_present === false ? 'Missing' : 'Not reported', peer.radio_present === false ? 'bad' : ''),
+        vital('Board identity', isMatch ? 'Matches' : !expected ? 'Not set' : !observed ? 'Waiting' : 'Mismatch', isMatch ? '' : 'warn', observed || ''),
+        vital('Packets received', display(peer.rx_packets), '', Number.isFinite(peer.crc_errors) ? display(peer.crc_errors) + ' with CRC errors' : ''));
     byId('status-facts').replaceChildren(
       facts('Identity and link', [['Observed MAC', peer.mac], ['Expected MAC', expected || null], ['Identity', identity],
         ['Node boot', peer.boot_id], ['Link online', link.online], ['Status age', age], ['Gateway ready', s.ready], ['Radio present', peer.radio_present], ['Configuration', s.configuration]]),
@@ -119,6 +135,7 @@ var CCAUI = (() => {
         ['Latest local operation', operation ? `${display(operation.cmd)} · ${display(operation.stage)} · request ${display(operation.request_id)}` : null],
         ['Local progress', operation ? `${display(operation.current)} / ${display(operation.total)} · ${display(operation.reason)}` : null],
         ['Native LRF occupancy', peer.native_encoder === false ? 'Unsupported' : display(peer.native_encoder)]]));
+    }
     note('status-note', wrapper.error ? 'Status unavailable: ' + wrapper.error :
       !status ? 'Waiting for CCA status.' : wrapper.supported === false ? 'This gateway does not expose CCA controls.' :
       !isMatch ? identity + '. Verify the attached board and save its expected MAC.' :

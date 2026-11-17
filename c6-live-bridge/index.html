@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CCX Bridge</title>
 <style>
-/* Design tokens. Dark is the only theme; a light theme would redefine the colour group only. */
-:root{color-scheme:dark;
+/* Design tokens. Dark by default; the light theme below redefines only the colour group. */
+:root{color-scheme:dark;--c-on-tone:#000;--c-seg-on:#636366;--c-glass:rgba(14,14,16,.97);
   /* Colour: surfaces, text, lines */
   --c-page:#000;--c-side:#0e0e10;--c-surface:#1c1c1e;--c-raised:#2c2c2e;--c-overlay:#3a3a3c;
   --c-text:#f5f5f7;--c-text-2:#c7c7cc;--c-text-3:#a1a1a6;
@@ -29,6 +29,16 @@
   --shadow:var(--e-1);--radius:var(--r-3);
   --ease:cubic-bezier(.25,.1,.25,1);--ease-out:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.36,.64,1);
   font:var(--fs-3)/var(--lh) var(--font);-webkit-font-smoothing:antialiased;background:var(--c-page);color:var(--c-text)}
+/* Light theme: text at least 4.5:1 on every surface; state colours darkened to keep that contrast. */
+@media(prefers-color-scheme:light){:root{color-scheme:light;--c-on-tone:#fff;--c-seg-on:#fff;--c-glass:rgba(251,251,253,.97);
+  --c-page:#f2f2f7;--c-side:#fbfbfd;--c-surface:#fff;--c-raised:#f2f2f7;--c-overlay:#e5e5ea;
+  --c-text:#1c1c1e;--c-text-2:#48484a;--c-text-3:#5c5c61;
+  --c-line:rgba(60,60,67,.24);--c-fill:rgba(120,120,128,.12);--c-fill-2:rgba(120,120,128,.2);
+  --c-good:#1b7f37;--c-attn:#9c4f00;--c-fault:#c4161c;--c-unknown:#5c5c61;
+  --c-good-t:rgba(52,199,89,.16);--c-attn-t:rgba(255,149,0,.16);--c-fault-t:rgba(255,59,48,.12);--c-unknown-t:rgba(142,142,147,.16);
+  --c-action:#0062e6;--c-action-t:rgba(0,122,255,.12);--c-link:#0058d1;--c-danger:#c4161c;
+  --e-1:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04);--e-2:0 8px 24px rgba(0,0,0,.12);--e-3:0 24px 64px rgba(0,0,0,.2);
+  --thumb:#fff;--blue:#007aff}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--c-page);min-height:100vh}
 h1,h2,h3,h4{margin:0;line-height:var(--lh-tight);letter-spacing:-.01em}
@@ -73,7 +83,7 @@ main{min-width:0;width:100%;max-width:1088px;margin:0 auto;padding:var(--sp-5) v
   .shell{display:block}
   .side{position:sticky;top:0;z-index:10;height:auto;flex-direction:row;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);border-right:0;border-bottom:.5px solid var(--c-line);background:var(--c-side)}
   .live{align-self:center}
-  .nav{position:fixed;left:0;right:0;bottom:0;z-index:20;margin:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;padding:var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));background:rgba(14,14,16,.97);border-top:.5px solid var(--c-line);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:20;margin:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;padding:var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));background:var(--c-glass);border-top:.5px solid var(--c-line);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
   .nav button{justify-content:center;min-height:48px;padding:var(--sp-2) 2px;font-size:var(--fs-1);border-radius:var(--r-1);text-align:center}
   .nav button[aria-selected=true]{background:none;box-shadow:inset 0 2px var(--c-link)}
   .nav .tab-badge{position:absolute;top:8px;right:8px}
@@ -88,7 +98,9 @@ main{min-width:0;width:100%;max-width:1088px;margin:0 auto;padding:var(--sp-5) v
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-3)}
 .card-head h2{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
 .card-head h2 small{display:block;font-size:var(--fs-2);font-weight:400;color:var(--c-text-2);margin-top:2px;letter-spacing:0}
+.device .card-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
 .device .card-head h2{display:block}
+.device .card-head .pill{white-space:normal;text-align:right;max-width:200px}
 .card>.card-head:last-child{margin-bottom:0}
 details.more-card>summary{cursor:pointer;font-weight:600;font-size:var(--fs-4);list-style:none}
 details.more-card>summary::-webkit-details-marker{display:none}
@@ -98,7 +110,7 @@ details.more-card[open]>summary{margin-bottom:var(--sp-3)}
 /* Status card (Home): the one sentence, then the checks behind it */
 .hero{background:var(--c-surface);border-radius:var(--r-3);padding:var(--sp-4);margin:0 0 var(--sp-3);box-shadow:inset 4px 0 var(--tone),var(--e-1)}
 .hero-main{display:flex;gap:var(--sp-3);align-items:flex-start}
-.hero-glyph{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-5);font-weight:700;color:#000;background:var(--tone)}
+.hero-glyph{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-5);font-weight:700;color:var(--c-on-tone);background:var(--tone)}
 .hero-text{min-width:0}
 .hero h1{font-size:clamp(22px,2.6vw,var(--fs-7));line-height:1.2;overflow-wrap:anywhere}
 .hero p{color:var(--c-text-2);margin:var(--sp-2) 0 0;max-width:var(--measure)}
@@ -116,7 +128,7 @@ details.more-card[open]>summary{margin-bottom:var(--sp-3)}
 /* Needs attention */
 .attn{list-style:none;margin:0;padding:0;display:grid;gap:var(--sp-2)}
 .attn li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:var(--sp-1) var(--sp-3);align-items:start;padding:12px var(--sp-3);border-radius:var(--r-2);background:var(--c-raised);box-shadow:inset 3px 0 var(--tone)}
-.attn .ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-2);font-weight:700;color:#000;background:var(--tone)}
+.attn .ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-2);font-weight:700;color:var(--c-on-tone);background:var(--tone)}
 .attn strong{display:block;font-weight:600;overflow-wrap:anywhere}
 .attn .since{display:block;color:var(--c-text-2);font-size:var(--fs-2);margin-top:2px}
 .attn .go{align-self:center;white-space:nowrap}
@@ -200,7 +212,7 @@ button.danger{background:var(--c-danger);color:#fff}
 /* Segmented control (Activity views) */
 .seg{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--c-fill);border-radius:var(--r-2);padding:2px}
 .seg button{background:none;color:var(--c-text-2);min-height:36px;padding:6px var(--sp-3);font-weight:500;border-radius:8px;white-space:nowrap}
-.seg button[aria-pressed=true]{background:#636366;color:var(--c-text);font-weight:600}
+.seg button[aria-pressed=true]{background:var(--c-seg-on);color:var(--c-text);font-weight:600;box-shadow:var(--e-1)}
 @media(max-width:600px){.page-head .seg{display:grid;width:100%}.seg button{padding:6px var(--sp-1);font-size:var(--fs-2)}}
 
 /* Command path strip (Home) */
@@ -244,6 +256,37 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
 .danger-row button{flex:none}
 @media(max-width:600px){.danger-row{flex-direction:column;align-items:stretch}}
 
+
+/* Board cards: their own flagged readings in plain words, and neutral notes */
+.board-flags{list-style:none;margin:var(--sp-3) 0 0;padding:0;display:grid;gap:var(--sp-1)}
+.board-flags:empty{display:none}
+.board-flags li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:var(--sp-2);align-items:start;font-size:var(--fs-2);padding:var(--sp-2) 12px;border-radius:var(--r-2);background:var(--tone-t)}
+.board-flags .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--c-on-tone);background:var(--tone)}
+.board-note{border-left:3px solid var(--c-line);padding-left:var(--sp-2)}
+/* System checks on Home: one line that opens the grid */
+.checks-card>summary{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap}
+.checks-card>summary>span:first-child{font-size:var(--fs-4);font-weight:600}
+.checks-card>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--c-text-2);border-bottom:2px solid var(--c-text-2);transform:rotate(45deg);margin-left:var(--sp-1)}
+.checks-card[open]>summary::after{transform:rotate(-135deg)}
+.checks-line{margin-left:auto;font-size:var(--fs-2);color:var(--c-text-2);font-weight:500}
+.checks-card .checks-strip{margin-top:0;padding-top:var(--sp-3);border-top:.5px solid var(--c-line)}
+/* Activity filters: one row from 600 px, two tidy rows below */
+.toolbar.filters{flex-wrap:nowrap;gap:var(--sp-3);align-items:end}
+.toolbar.filters label{margin:0}
+.toolbar.filters .check{min-height:40px}
+@media(max-width:599px){.toolbar.filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}.toolbar.filters label{min-width:0}.toolbar.filters select,.toolbar.filters input:not([type=checkbox]){width:100%;min-width:0}.toolbar.filters .check{justify-self:start}.toolbar.filters .check,.toolbar.filters .actions{grid-column:1/-1}.toolbar.filters .actions{padding:0}}
+/* Zone mapping: rows that read as text, edited in a side sheet */
+.zone-list{display:grid;gap:var(--sp-2)}
+.zrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--sp-1) var(--sp-3);align-items:center;padding:12px var(--sp-3);border-radius:var(--r-2);background:var(--c-raised)}
+.zrow.changed{box-shadow:inset 3px 0 var(--c-link)}.zrow.invalid{box-shadow:inset 3px 0 var(--c-fault)}
+.zrow strong{display:block;font-weight:600;overflow-wrap:anywhere}
+.zrow .zmeta,.zrow .zha{display:block;font-size:var(--fs-2);color:var(--c-text-2);overflow-wrap:anywhere}
+.zrow .zstate{display:block;font-size:var(--fs-1);font-weight:600;color:var(--c-link)}.zrow.invalid .zstate{color:var(--c-fault)}
+.zrow button{min-height:36px;padding:6px 14px}
+.zone-fields{display:grid;gap:12px;margin-top:var(--sp-3)}
+.zone-fields input{background:var(--c-raised)}
+.zone-fields input.invalid{box-shadow:0 0 0 1px var(--c-fault);background:var(--c-fault-t)}
+.zone-fields input.changed{box-shadow:inset 3px 0 var(--c-link)}
 /* Side sheet (gateway rule editor) */
 dialog.side-sheet{position:fixed;inset:0 0 0 auto;margin:0;height:100%;max-height:100%;width:min(600px,100vw);max-width:100vw;border:0;padding:0;background:var(--c-surface);color:var(--c-text);box-shadow:var(--e-3)}
 dialog.side-sheet[open]{display:flex;flex-direction:column;animation:side-in .3s var(--ease-out)}
@@ -519,7 +562,7 @@ dialog.sheet p{color:var(--label2);font-size:.9rem;margin:0 0 18px}
 .sync-table td{overflow-wrap:normal}
 .attention li[role=button]{cursor:pointer}.attention li[role=button]:hover{filter:brightness(1.15)}
 .attention li{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:.88rem;background:var(--tone-t);border-radius:10px;padding:8px 12px}
-.attention .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:700;color:#fff;background:var(--tone)}
+.attention .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:700;color:var(--c-on-tone);background:var(--tone)}
 .attention small{color:var(--label2);font-size:.78rem;white-space:nowrap}
 .attention.clear li{background:var(--green-t)}
 @media(max-width:600px){.attention li{grid-template-columns:18px minmax(0,1fr)}.attention small{grid-column:2;white-space:normal}}
@@ -633,7 +676,6 @@ html,body{overflow-anchor:none}
   <section id="hero" class="hero wait" aria-live="polite">
     <div class="hero-main"><span id="hero-glyph" class="hero-glyph" aria-hidden="true">…</span>
       <div class="hero-text"><h1 id="headline">Connecting to the gateway…</h1><p id="headline-detail">Live status refreshes every second.</p></div></div>
-    <div id="summary" class="checks-strip" aria-label="System checks"></div>
     <p id="health-note" class="hint"></p>
   </section>
   <section class="card" id="attention-card" hidden>
@@ -668,6 +710,9 @@ html,body{overflow-anchor:none}
     </ol>
     <p id="flow-note" class="hint">No event outcome is inferred; the path moves only for observed events.</p>
   </section>
+  <details class="card more-card checks-card" id="checks-card"><summary><span>System checks</span><span id="checks-summary" class="checks-line"></span></summary>
+    <div id="summary" class="checks-strip" aria-label="System checks"></div>
+  </details>
 </div>
 
 <div id="panel-activity" class="panel" role="tabpanel" aria-labelledby="tab-activity" hidden>
@@ -680,7 +725,7 @@ html,body{overflow-anchor:none}
         <p>Each row is one lighting command and the steps it went through, or a status report, newest first. Select a row to see every step. Step times are measured from when Lutron's command arrived.</p>
         <p>Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the lights report. Reports to Lutron update the processor's record of the lamp, not the zone level Lutron shows. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
       </div>
-      <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
+      <div class="toolbar filters"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
       <p class="hint"><span id="events-tz"></span></p>
       <div id="events-feed" class="scroll feed"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
       <p id="events-note" class="hint">No events yet.</p>
@@ -700,7 +745,7 @@ html,body{overflow-anchor:none}
     <section class="card" id="ccx-events-card">
       <div class="card-head"><h2>Listener events</h2><span id="ccx-stream-pill" class="pill wait">Connecting</span></div>
       <p class="hint">Messages the passive CCX listener heard, with the gateway's own rule decisions.</p>
-      <div class="toolbar"><label>Event kind <select id="ccx-filter-kind"><option value="">All kinds</option></select></label><label>Source serial or zone <input id="ccx-filter-source" placeholder="All sources"></label><div class="actions inline"><button id="ccx-copy" class="secondary">Copy log</button></div></div>
+      <div class="toolbar filters"><label>Event kind <select id="ccx-filter-kind"><option value="">All kinds</option></select></label><label>Source serial or zone <input id="ccx-filter-source" placeholder="All sources"></label><div class="actions inline"><button id="ccx-copy" class="secondary">Copy log</button></div></div>
       <p id="ccx-copy-note" class="hint" role="status"></p>
       <div id="ccx-events" class="feed feed-list"></div>
       <details class="more"><summary>Advanced</summary><div class="more-body">
@@ -724,12 +769,12 @@ html,body{overflow-anchor:none}
   <div id="health" class="boards">
     <section class="card device" id="dev-gateway">
       <div class="card-head"><h2>Gateway<small>Runs the bridge and talks to Home Assistant</small></h2><span id="dev-gateway-pill" class="pill wait">Waiting</span></div>
-      <div id="dev-gateway-vitals" class="vitals"></div>
+      <div id="dev-gateway-vitals" class="vitals"></div><ul id="dev-gateway-flags" class="board-flags"></ul>
       <details class="more" id="dev-gateway-more"><summary>All readings</summary><div id="dev-gateway-readings" class="more-body groups"></div></details>
     </section>
     <section class="card device" id="dev-endpoint">
       <div class="card-head"><h2>Thread endpoint<small>Joins Lutron's Thread network and receives commands</small></h2><span id="dev-endpoint-pill" class="pill wait">Waiting</span></div>
-      <div id="dev-endpoint-vitals" class="vitals"></div>
+      <div id="dev-endpoint-vitals" class="vitals"></div><ul id="dev-endpoint-flags" class="board-flags"></ul><p id="dev-endpoint-note" class="hint board-note"></p>
       <details class="more" id="dev-endpoint-more"><summary>All readings</summary><div id="dev-endpoint-readings" class="more-body groups"></div></details>
       <details class="more" id="firmware-card"><summary>Update firmware</summary><div class="more-body">
         <p class="hint">An ESP32 app image (<code>.bin</code>), up to 768 KB. Lutron lighting pauses while the endpoint restarts; this page watches it come back.</p>
@@ -742,7 +787,7 @@ html,body{overflow-anchor:none}
     </section>
     <section class="card device" id="zigbee-node-card" hidden>
       <div class="card-head"><h2>Zigbee node<small>Talks Zigbee to the Ketra lamps for direct output</small></h2><span id="zigbee-node-pill" class="pill wait">Loading</span></div>
-      <div id="dev-zigbee-vitals" class="vitals"></div>
+      <div id="dev-zigbee-vitals" class="vitals"></div><ul id="dev-zigbee-flags" class="board-flags"></ul>
       <details class="more" id="dev-zigbee-more"><summary>All readings</summary><div class="more-body"><div id="zigbee-node-facts" class="groups"></div><div id="dev-zigbee-readings" class="groups"></div></div></details>
       <details class="more" id="zigbee-fw" hidden><summary>Update firmware</summary><div class="more-body">
         <p class="hint">A <b>signed</b> node image, up to 1.5 MB. The node checks the signature, restarts into it and rolls back unless the gateway resumes it. Direct lighting pauses meanwhile; a hybrid gateway uses N4.</p>
@@ -792,7 +837,7 @@ html,body{overflow-anchor:none}
     </section>
     <section class="card device" id="dev-ketra">
       <div class="card-head"><h2>Ketra hub<small>The N4 hub, when the gateway sends lighting through it</small></h2><span id="dev-ketra-pill" class="pill wait">Waiting</span></div>
-      <div id="dev-ketra-vitals" class="vitals"></div>
+      <div id="dev-ketra-vitals" class="vitals"></div><ul id="dev-ketra-flags" class="board-flags"></ul>
       <details class="more" id="dev-ketra-more"><summary>All readings</summary><div id="dev-ketra-readings" class="more-body groups"></div></details>
     </section>
   </div>
@@ -864,8 +909,8 @@ html,body{overflow-anchor:none}
     <div class="card-head"><h2>Zone mapping <button type="button" class="info" aria-expanded="false" aria-controls="tip-mapping" aria-label="About zone mapping">i</button></h2><span id="config-pill" class="pill wait">Loading</span></div>
     <div id="tip-mapping" class="tip" hidden><p>Each row links a Lutron zone to its N4 output group. Change it when you add, remove or rename a bridged zone, or change its group, serial or warm-dim curve; not after a Designer transfer that keeps the same zones. All rows are sent as one change; both boards may restart briefly and it shows “Applying…” until both report the same hash.</p></div>
     <p id="config-state" class="hint">Loading configuration…</p>
-    <div class="scroll"><table id="zone-table" class="editor"><thead><tr><th class="w-id">Zone ID</th><th>Name</th><th class="w-grp">N4 group</th><th>Serial</th><th>Warm-dim curve</th><th id="ha-editor-col" hidden>Home Assistant</th><th class="w-x"><span class="sr">Remove</span></th></tr></thead><tbody id="zone-rows"></tbody></table></div>
-    <div class="actions"><button id="add-zone" class="plain">＋ Add zone</button><button id="fill-names" class="plain" hidden>Fill empty names from Home Assistant</button></div><datalist id="ha-serials"></datalist>
+    <div id="zone-table"><div id="zone-rows" class="zone-list"></div></div>
+    <div class="actions"><button id="add-zone" class="secondary">Add zone</button><button id="fill-names" class="plain" hidden>Fill empty names from Home Assistant</button></div><datalist id="ha-serials"></datalist>
     <p id="config-errors" class="notice bad"></p>
     <details class="more json-editor"><summary>Advanced: edit as JSON</summary><div class="more-body"><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><p id="json-note" class="hint">The zones list as JSON. Changes here update the table above.</p></div></details>
     <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
@@ -906,6 +951,15 @@ html,body{overflow-anchor:none}
 </main>
 </div>
 <dialog id="sheet" class="sheet"><h3 id="sheet-title"></h3><p id="sheet-body"></p><div class="sheet-actions"><button id="sheet-cancel" class="secondary">Cancel</button><button id="sheet-ok">OK</button></div></dialog>
+<dialog id="zone-sheet" class="side-sheet" aria-labelledby="zone-sheet-title">
+  <header><h2 id="zone-sheet-title">Edit zone</h2><button type="button" id="zone-sheet-close">Done</button></header>
+  <div class="sheet-body">
+    <p class="hint">Changes stay in this browser until you select <b>Apply mapping</b>, which sends every zone as one change.</p>
+    <div id="zone-sheet-fields" class="zone-fields"></div>
+    <p id="zone-sheet-ha" class="hint"></p>
+  </div>
+  <footer><div class="actions"><button type="button" id="zone-sheet-remove" class="plain danger-text">Remove this zone</button></div></footer>
+</dialog>
 <dialog id="rules-sheet" class="side-sheet" aria-labelledby="rules-sheet-title">
   <header><h2 id="rules-sheet-title">Edit gateway rules</h2><span id="ccx-rules-pill" class="pill wait">Not loaded</span><button type="button" id="rules-sheet-close" class="secondary">Close</button></header>
   <div class="sheet-body" id="ccx-rules-card">
@@ -968,7 +1022,7 @@ function renderZigbeeNode(s){const r=s?.direct_routing,a=r?.arming,f=r?.firmware
 }
 /* Why neither path owns lighting output (/api/status backend.hold_reason); absent on older gateways. */
 const BACKEND_HOLD={endpoint_capability:'waiting for the endpoint to announce itself',epoch_exhausted:'the endpoint handshake ran out of epochs',
-  endpoint_admission:'the gateway is not yet admitting endpoint commands (its boot hold, or no fresh safe HELLO)',
+  endpoint_admission:'the gateway is not yet admitting endpoint commands (its startup hold, or no recent safe check-in from the endpoint)',
   n4_busy:'N4 still has work in flight',direct_busy:'the Zigbee engine still has work in flight',handover_take:'moving outstanding work between paths',
   generation_bind:'binding a new output generation',epoch_begin:'starting the endpoint handshake',epoch_ack:'waiting for the endpoint to acknowledge the handshake'};
 const ADMISSION_TEXT=v=>typeof v==='string'?v.replace(/_/g,' '):'—';
@@ -1089,7 +1143,7 @@ function endpointHealth(s){
   if(p?.enabled===false){const stopped=s.endpoint_online===true&&q?.present===true&&q.phase==='operator-stopped';return {tone:'warn',label:'Disabled',title:'Gateway reports endpoint disabled',detail:`${stopped?'The endpoint reports operator stop.':s.endpoint_online===true?'The endpoint has not reported operator stop.':'The endpoint radio state is unavailable while it is offline.'} ${hold}`}}
   if(p?.link_lost===true)return {tone:'bad',label:'Link lost',title:'Endpoint safety link lost',detail:`The gateway reports that endpoint safety evidence was lost. ${hold}`};
   if(p?.held===true||p?.hold_requested===true){const boot=p.state==='held-boot'||Number(p.boot_hold_remaining_s)>0;return {tone:'warn',label:boot?'Starting':'Held',title:boot?'Endpoint startup hold':'Gateway reports an endpoint hold',detail:`${boot?'Waiting for the startup hold to finish.':'The gateway reports a hold request.'} ${hold}`}}
-  if(s.endpoint_online===false)return {tone:'warn',label:'Offline',title:'Endpoint board offline',detail:`No recent endpoint HELLO was reported. ${hold}`};
+  if(s.endpoint_online===false)return {tone:'warn',label:'Offline',title:'Endpoint board offline',detail:`The gateway has not heard from the endpoint recently. ${hold}`};
   if(s.endpoint_online!==true)return {tone:'warn',label:'Unavailable',title:'Endpoint status unavailable',detail:'The gateway did not report a valid endpoint connection state.'};
   if(q?.present===true&&q.phase==='operator-stopped')return {tone:'warn',label:'Stopped',title:'Endpoint reports operator stop',detail:`The latest endpoint telemetry reports operator stop. ${hold}`};
   const booleans=['configured','physical_hold_available','enabled','held','hold_requested','timer_error','storage_error','hardware_error','watchdog_error','link_lost','persistence_pending','recovering'];
@@ -1120,7 +1174,7 @@ function pill(text,tone){return el('span','pill '+tone,text)}
 function node(id,kind,label){$('node-'+id).setAttribute('class','node '+kind);$('detail-'+id).setAttribute('class','detail '+kind);$('detail-'+id).textContent=label}
 function pulse(ids,tone=''){for(const id of ids){const e=$(id);e.setAttribute('class',e.getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,'')+` flow-pulse${tone?' '+tone:''}`)}}
 function renderFlow(s){for(const id of ['edge-thread-endpoint','edge-endpoint-uart','edge-uart-gateway','edge-gateway-n4','edge-n4-report','return-report-n4','return-n4-gateway','return-gateway-uart','return-uart-endpoint','return-endpoint-thread']){$(id).setAttribute('class',$(id).getAttribute('class').replace(/\sflow-pulse(?:\s(?:warn|bad))?/g,''))}
-  const state=endpointHealth(s),current=snapshotFresh(s);node('thread',state.tone,current?state.label.toLowerCase():'unavailable');node('endpoint',current&&s.endpoint_online===true?state.tone:'warn',current?(s.endpoint_online===true?'online':s.endpoint_online===false?'offline':'unavailable'):'unavailable');node('uart',current&&s.endpoint_online===true&&Number(s.uart_frames_ok)>0?'good':'warn',current?`${num(s.uart_frames_ok)} frames · ${num(s.uart_crc_errors)} CRC`:'unavailable');const net=netName(s),netOk=netUp(s);node('gateway',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',current?`${net} ${netOk===true?'up':netOk===false?'down':'unknown'}`:'monitoring delayed');$('gateway-title').textContent=`Gateway board (${net==='Network'?'link not reported':'on '+net})`;node('n4','','no recent outcome');node('report','','no recent report');
+  const state=endpointHealth(s),current=snapshotFresh(s);node('thread',state.tone,current?(state.tone==='good'?'connected':state.label.toLowerCase()):'unavailable');node('endpoint',current&&s.endpoint_online===true?state.tone:'warn',current?(s.endpoint_online===true?'online':s.endpoint_online===false?'offline':'unavailable'):'unavailable');node('uart',current&&s.endpoint_online===true&&Number(s.uart_frames_ok)>0?'good':'warn',current?`${num(s.uart_frames_ok)} messages · ${num(s.uart_crc_errors)} link errors`:'unavailable');const net=netName(s),netOk=netUp(s);node('gateway',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',current?`${net} ${netOk===true?'up':netOk===false?'down':'unknown'}`:'monitoring delayed');$('gateway-title').textContent=`Gateway board (${net==='Network'?'link not reported':'on '+net})`;node('n4','','no recent outcome');node('report','','no recent report');
   const out=outputBackend(s);$('label-n4').textContent=out.kind==='n4'?'N4 output':out.kind==='direct'?'Zigbee output':'Output';$('title-n4').textContent=out.kind==='n4'?'N4 lighting output the gateway writes to':out.kind==='direct'?`Direct Zigbee lighting output (${out.admitted?'admitted':'not admitted: commands are held at the gateway'})`:'Lighting output backend not recognised';
   if(outputHeld(out))node('n4',out.kind==='direct'?'bad':'warn',out.kind==='direct'?'held · not admitted':'backend unknown');
   const latest=eventRows[eventRows.length-1],stage=latest?.stage;const snapshotSeconds=snapshotAge(s),atSnapshot=typeof s.gateway_uptime_ms==='number'&&typeof latest?.ts_ms==='number'?s.gateway_uptime_ms-latest.ts_ms:NaN;const age=Number.isFinite(atSnapshot)&&atSnapshot>=0&&snapshotSeconds!==null?atSnapshot+snapshotSeconds*1000:NaN;const fresh=current&&!!stage&&Number.isFinite(age)&&age<=10000;
@@ -1181,7 +1235,69 @@ function tile(label,value,tone,hint,goto){const d=el('div','tile '+tone);d.appen
 function group(title,rows){const g=el('div');const list=el('div','list');for(const [k,v,tone] of rows){const r=el('div','row'),b=el('strong',tone||'');if(v&&typeof v==='object')b.append(v);else b.textContent=v;r.append(el('span','',k),b);list.append(r)}g.append(el('h3','',title),list);g.title_=title;g.rows=rows;return g}
 // esp_reset_reason_t; crashes, watchdogs and brownouts are worth a look.
 const RESET_REASON={0:['Unknown',''],1:['Power on',''],2:['External reset',''],3:['Software restart',''],4:['Crash (panic)','warn'],5:['Interrupt watchdog','warn'],6:['Task watchdog','warn'],7:['Watchdog','warn'],8:['Wake from deep sleep',''],9:['Brownout (power dip)','warn'],10:['SDIO reset',''],11:['USB reset',''],12:['JTAG reset',''],13:['eFuse error','warn'],14:['Power glitch','warn'],15:['CPU lockup','warn']};
-const flaggedRows=groups=>groups.flatMap(g=>(g.rows||[]).filter(r=>r[2]==='warn'||r[2]==='bad').map(r=>({group:g.title_,key:r[0],value:typeof r[1]==='object'?r[1].textContent:r[1],tone:r[2]})));
+const flaggedRows=groups=>groups.flatMap(g=>(g.rows||[]).filter(r=>r[2]==='warn'||r[2]==='bad').map(r=>({group:g.title_,key:r[0],value:typeof r[1]==='object'?r[1].textContent:r[1],tone:r[2],plain:r[3]})));
+/* A flagged reading as a sentence a homeowner understands, board first. Raw names stay in All readings. */
+const plural=(n,one,many)=>`${num(n)} ${n===1?one:many}`;
+const PLAIN_FLAGS={
+  'Online':b=>`${b} is offline: the gateway has not heard from it recently.`,
+  'Dropped (mapping mismatch)':(b,n)=>`${b} dropped ${plural(n,'command','commands')} because the two boards held different zone mappings.`,
+  'CRC errors':(b,n)=>`${b}: ${plural(n,'damaged message','damaged messages')} on its wired link.`,
+  'Error rate':b=>`${b}: more than 1% of messages on its wired link are damaged.`,
+  'Framing errors':(b,n)=>`${b}: ${plural(n,'garbled message','garbled messages')} on the link to the gateway since it started.`,
+  'Receive overflows':b=>`${b}: the gateway is falling behind reading its link, and the count is still rising.`,
+  'UART overflows':b=>`${b}: the gateway is falling behind reading its link, and the count is still rising.`,
+  'Commands lost':(b,n)=>`${b}: ${plural(n,'lighting command','lighting commands')} never reached the gateway.`,
+  'Reported':(b,n,v)=>`${b} last reported its health ${v}.`,
+  'Lowest free heap':(b,n,v)=>`${b} ran low on memory (${v} free at its lowest).`,
+  'Lowest free memory since boot':(b,n,v)=>`${b} ran low on memory (${v} free at its lowest).`,
+  'Link CRC errors received':(b,n)=>`${b} received ${plural(n,'damaged message','damaged messages')} from the gateway.`,
+  'Link framing errors received':(b,n)=>`${b} received ${plural(n,'garbled message','garbled messages')} from the gateway.`,
+  'Link receive overflows':b=>`${b} fell behind reading messages from the gateway.`,
+  'Transmit drops':(b,n)=>`${b} dropped ${plural(n,'outgoing message','outgoing messages')}.`,
+  'Disconnects since boot':(b,n)=>`${b} lost its network connection ${n===1?'once':num(n)+' times'} since it started.`,
+  'Connected':b=>`${b} is not connected to the network.`,
+  'Zone mapping on both boards':b=>`${b}: the two boards hold different zone mappings. Apply the mapping again in Settings.`,
+  'Maintenance mode':b=>`${b} is in maintenance mode, so lighting output is paused.`,
+  'Sockets in use':b=>`${b} is close to its limit of network connections.`,
+  'Socket failures':(b,n)=>`${b} failed to open ${plural(n,'network connection','network connections')}.`,
+  'Management requests rejected':(b,n)=>`${b} refused ${plural(n,'request','requests')} from management clients since it started.`,
+  'Unreachable lamps':(b,n)=>`${b}: ${plural(n,'lamp cannot','lamps cannot')} be reached.`,
+  'Uncertain lamps':(b,n)=>`${b}: ${plural(n,'lamp has','lamps have')} not confirmed its level yet.`,
+  'Changed outside the bridge':(b,n)=>`${b}: ${plural(n,'lamp was','lamps were')} changed from outside the bridge.`,
+  'Commands without lamps':(b,n)=>`${b}: ${plural(n,'command was','commands were')} for a zone with no lamps.`,
+  'Node resets by gateway':(b,n)=>`${b} was restarted by the gateway ${n===1?'once':num(n)+' times'}.`,
+  'Journal saved':b=>`${b}: the gateway could not save the node's record.`,
+  'Node session':(b,n,v)=>`${b}: its session is ${String(v).toLowerCase()}.`,
+  'Session ready':b=>`${b} is not ready to carry lighting yet.`,
+  'Admitted':b=>`${b} is not ready to carry lighting yet.`,
+  'Exhausted deliveries':(b,n)=>`${b}: ${plural(n,'command','commands')} could not be delivered to the hub.`,
+  'WebSocket failures':(b,n)=>`${b}: the connection to the hub failed ${n===1?'once':num(n)+' times'}.`,
+  'Output admitted':b=>`${b}: direct Zigbee output is not admitted, so commands are held at the gateway.`,
+  'Lighting output':b=>`${b}: lighting output is held, so commands are not reaching the lamps.`,
+  'Rejected HELLOs':(b,n)=>`${b} rejected ${plural(n,'check-in message','check-in messages')}.`,
+  'Responding':b=>`${b}: the wired link to the node is not responding.`,
+  'Zigbee member link':b=>`${b}: the wired link to the node is not responding.`,
+  'Available':b=>`${b} is not reporting its safety status.`,
+  'Fault bits':b=>`${b} reports a safety fault. Find out why before clearing it in Settings › Danger zone.`,
+  'Role fault (R1)':b=>`${b} reports a safety fault. Find out why before clearing it in Settings › Danger zone.`,
+  'Prefix fault (R3)':b=>`${b} reports a safety fault. Find out why before clearing it in Settings › Danger zone.`,
+  'Interrupted session':b=>`${b} reports a safety fault. Find out why before clearing it in Settings › Danger zone.`,
+  'May send':b=>`${b} is not allowed to send to Thread yet.`,
+  'Prefix status':b=>`${b} has not yet verified the Thread network.`,
+  'Extended PAN verified':b=>`${b} has not yet verified the Thread network.`,
+  'Active timestamp valid':b=>`${b} has not yet verified the Thread network.`,
+  'Enabled':b=>`${b} is disabled.`,
+  'Hold requested':b=>`${b} is being held off by the gateway.`,
+  'Hold asserted':b=>`${b} is being held off by the gateway.`,
+  'Startup hold remaining':(b,n,v)=>`${b} is in its startup hold (${v}).`,
+  'Link lost':b=>`${b}: the gateway lost its safety link to the endpoint.`,
+  'Violation':b=>`${b} was disabled after a safety violation.`,
+  'Recovering':b=>`${b} is recovering from a safety latch.`,
+  'Command admission':b=>`${b} is not accepting commands yet.`,
+  'Endpoint':(b,n,v)=>`${b}: ${String(v).toLowerCase()}.`};
+function plainFlag(f,board){if(f.plain)return f.plain;if(f.group==='Home Assistant')return f.key==='Zones matched'?`Home Assistant: ${f.value} zones have a matching Lutron light; the others cannot be compared.`:'Home Assistant data is not available, so rooms cannot be compared with Lutron.';const v=String(f.value??''),n=Number(v.replace(/,/g,'').match(/\d+(?:\.\d+)?/)?.[0]),fn=PLAIN_FLAGS[f.key];
+  if(fn)return fn(board,n,v);if(/error/i.test(f.key))return `${board} reports a ${f.key.replace(/\s*\(.*\)/,'').toLowerCase()}.`;
+  if(f.group==='Startup sequence')return `${board} is still starting up.`;return `${board} has a reading to check under All readings.`}
 /* Lamp scene storage (the gateway's scene cache). Scenes still work while it is
    not ready, sent as ordinary commands, so flag it only once it has stayed
    not ready for 10 minutes. */
@@ -1196,8 +1312,8 @@ function sceneCacheIssue(n){
 }
 function attentionList(sections){const flags=sections.flatMap(s=>s.flags||[]).sort((a,b)=>(b.tone==='bad')-(a.tone==='bad')),ul=el('ul','attention'+(flags.length?'':' clear'));
   if(!flags.length){const li=el('li','good');li.append(el('span','ic','✓'),el('span','','Nothing flagged: every reported counter and check looks normal.'),el('small',''));ul.append(li);return ul}
-  for(const f of flags.slice(0,8)){const li=el('li',f.tone);li.append(el('span','ic',f.tone==='bad'?'✕':'!'),el('span','',`${f.key}: ${f.value}`),el('small','',f.section+(f.group&&f.group!==f.section?' · '+f.group:'')));if(f.board){li.setAttribute('role','button');li.setAttribute('tabindex','0');li.title=`Show ${f.section} readings`;const open=()=>goTo('devices','dev-'+f.board+'-more');li.onclick=open;li.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault?.();open()}})}ul.append(li)}
-  if(flags.length>8){const li=el('li','warn');li.append(el('span','ic','+'),el('span','',`${flags.length-8} more in the cards below`),el('small',''));ul.append(li)}return ul}
+  for(const f of flags.slice(0,5)){const li=el('li',f.tone);li.append(el('span','ic',f.tone==='bad'?'✕':'!'),el('span','',f.text||`${f.key}: ${f.value}`),el('small','',f.board?'All readings ›':f.section||''));if(f.board){li.setAttribute('role','button');li.setAttribute('tabindex','0');li.title=`Show ${f.section} readings`;const open=()=>goTo('devices','dev-'+f.board+'-more');li.onclick=open;li.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault?.();open()}})}ul.append(li)}
+  if(flags.length>5){const li=el('li','warn');li.append(el('span','ic','+'),el('span','',`${flags.length-5} more in the cards below`),el('small',''));ul.append(li)}return ul}
 function bytes(n){return !Number.isFinite(Number(n))||n===null?'—':n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B'}
 function usage(used,limit,warnAt=.8){const u=Number(used),l=Number(limit);if(!Number.isFinite(u)||!Number.isFinite(l)||l<=0)return [val(used),''];const f=u/l,tone=f>=.95?'bad':f>=warnAt?'warn':'',w=el('span','usage'),m=el('span','meter'),i=el('i',tone);i.style.width=Math.min(100,f*100)+'%';m.append(i);w.append(m,el('span','',`${num(u)} of ${num(l)}`));return [w,tone]}
 const errTone=v=>Number(v)>0?'warn':'';
@@ -1210,9 +1326,16 @@ function endpointBoard(s){const h=s?.endpoint_health&&typeof s.endpoint_health==
   const link=['link_rx_crc','link_rx_framing','link_rx_overflow'].map(hn).filter(v=>v!==null);
   return {h,reset,why,uptime,lost:n('endpoint_cmd_lost'),frames:n('endpoint_cmd_frames'),dups:n('endpoint_cmd_duplicates'),framing:n('uart_framing_errors'),overflows:n('uart_overflows'),
     endpointLinkErrors:link.length?link.reduce((a,b)=>a+b,0):null,heap:hn('heap_free'),heapMin:hn('heap_min')}}
+/* The endpoint's transmit guard (endpoint_health.guard_*): frames it refused since its boot. Informational, never a fault. */
+const GUARD_KINDS=[['guard_announce','Network announcements'],['guard_channel','Off-channel'],['guard_all_nodes','Broadcast management'],['guard_parent_req','Extra parent searches'],['guard_other','Other']];
+function guardRows(h){if(!h||!(h.has_guard===true||GUARD_KINDS.some(([k])=>Number.isFinite(h[k]))))return null;return GUARD_KINDS.filter(([k])=>Number.isFinite(h[k])).map(([k,label])=>[label,num(h[k])+(h[k]>=65535?' or more':'')])}
+function guardTotal(h){return guardRows(h)?GUARD_KINDS.reduce((a,[k])=>a+(Number.isFinite(h[k])?h[k]:0),0):0}
+/* The gateway's estimate of the endpoint's clock (/api/status endpoint_clock): one reading. */
+function clockRows(s){const c=s?.endpoint_clock;if(!c||typeof c!=='object')return [];const u=Number(c.uncertainty_us);
+  if(c.synced!==true||!Number.isFinite(u))return [['Clock','Not synchronised yet']];const ms=u/1000;return [['Clock',`Offset known to ±${ms<1?ms.toFixed(2):ms<10?ms.toFixed(1):Math.round(ms)} ms`]]}
 function endpointHealthRows(h){const v=k=>typeof h[k]==='number'&&Number.isFinite(h[k]),r=[];
   if(v('age_ms'))r.push(['Reported',duration(h.age_ms)+' ago',h.age_ms>30000?'warn':'']);
-  if(v('reset_reason'))r.push(['Reset reason (esp_reset_reason)',`${RESET_REASON[h.reset_reason]?.[0]||'Unknown'} (${h.reset_reason})`,RESET_REASON[h.reset_reason]?.[1]||'']);
+  if(v('reset_reason'))r.push(['Reset reason (esp_reset_reason)',`${RESET_REASON[h.reset_reason]?.[0]||'Unknown'} (${h.reset_reason})`,RESET_REASON[h.reset_reason]?.[1]||'',`Thread endpoint restarted after a ${(RESET_REASON[h.reset_reason]?.[0]||'fault').toLowerCase()}${v('uptime_ms')?' '+duration(h.uptime_ms)+' ago':''}.`]);
   if(v('rom_reset_reason'))r.push(['ROM reset reason',String(h.rom_reset_reason)]);
   if(v('uptime_ms'))r.push(['Uptime',clock(h.uptime_ms)]);
   if(v('heap_free'))r.push(['Free heap',bytes(h.heap_free)]);if(v('heap_min'))r.push(['Lowest free heap',bytes(h.heap_min),h.heap_min<16384?'warn':'']);
@@ -1242,7 +1365,8 @@ function renderAttention(issues,out){const items=[...issues].sort((a,b)=>(b[0]==
   $('attention-card').hidden=!items.length;const c=$('attention-count');c.textContent=items.length?`${items.length} item${items.length===1?'':'s'}`:'';c.className='pill '+(items.some(i=>i[0]==='bad')?'bad':'warn')}
 /* One device card: status pill, vitals, and its readings on demand; a flagged reading is listed above the cards and opens them. */
 const boardOpen={};
-function renderBoard(key,name,{tone,label,vitals,groups}){const flags=flaggedRows(groups).map(f=>({...f,section:name,board:key}));
+function renderBoard(key,name,{tone,label,vitals,groups}){const flags=flaggedRows(groups).map(f=>({...f,section:name,board:key,text:plainFlag(f,name)}));
+  $('dev-'+key+'-flags').replaceChildren(...flags.map(f=>{const li=el('li',f.tone);li.append(el('span','ic',f.tone==='bad'?'✕':'!'),el('span','',f.text));return li}));
   if(tone!==undefined){const worst=flags.some(f=>f.tone==='bad')||tone==='bad'?'bad':tone==='good'&&flags.length?'warn':tone,p=$('dev-'+key+'-pill');p.className='pill '+worst;p.textContent=label+(flags.length?` · ${flags.length} to check`:'')}
   const v=$('dev-'+key+'-vitals');v.setAttribute('data-n',String(vitals.length));v.replaceChildren(...vitals.map(([k,value,t,small])=>{const d=el('div','vital'+(t?' '+t:''));d.append(el('span','',k),el('strong','',value));if(small)d.append(el('small','',small));return d}));
   $('dev-'+key+'-readings').replaceChildren(...groups);
@@ -1276,30 +1400,32 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   setHero(tone,tone==='good'?'Everything is working':issues.length===1?issues[0][1]:`${issues.length} things need attention`,tone==='good'?['Endpoint on Thread with safety checks passing',`${out.name} carrying lighting`,lampLine].filter(Boolean).join(' · ')+'.':(issues.length===1?(issues[0][2]||'')+(state.tone==='good'||issues[0][1]===state.title?'':` ${state.detail}`):'Most urgent first, in the list below.'));
   $('summary').replaceChildren(
     tile('Gateway network',current?(netOk===true?(net==='Network'?'Connected':net):netOk===false?'Down':'Unknown'):'Unavailable',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',s.gateway_uptime_ms===undefined?'':'Up for '+duration(s.gateway_uptime_ms),['devices','dev-gateway','Devices']),
-    tile('Thread safety',state.label,state.tone,current?'Role '+role+' · RLOC16 '+hex16(s.rloc16):'Current safety status unknown',['devices','dev-endpoint','Devices']),
-    tile('Endpoint board',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000),['devices','dev-endpoint','Devices']),
+    tile('Thread network',!current?'Unknown':state.tone==='good'?'Connected':state.label,state.tone,!current?'Current status unknown':state.tone==='good'?'as a child device':state.title,['devices','dev-endpoint','Devices']),
+    tile('Thread endpoint',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000),['devices','dev-endpoint','Devices']),
     tile('Zone mapping',current?(s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown'):'Unavailable',current&&s.config_match===true?'good':'warn',s.config_match===true?'Same on both boards':'Hash '+val(s.config_hash),['automation','sync-card','Lutron programming']),
     tile('Lighting output',!current?'Unavailable':out.fallback?'N4 fallback':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; N4 carrying output':out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Gateway drives the lamps over Zigbee'):'Backend '+val(out.reason),out.kind==='direct'&&zigbeeArming(s)?['devices','zigbee-node-card','Zigbee node']:['devices','dev-ketra','Ketra hub']),
-    ...(zl?.enabled?[tile('Zigbee member',current?zl.label:'Unavailable',current?zl.tone:'warn','Serial link only; not RF membership',['devices','zigbee-node-card','Zigbee node'])]:[]),
+    ...(zl?.enabled?[tile('Zigbee node link',current?zl.label:'Unavailable',current?zl.tone:'warn','Wired link to the node only',['devices','zigbee-node-card','Zigbee node'])]:[]),
     tile('Programming',current?sync.label:'Unavailable',!current?'warn':sync.tone==='wait'?'wait':sync.tone,sync.steps.find(x=>x[0]===sync.tone&&sync.tone!=='good')?.[1]||'Lutron → bridge → lamps',['automation','sync-card','Lutron programming']),
-    tile('Bridged lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length?'warn':lampStats.pending?'wait':'good',held?'Commands are held at the gateway':!lampStats.current?'Current comparisons unavailable':lampStats.pending?`${lampStats.pending} waiting for a reading`:'Compared with Lutron',['home','lights-card','Rooms']));
+    tile('Lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length?'warn':lampStats.pending?'wait':'good',held?'Commands are held at the gateway':!lampStats.current?'Current comparisons unavailable':lampStats.pending?`${lampStats.pending} waiting for a reading`:'Compared with Lutron',['home','lights-card','Rooms']));
+  {const tiles=[...($('summary').children||[])],off=tiles.filter(t=>/\b(warn|bad)\b/.test(t.className)).length;$('checks-summary').textContent=`${tiles.length} checks · ${off?off+(off===1?' needs':' need')+' attention':'all normal'}`}
   const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v),dg=s.diagnostics&&typeof s.diagnostics==='object'?s.diagnostics:{},has=k=>dg[k]!==undefined&&dg[k]!==null,opt=(k,row)=>has(k)?[row]:[];
   if(Number.isInteger(dg.accepted_count)){if(perfLastCount!==null&&dg.accepted_count<perfLastCount)perfSamples=[];if(dg.accepted_count>0&&dg.accepted_count!==perfLastCount&&Number.isFinite(dg.acceptance_last_ms))perfSamples=[...perfSamples,dg.acceptance_last_ms].slice(-30);perfLastCount=dg.accepted_count}
   const disconnects=dg.link_disconnects??dg.wifi_disconnects,crc=Number(s.uart_crc_errors),frames=Number(s.uart_frames_ok),crcRate=frames+crc>0&&Number.isFinite(crc)?crc/(frames+crc):null;
   const [sockets,socketTone]=usage(dg.sockets_used,dg.socket_limit);
   const eb=endpointBoard(s),notRep='Not reported',linkRows=[['Bytes',num(s.uart_bytes)],['Frames OK',num(s.uart_frames_ok)],['CRC errors',num(s.uart_crc_errors),errTone(s.uart_crc_errors)],['Error rate',crcRate===null?'—':(crcRate*100).toFixed(crcRate<.001?3:2)+'%',crcRate>.01?'warn':''],
     ...(eb.framing!==null?[['Framing errors',num(eb.framing),errTone(eb.framing)]]:[]),...(eb.overflows!==null?[['Receive overflows',...overflowRow(eb.overflows,s.gateway_uptime_ms)]]:[]),
-    ...(eb.frames!==null?[['Command frames received',num(eb.frames)]]:[]),...(eb.lost!==null?[['Commands lost',num(eb.lost),eb.lost>0?'bad':'']]:[]),...(eb.dups!==null?[['Duplicate commands',num(eb.dups)]]:[])];
+    ...(eb.frames!==null?[['Command frames received',num(eb.frames)]]:[]),...(eb.lost!==null?[['Commands lost',num(eb.lost),eb.lost>0?'bad':'']]:[]),...(eb.dups!==null?[['Resent commands ignored',num(eb.dups)]]:[]),...clockRows(s)];
   const endpointGroups=[
       group('Endpoint & Thread',[['Online',yn(s.endpoint_online),s.endpoint_online===false?'warn':''],['Thread role',role],['RLOC16',hex16(s.rloc16)],['Uptime',s.endpoint_uptime_s===undefined?'—':s.endpoint_uptime_s+' s'],['Messages received',num(s.endpoint_rx_messages)],['Duplicate messages',num(s.endpoint_rx_duplicates)],['Commands emitted',num(s.endpoint_commands_emitted)],['Dropped (mapping mismatch)',num(s.dropped_mismatch),errTone(s.dropped_mismatch)]]),
       group('Link to the gateway (UART)',linkRows),
       group('Endpoint board health (reported)',eb.h?endpointHealthRows(eb.h):[['Status','Not reported by this gateway']]),
+      ...(guardRows(eb.h)?[group('Transmissions the safety guard refused',guardRows(eb.h))]:[]),
       group('Startup sequence',startupSteps(s)),
       group('Endpoint safety (reported)',[['Available',yn(q.present),q.present===false?'warn':''],['Phase',val(q.phase)],['Fault bits',num(q.faults),errTone(q.faults)],['May send',yn(q.may_send),q.may_send===false?'warn':''],['Mesh-local prefix',val(q.mesh_local_prefix)],['Prefix status',val(q.prefix_status),q.prefix_status!==undefined&&q.prefix_status!==0?'warn':''],['Extended PAN verified',yn(q.ext_pan_ok),q.ext_pan_ok===false?'warn':''],['Active timestamp valid',yn(q.active_timestamp_valid),q.active_timestamp_valid===false?'warn':''],['Startup gate remaining',q.gate_remaining_s===undefined?'—':q.gate_remaining_s+' s'],['Router adverts in window',num(q.gate_adverts)],['Role fault (R1)',yn(q.r1_role_fault),q.r1_role_fault===true?'bad':''],['Prefix fault (R3)',yn(q.r3_prefix_fault),q.r3_prefix_fault===true?'bad':''],['Interrupted session',yn(q.interrupted_session),q.interrupted_session===true?'bad':''],['Partition ID',val(q.partition_id)],['Leader router ID',val(q.leader_router_id)],['Routers heard',num(q.router_count)],['Transmissions blocked',num(q.tx_blocked)]]),
       group('Gateway endpoint protection (reported)',[['Enabled',yn(p.enabled),p.enabled===false?'warn':''],['Physical hold available',yn(p.physical_hold_available),p.physical_hold_available===false&&p.configured!==false?'warn':''],['Hold requested',yn(p.hold_requested),p.hold_requested===true?'warn':''],['Hold asserted',yn(p.held),p.held===true?'warn':''],['State',val(p.state)],['Startup hold remaining',p.boot_hold_remaining_s===undefined?'—':p.boot_hold_remaining_s+' s',Number(p.boot_hold_remaining_s)>0?'warn':''],['Link lost',yn(p.link_lost),p.link_lost===true?'bad':''],['Timer error',yn(p.timer_error),p.timer_error===true?'bad':''],['Storage error',yn(p.storage_error),p.storage_error===true?'bad':''],['Hardware error',yn(p.hardware_error),p.hardware_error===true?'bad':''],['Watchdog error',yn(p.watchdog_error),p.watchdog_error===true?'bad':''],['Persistence pending',yn(p.persistence_pending),p.persistence_pending===true?'warn':''],['Violation',val(p.violation),p.violation&&p.violation!=='none'?'bad':''],['Recovering',yn(p.recovering),p.recovering===true?'warn':''],['Recovery state',val(p.recovery_state)]])];
   const gatewayGroups=[
       group('Network',[['Link',net==='Network'?'Not reported':net],['Connected',yn(netOk),netOk===false?'bad':''],['Uptime',s.gateway_uptime_ms===undefined?'—':clock(s.gateway_uptime_ms)],['Disconnects since boot',num(disconnects),Number(disconnects)>0?'warn':''],
-        ...(net==='Ethernet'?[]:opt('wifi_reason',['Last Wi-Fi reason',val(dg.link_reason??dg.wifi_reason)])),...opt('wifi_reconnect_ms',['Last reconnect took',Number(dg.wifi_reconnect_ms)>0?duration(dg.wifi_reconnect_ms):'—']),...opt('reset_reason',['Last restart cause',RESET_REASON[dg.reset_reason]?`${RESET_REASON[dg.reset_reason][0]} (${dg.reset_reason})`:val(dg.reset_reason),RESET_REASON[dg.reset_reason]?.[1]||''])]),
+        ...(net==='Ethernet'?[]:opt('wifi_reason',['Last Wi-Fi reason',val(dg.link_reason??dg.wifi_reason)])),...opt('wifi_reconnect_ms',['Last reconnect took',Number(dg.wifi_reconnect_ms)>0?duration(dg.wifi_reconnect_ms):'—']),...opt('reset_reason',['Last restart cause',RESET_REASON[dg.reset_reason]?`${RESET_REASON[dg.reset_reason][0]} (${dg.reset_reason})`:val(dg.reset_reason),RESET_REASON[dg.reset_reason]?.[1]||'',`Gateway restarted after a ${(RESET_REASON[dg.reset_reason]?.[0]||'fault').toLowerCase()}${s.gateway_uptime_ms===undefined?'':' '+duration(s.gateway_uptime_ms)+' ago'}.`])]),
       group('Configuration',[['Zone mapping on both boards',s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown',s.config_match===false?'warn':''],['Configuration hash',val(s.config_hash)],['Maintenance mode',dg.maintenance?'Active':'Off',dg.maintenance?'warn':'']]),
       ...(['heap_free','sockets_used','http_stack_free_units','management_clients'].some(has)?[group('Resources',[...opt('heap_free',['Free memory',bytes(dg.heap_free)]),...opt('heap_min',['Lowest free memory since boot',bytes(dg.heap_min),Number(dg.heap_min)<16384?'warn':'']),...opt('heap_largest',['Largest free block',bytes(dg.heap_largest)]),
         ...opt('sockets_used',['Sockets in use',sockets,socketTone]),...opt('socket_failures',['Socket failures',num(dg.socket_failures),errTone(dg.socket_failures)]),...opt('management_clients',['Management clients',num(dg.management_clients)]),...opt('management_rejected',['Management requests rejected',num(dg.management_rejected),errTone(dg.management_rejected)]),
@@ -1327,7 +1453,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       ['Running for',eb.uptime===null?notRep:duration(eb.uptime)],
       ['Last restart',eb.why?eb.why[0]:notRep,eb.why?.[1]||'',eb.why&&eb.uptime!==null?duration(eb.uptime)+' ago':''],
       ['Lost commands',eb.lost===null?notRep:eb.lost===0?'None':num(eb.lost),eb.lost>0?'bad':'',eb.frames!==null?`of ${num(eb.frames)} received since the gateway started`:''],
-      ['Link errors',`${num((Number(s.uart_crc_errors)||0)+(eb.framing||0)+(eb.endpointLinkErrors||0))}`,'',eb.overflows!==null?`${num(eb.overflows)} receive overflow${eb.overflows===1?'':'s'}`:'CRC errors on the board link'],
+      ['Link errors',`${num((Number(s.uart_crc_errors)||0)+(eb.framing||0)+(eb.endpointLinkErrors||0))}`,'',eb.overflows!==null?`the gateway fell behind ${eb.overflows===1?'once':num(eb.overflows)+' times'}`:'on the wired link to the gateway'],
       ['Free memory',eb.heap===null?notRep:bytes(eb.heap),'',eb.heapMin===null?'':'lowest '+bytes(eb.heapMin)]]}),
     ...renderBoard('ketra','Ketra hub',{tone:!hubActive?'wait':held?'warn':'good',label:!hubActive?'Not in use':out.fallback?'Fallback in use':'Carrying lighting',groups:ketraGroups,vitals:[
       ['Lighting output',out.name+(held?' · held':''),held?'warn':'',out.kind==='direct'?'The gateway drives the lamps over Zigbee':''],
@@ -1335,6 +1461,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       ['Unconfirmed attempts',num(s.puts_failed),Number(s.puts_failed)>0?'warn':''],
       ['Hub connection',has('wss_connected')?(dg.wss_connected?'Connected':'Not connected'):notRep,has('wss_connected')&&!dg.wss_connected&&hubActive?'warn':'']]}),
     ...(zigbeeCard?renderBoard('zigbee','Zigbee node',{groups:zigbeeGroups,vitals:zigbeeVitals(s,out,held)}):($('dev-zigbee-readings').replaceChildren(),[]))];
+  {const g=guardTotal(eb.h);$('dev-endpoint-note').textContent=g>0?`The safety guard refused ${plural(g,'transmission','transmissions')} since the last restart; this protects the Lutron network and is not a fault by itself.`:''}
   $('diag-attention').replaceChildren(attentionList([{flags}]));{const n=flags.length,b=$('diag-badge');b.textContent=n?'​':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
   const flagCount=flags.length,flagTone=flags.some(f=>f.tone==='bad')?'bad':flagCount?'warn':'good';$('diag-pill').className='pill '+flagTone;$('diag-pill').textContent=flagCount?`${flagCount} reading${flagCount===1?'':'s'} to check`:'All normal';
   renderAttention(issues,out);
@@ -1909,13 +2036,27 @@ function draftList(){return draftZones.map(r=>r.z)}
 function isDirty(){return !!draftFrom&&(!!jsonError||JSON.stringify(draftList())!==JSON.stringify(draftFrom.zones))}
 function draftStale(){return !!draftFrom&&!!configBase&&(draftFrom.generation!==configBase.generation||draftFrom.hash!==configBase.hash)}
 function zoneErrors(){const errs=[],seen=new Set();draftZones.forEach((r,i)=>{const id=r.z.zone_id;if(!Number.isInteger(id)||id<0)errs.push([r,`Row ${i+1}: zone ID must be a whole number.`]);else if(seen.has(id))errs.push([r,`Zone ID ${id} is used more than once.`]);else seen.add(id)});return errs}
-function renderZones(){const locked=configBase?.editable===false;const rows=draftZones.map((r,i)=>{const tr=el('tr');if(!r.orig)tr.setAttribute('data-new','');for(const [key,hint,mode] of ZONE_FIELDS){const td=el('td'),input=el('input');input.value=fieldText(r.z[key]);input.placeholder=hint;input.disabled=locked;input.setAttribute('aria-label',`Row ${i+1} ${key.replace(/_/g,' ')}`);if(mode)input.setAttribute('inputmode',mode);input.addEventListener('input',()=>{const v=parseField(key,input.value,r.orig?.[key]);if(v===undefined)delete r.z[key];else r.z[key]=v;editorChanged(true)});if(key==='serial')input.setAttribute('list','ha-serials');r.inputs[key]=input;td.append(input);tr.append(td)}
-    const hc=el('td','ha-match');hc.hidden=!haData;r.haCell=hc;tr.append(hc);
-    const td=el('td'),rm=el('button','remove','−');rm.type='button';rm.title='Remove zone';rm.setAttribute('aria-label',`Remove row ${i+1}`);rm.disabled=locked;rm.onclick=()=>{draftZones.splice(draftZones.indexOf(r),1);renderZones()};td.append(rm);tr.append(td);return tr});
-  if(!rows.length){const tr=el('tr'),td=el('td','empty','No zones mapped yet. Select “Add zone” to create one.');td.setAttribute('colspan','7');tr.append(td);rows.push(tr)}
+/* Zone mapping: one text row per zone; Edit opens a side sheet with labelled fields. The draft is still applied as one change. */
+const ZONE_LABELS={zone_id:'Zone ID',name:'Name',n4_group:'N4 group',serial:'Lutron serial',warm_dim_curve:'Warm-dim curve'};
+let zoneEditing=null;
+function zoneChanged(r){return !r.orig||ZONE_FIELDS.some(([k])=>JSON.stringify(r.z[k])!==JSON.stringify(r.orig[k]))}
+function renderZones(){const locked=configBase?.editable===false,bad=new Set(zoneErrors().map(e=>e[0]));const rows=draftZones.map((r,i)=>{const z=r.z,row=el('div','zrow'+(bad.has(r)?' invalid':zoneChanged(r)?' changed':'')),t=el('div');
+    t.append(el('strong','',z.name||`Unnamed zone`),el('span','zmeta',[`Zone ${fieldText(z.zone_id)||'—'}`,z.n4_group!==undefined?`N4 group ${fieldText(z.n4_group)}`:null,z.serial!==undefined?`serial ${fieldText(z.serial)}`:null,z.warm_dim_curve!==undefined?`warm-dim ${fieldText(z.warm_dim_curve)}`:null].filter(Boolean).join(' · ')));
+    const hc=el('span','zha');hc.hidden=!haData;r.haCell=hc;t.append(hc);if(bad.has(r)||zoneChanged(r))t.append(el('span','zstate',bad.has(r)?'Check the zone ID':!r.orig?'New · not applied yet':'Edited · not applied yet'));
+    const b=el('button','secondary',locked?'View':'Edit');b.type='button';b.setAttribute('aria-label',`${locked?'View':'Edit'} ${z.name||'zone '+(i+1)}`);b.onclick=()=>openZoneSheet(r);row.append(t,b);return row});
+  if(!rows.length)rows.push(el('p','empty-state','No zones mapped yet. Select Add zone to create one.'));
   $('zone-rows').replaceChildren(...rows);$('add-zone').disabled=locked;editorChanged(true)}
-function updateZoneMatches(){$('ha-editor-col').hidden=!haData;$('zone-table').className=haData?'editor with-ha':'editor';let fillable=0;for(const r of draftZones){const c=r.haCell;if(!c)continue;c.hidden=!haData;if(!haData){c.replaceChildren();continue}const m=haFor(r.z);if(!m){c.replaceChildren(el('span','muted','No match'));continue}const l=m.light;c.replaceChildren(el('span','',l.name||l.entity_id),el('span','sub',[l.area,{zone:'by zone ID',serial:'by serial'}[m.by]||'by name'].filter(Boolean).join(' · ')));if(!r.z.name&&l.name&&configBase?.editable!==false){fillable++;const b=el('button','plain','Use this name');b.type='button';b.onclick=()=>useHAName(r,l.name);c.append(b)}}$('fill-names').hidden=!fillable}
-function useHAName(r,name){r.z.name=name;if(r.inputs.name)r.inputs.name.value=name;editorChanged(true)}
+function openZoneSheet(r){const locked=configBase?.editable===false,i=draftZones.indexOf(r);zoneEditing=r;r.inputs={};
+  const fields=ZONE_FIELDS.map(([key,hint,mode])=>{const l=el('label','field'),input=el('input');l.append(ZONE_LABELS[key]);input.value=fieldText(r.z[key]);input.placeholder=hint;input.disabled=locked;input.setAttribute('aria-label',`Row ${i+1} ${key.replace(/_/g,' ')}`);if(mode)input.setAttribute('inputmode',mode);if(key==='serial')input.setAttribute('list','ha-serials');
+    input.addEventListener('input',()=>{const v=parseField(key,input.value,r.orig?.[key]);if(v===undefined)delete r.z[key];else r.z[key]=v;renderZones()});r.inputs[key]=input;l.append(input);return l});
+  $('zone-sheet-fields').replaceChildren(...fields);$('zone-sheet-title').textContent=r.orig?`Edit ${r.z.name||'zone'}`:'Add a zone';$('zone-sheet-remove').disabled=locked;$('zone-sheet-remove').textContent=r.orig?'Remove this zone':'Discard this zone';
+  const m=haFor(r.z);$('zone-sheet-ha').textContent=haData?(m?`Home Assistant: ${m.light.name||m.light.entity_id}${m.light.area?' · '+m.light.area:''}`:'No matching Home Assistant light.'):'';
+  const d=$('zone-sheet');if(typeof d.showModal==='function'&&!d.open)d.showModal();editorChanged(false);r.inputs.name?.focus?.()}
+function closeZoneSheet(){if(zoneEditing)zoneEditing.inputs={};zoneEditing=null;$('zone-sheet').close?.();renderZones()}
+$('zone-sheet-close').onclick=closeZoneSheet;$('zone-sheet').addEventListener('close',()=>{if(zoneEditing)closeZoneSheet()});
+$('zone-sheet-remove').onclick=()=>{const r=zoneEditing;if(!r)return;draftZones.splice(draftZones.indexOf(r),1);closeZoneSheet()};
+function updateZoneMatches(){let fillable=0;for(const r of draftZones){const c=r.haCell;if(!c)continue;c.hidden=!haData;if(!haData){c.replaceChildren();continue}const m=haFor(r.z);if(!m){c.replaceChildren('Home Assistant: no match');continue}const l=m.light;c.replaceChildren(`Home Assistant: ${l.name||l.entity_id}${l.area?' · '+l.area:''} (${{zone:'by zone ID',serial:'by serial'}[m.by]||'by name'})`);if(!r.z.name&&l.name&&configBase?.editable!==false){fillable++;const b=el('button','plain inline',' Use this name');b.type='button';b.onclick=()=>useHAName(r,l.name);c.append(b)}}$('fill-names').hidden=!fillable}
+function useHAName(r,name){r.z.name=name;if(r.inputs.name)r.inputs.name.value=name;renderZones()}
 function editorChanged(syncJson){updateZoneMatches();const errs=zoneErrors(),bad=new Set(errs.map(e=>e[0]));for(const r of draftZones)for(const [key] of ZONE_FIELDS){const input=r.inputs[key];if(!input)continue;const changed=!r.orig?r.z[key]!==undefined:JSON.stringify(r.z[key])!==JSON.stringify(r.orig[key]);input.className=(key==='zone_id'&&bad.has(r)?'invalid':changed?'changed':'')}
   const messages=[...new Set(errs.map(e=>e[1]))];if(jsonError)messages.unshift('The JSON editor contains invalid JSON: '+jsonError);if(isDirty()&&draftStale())messages.unshift('The gateway mapping changed while you were editing. Copy your edits, then discard and reload to review them against the current mapping.');$('config-errors').textContent=messages.join(' ');
   if(syncJson&&document.activeElement!==$('config-json'))$('config-json').value=JSON.stringify(draftList(),null,2);
@@ -2088,7 +2229,7 @@ function initialTab(){try{const h=String(location.hash||'').replace('#','');if(h
 if(typeof window!=='undefined')window.addEventListener?.('hashchange',initialTab);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
 $('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
-$('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};
+$('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();openZoneSheet(row)};
 $('config-json').addEventListener('input',()=>{try{const v=JSON.parse($('config-json').value);const zones=Array.isArray(v)?v:Array.isArray(v?.zones)?v.zones:null;if(!zones)throw Error('expected a list of zones');const byId=new Map((draftFrom?.zones||[]).map(z=>[z?.zone_id,z]));draftZones=zones.map(z=>zoneRow(z,byId.get(z?.zone_id)));jsonError='';renderZones()}catch(e){jsonError=e.message;editorChanged(false)}});
 $('save-config').onclick=async()=>{if(!draftFrom||!isDirty()||draftStale()||jsonError||zoneErrors().length)return;const n=draftZones.length;if(!await confirmSheet('Apply zone mapping?',`${n} zone${n===1?'':'s'} will be sent to the gateway. Both boards may restart briefly while the change is applied.`,'Apply'))return;$('save-config').disabled=true;
   try{if(!await ensureMaintenance())return;if(draftStale())return;const zones=draftList(),payload={generation:draftFrom.generation,hash:draftFrom.hash,zones};const result=await req('config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});draftFrom.zones=clone(zones);$('config-state').textContent=`Update ${val(result.apply_status||'pending')} · waiting until the gateway and endpoint report matching hashes`;configPill('Applying…','warn');configAutoPoll=true;configPollAfter=Date.now()+1500}catch(e){$('config-state').textContent='Update rejected: '+e.message;configPill('Not applied','bad')}finally{editorChanged(false)}};

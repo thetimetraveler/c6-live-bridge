@@ -7,7 +7,11 @@
 - View and edit gateway rules in one place: the rule cards in Automation, and an editor in a side sheet with labelled full-width fields. Show ID 0 is accepted when the rule also gives a level, as the gateway does, so the installed touch-bar rules no longer show as errors and can be applied again.
 - Settings ends with a red **Danger zone** for disabling the endpoint and clearing its safety latch; both still confirm.
 - Move explanations behind an **i** control, and exact JSON, boot and cursor and inspector internals under **Advanced**. The CCA radio shows one reason instead of a grid of dashes when its status is unavailable.
-- Add design tokens (colour, type, 8-point spacing, radius, elevation) and one component set used everywhere. Dark only. No proxy routes change except the CCA node update below.
+- Flagged readings read as plain sentences, board first ("Thread endpoint restarted after a brownout (power dip) 31m ago"), on the board's own card and in a list of at most five above the cards; raw field names stay in All readings. Home checks and vitals use plain words.
+- Home puts Needs attention directly under the status sentence; the system checks collapse into one line after the command path.
+- Zone mapping rows read as text, and Edit or Add zone opens a side sheet with labelled fields. Apply mapping still sends every zone as one change.
+- Show the endpoint's transmit-guard refusals and clock offset in All readings, when the gateway reports them; a refusal count adds one neutral line, never an attention item. Resent commands the gateway ignored are a reading only.
+- Add design tokens (colour, type, 8-point spacing, radius, elevation) and one component set used everywhere. A light theme follows the system setting again. No proxy routes change except the CCA node update below.
 - Prepare a separate CCA node firmware card for signed C6 updates through the S3. A one-time USB bootstrap is required; physical OTA and rollback qualification remain pending. The update pauses CCA while CCX and the shared event feed continue.
 - Show node identity, slot, progress, failure reason and confirmation. An interrupted upload is reconciled from fresh status and is never sent again automatically. Existing Lutron end-device RF firmware controls and settings remain separate.
 

@@ -303,15 +303,15 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   if(view('hero').className.includes('good')||!text(view('summary')).includes('Unknown'))throw Error('an unrecognised backend must not look healthy');
   health(status);
   if(view('label-n4').textContent!=='N4 output'||text(boards()).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
-  if(text(view('summary')).includes('Zigbee member'))throw Error('no Zigbee member tile without a reported link');
+  if(text(view('summary')).includes('Zigbee node link'))throw Error('no Zigbee member tile without a reported link');
   health({...status,zigbee_uart:{enabled:true,online:false,bidirectional:false,timeouts:3}});
   if(!heroText().includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
   health({...status,zigbee_uart:{enabled:true,online:true,bidirectional:true,role:'end_device',state:'disarmed',radio:'off',identity_authenticated:false,rf_membership_verified:false,build_elf_sha256:'a'.repeat(64)}});
-  const member=view('summary').children.find(c=>text(c).includes('Zigbee member'));
-  if(!member?.className.includes('good')||!text(member).includes('not RF membership'))throw Error('a responding member is a serial link, not RF membership');
+  const member=view('summary').children.find(c=>text(c).includes('Zigbee node link'));
+  if(!member?.className.includes('good')||!text(member).includes('Wired link to the node only'))throw Error('a responding member is a serial link, not RF membership');
   if(!text(boards()).includes('RF membership verified')||!text(boards()).includes('Role (claimed)')||!text(boards()).includes('aaaaaaaaaaaa…'))throw Error('member claims must be labelled as claims');
   health({...status,zigbee_uart:{enabled:false}});
-  if(text(view('summary')).includes('Zigbee member')||!text(boards()).includes('Not enabled'))throw Error('a disabled member link has no tile');
+  if(text(view('summary')).includes('Zigbee node link')||!text(boards()).includes('Not enabled'))throw Error('a disabled member link has no tile');
   // Activity: a held command stays held, without a "no progress" timeout.
   const heldGroups=groupEvents([typed(1,'requested',7,{requested:5000}),typed(2,'ketra-held',7,{requested:5000})]);
   health({...direct,gateway_uptime_ms:10_000_000});
@@ -625,10 +625,12 @@ const mappingChecks=`
   health({...status,uart_crc_errors:3,uart_frames_ok:997,diagnostics:{maintenance:false,heap_free:182000,sockets_used:19,socket_limit:20,reset_reason:4}});
   for(const id of ['dev-gateway','dev-endpoint','dev-ketra'])if(!view(id+'-pill').textContent||!view(id+'-vitals').children.length||!view(id+'-readings').children.length)throw Error('each board card shows status, vitals and readings: '+id);
   const att=text(view('diag-attention'));
-  if(!att.includes('CRC errors: 3')||!att.includes('Sockets in use')||!att.includes('Crash (panic)'))throw Error('flagged rows must be listed first: '+att);
+  if(!att.includes('Thread endpoint: 3 damaged messages on its wired link')||!att.includes('Gateway is close to its limit of network connections')||!att.includes('Gateway restarted after a crash (panic)'))throw Error('flagged rows read as plain sentences, board first: '+att);
+  if(/CRC|esp_|UART|Sockets in use/.test(att))throw Error('raw field names stay inside All readings: '+att);
+  if(!text(view('dev-endpoint-flags')).includes('3 damaged messages')||!text(view('dev-gateway-flags')).includes('network connections')||view('dev-ketra-flags').children.length)throw Error('each card explains its own flagged readings');
   if(att.includes('Physical hold available'))throw Error('a build without a configured hold must not be flagged for it');
   if(!view('dev-endpoint-pill').className.includes('warn')||!view('dev-endpoint-pill').textContent.includes('1 to check')||!view('dev-ketra-pill').className.includes('good'))throw Error('a board with something flagged says so on its pill: '+view('dev-endpoint-pill').textContent);
-  {view('dev-endpoint-more').tagName='DETAILS';view('dev-endpoint-more').open=false;const li=view('diag-attention').children[0].children.find(c=>text(c).includes('CRC errors: 3'));li.onclick();if(!view('dev-endpoint-more').open)throw Error('a flagged reading opens its board readings');view('dev-endpoint-more').open=false;}
+  {view('dev-endpoint-more').tagName='DETAILS';view('dev-endpoint-more').open=false;const li=view('diag-attention').children[0].children.find(c=>text(c).includes('3 damaged messages'));li.onclick();if(!view('dev-endpoint-more').open)throw Error('a flagged reading opens its board readings');view('dev-endpoint-more').open=false;}
   if(!view('diag-pill').textContent.endsWith('to check'))throw Error('the diagnostics pill counts flagged rows');
   {const ha=haData,dev=lastDevices;haData={lights:[],integrations:['lutron'],time_zone:'UTC'};lastDevices={...dev,zones:[]};health(status);
   if(!text(view('diag-attention')).includes('Nothing flagged')||view('diag-pill').textContent!=='All normal')throw Error('a clean snapshot says so');haData=ha;lastDevices=dev}
@@ -750,7 +752,7 @@ const mappingChecks=`
     latestNative=null;zonesView(zoneSnapshot);health(status)}
 })()
 `;
-const navChecks=`
+const navChecks=`(async()=>{
 // Five destinations; every older tab name, hash or showTab() call lands on its new home.
 {const map={overview:'home',activity:'activity',diagnostics:'devices',health:'devices',programming:'automation',local:'automation',cca:'automation',setup:'settings',home:'home',devices:'devices',automation:'automation',settings:'settings',nonsense:'home'};
   for(const [name,want] of Object.entries(map)){const got=showTab(name);
@@ -778,9 +780,47 @@ const navChecks=`
   health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:1});const l=[...items()].find(li=>text(li).includes('lost'));
   if(!l||!l.className.includes('bad')||!text(l).includes('1 lighting command was lost')||!view('hero').className.includes('bad')||!text(boards()).includes('Commands lost'))throw Error('a lost command is a fault in Needs attention: '+text(view('attention')));
   if(items()[0]!==l)throw Error('faults are listed first');
+  // Flagged readings read as sentences on the card and in the list above the cards.
+  health(brown);{const flags=vt('dev-endpoint-flags'),top=vt('diag-attention');
+    if(!flags.includes('Thread endpoint restarted after a brownout (power dip) 10m 0s ago.')||!top.includes('Thread endpoint restarted after a brownout')||/esp_reset_reason|\(9\)/.test(top+flags))throw Error('a brownout flag is a plain sentence, board first: '+top)}
+  health({...base,endpoint_cmd_frames:6,endpoint_cmd_lost:1});if(!vt('dev-endpoint-flags').includes('Thread endpoint: 1 lighting command never reached the gateway.'))throw Error('a lost command flag is a plain sentence: '+vt('dev-endpoint-flags'));
+  // The transmit guard is informational: absent shows nothing, zero shows readings only, non-zero adds one neutral line.
+  const guard=g=>({...base,endpoint_health:{present:true,reset_reason:3,uptime_ms:60000,...g}}),guardGroup=()=>text(boards()).includes('Transmissions the safety guard refused');
+  health(guard({}));if(guardGroup()||view('dev-endpoint-note').textContent)throw Error('no guard readings on a gateway without them');
+  health(guard({has_guard:true,guard_announce:0,guard_channel:0,guard_all_nodes:0,guard_parent_req:0,guard_other:0}));
+  if(!guardGroup()||!text(boards()).includes('Network announcements')||view('dev-endpoint-note').textContent)throw Error('zero refusals are readings only');
+  const n0=view('attention').children.length,f0=view('dev-endpoint-flags').children.length;
+  health(guard({has_guard:true,guard_announce:3,guard_channel:0,guard_all_nodes:1,guard_parent_req:0,guard_other:65535}));
+  if(!view('dev-endpoint-note').textContent.includes('refused 65,539 transmissions since the last restart')||!view('dev-endpoint-note').textContent.includes('not a fault')||!text(boards()).includes('65,535 or more'))throw Error('refusals add one neutral line: '+view('dev-endpoint-note').textContent);
+  if(view('attention').children.length!==n0||view('dev-endpoint-flags').children.length!==f0)throw Error('guard refusals are not attention items or flags');
+  // The endpoint clock is one reading.
+  health(base);if(text(boards()).includes('Offset known'))throw Error('no clock reading without endpoint_clock');
+  health({...base,endpoint_clock:{synced:true,estimated:true,drift_known:true,samples:12,age_ms:900,offset_us:-1500,uncertainty_us:250,round_trip_us:800,drift_ppm:3.2,drift_error_ppm:.4,unanswered:0}});
+  if(!text(boards()).includes('Offset known to ±0.25 ms'))throw Error('the clock reads as its uncertainty: '+text(boards()));
+  health({...base,endpoint_clock:{synced:false}});if(!text(boards()).includes('Not synchronised yet'))throw Error('an unsynced clock says so');
+  health({...base,endpoint_cmd_duplicates:2});if(!text(boards()).includes('Resent commands ignored')||vt('dev-endpoint-flags').includes('Resent'))throw Error('duplicates are a reading only');
+  // Zone mapping: rows read as text and edit in a side sheet; the draft is still one change.
+  replies.config={generation:7,hash:77,editable:true,apply_status:'active',zones:[{zone_id:30861,name:'office lamp',n4_group:'office',serial:90130861,warm_dim_curve:254}]};
+  await loadConfig(true);if(!text(view('zone-rows')).includes('office lamp')||!text(view('zone-rows')).includes('N4 group office · serial 90130861 · warm-dim 254'))throw Error('a mapping row reads as text: '+text(view('zone-rows')));
+  {const row=view('zone-rows').children[0],edit=row.children.find(c=>c.tag==='button');edit.onclick();const r=draftZones[0];
+    if(!r.inputs.name||r.inputs.name.value!=='office lamp'||view('zone-sheet-fields').children.length!==5)throw Error('Edit opens the sheet with five labelled fields');
+    r.inputs.name.value='Office';r.inputs.name.oninput();r.inputs.serial.value='90130862';r.inputs.serial.oninput();
+    if(draftZones[0].z.name!=='Office'||draftZones[0].z.serial!=='90130862'||view('save-config').disabled||!text(view('zone-rows')).includes('Edited · not applied yet'))throw Error('sheet edits update the draft and the row');
+    view('zone-sheet-close').onclick();if(Object.keys(r.inputs).length)throw Error('closing the sheet releases its fields');
+    view('add-zone').onclick();if(draftZones.length!==2||draftZones[1].z.zone_id!==30862||!draftZones[1].inputs.name)throw Error('Add zone opens the same sheet for a new row');
+    draftZones[1].inputs.name.value='Den';draftZones[1].inputs.name.oninput();view('zone-sheet-close').onclick();
+    latestStatus.diagnostics={maintenance:true};requests.length=0;await view('save-config').onclick();const put=requests.find(q=>q.key==='config'&&q.opts?.method==='PUT');
+    const p=put&&JSON.parse(put.opts.body);if(!p||p.generation!==7||p.zones.length!==2||p.zones[0].name!=='Office'||p.zones[1].name!=='Den')throw Error('all rows are sent as one change: '+JSON.stringify(p));}
   health(base);showTab('home')}
+})()
 `;
 vm.createContext(context);
 await vm.runInContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});
 await vm.runInContext(navChecks,context,{timeout:2000});
+// Home: the sentence, then Needs attention, Rooms and the command path; the checks grid sits in a disclosure after them.
+{const at=id=>html.indexOf(`id="${id}"`);if(!(at('hero')<at('attention-card')&&at('attention-card')<at('lights-card')&&at('lights-card')<at('flow-card')&&at('flow-card')<at('summary')))throw Error('Home order: sentence, attention, rooms, path, then system checks');
+  if(!/<details[^>]*id="checks-card"/.test(html))throw Error('system checks are a disclosure');}
+// Light theme tokens.
+{const light=html.match(/@media\(prefers-color-scheme:light\)\{:root\{([^}]*)\}/);if(!light)throw Error('a light theme follows the system setting');
+  for(const k of ['--c-page','--c-surface','--c-text','--c-text-2','--c-good','--c-attn','--c-fault','--c-link','--c-on-tone'])if(!light[1].includes(k+':'))throw Error('the light theme defines '+k);}
 console.log('management UI safety, mapping, event and flow tests passed');

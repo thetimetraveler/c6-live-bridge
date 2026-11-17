@@ -126,7 +126,7 @@ var CCAUI = (() => {
         vital('Link to gateway', available ? 'Online' : link.online === false ? 'Offline' : 'Stale', available ? '' : 'warn', 'status ' + age + ' old'),
         vital('Radio', peer.radio_present === true ? 'Present' : peer.radio_present === false ? 'Missing' : 'Not reported', peer.radio_present === false ? 'bad' : ''),
         vital('Board identity', isMatch ? 'Matches' : !expected ? 'Not set' : !observed ? 'Waiting' : 'Mismatch', isMatch ? '' : 'warn', observed || ''),
-        vital('Packets received', display(peer.rx_packets), '', Number.isFinite(peer.crc_errors) ? display(peer.crc_errors) + ' with CRC errors' : ''));
+        vital('Packets received', display(peer.rx_packets), '', Number.isFinite(peer.crc_errors) ? display(peer.crc_errors) + ' damaged' : ''));
     byId('status-facts').replaceChildren(
       facts('Identity and link', [['Observed MAC', peer.mac], ['Expected MAC', expected || null], ['Identity', identity],
         ['Node boot', peer.boot_id], ['Link online', link.online], ['Status age', age], ['Gateway ready', s.ready], ['Radio present', peer.radio_present], ['Configuration', s.configuration]]),

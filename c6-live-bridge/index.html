@@ -1,142 +1,270 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CCX Bridge</title>
 <style>
-/* Apple system colours (light / dark), materials and motion curves */
-:root{color-scheme:light dark;
-  --bg:#f2f2f7;--card:#fff;--inset:#f2f2f7;--elevated:#fff;
-  --label:#1c1c1e;--label2:rgba(60,60,67,.62);--label3:rgba(60,60,67,.32);
-  --sep:rgba(60,60,67,.18);--fill:rgba(120,120,128,.12);--fill2:rgba(120,120,128,.2);
-  --bar:rgba(242,242,247,.78);--thumb:#fff;
-  --green:#34c759;--orange:#ff9500;--red:#ff3b30;--blue:#007aff;--indigo:#5856d6;--teal:#30b0c7;--purple:#af52de;--gray:#8e8e93;
-  --green-t:rgba(52,199,89,.14);--orange-t:rgba(255,149,0,.15);--red-t:rgba(255,59,48,.13);--blue-t:rgba(0,122,255,.12);--gray-t:rgba(142,142,147,.14);
-  --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04);
+/* Design tokens. Dark is the only theme; a light theme would redefine the colour group only. */
+:root{color-scheme:dark;
+  /* Colour: surfaces, text, lines */
+  --c-page:#000;--c-side:#0e0e10;--c-surface:#1c1c1e;--c-raised:#2c2c2e;--c-overlay:#3a3a3c;
+  --c-text:#f5f5f7;--c-text-2:#c7c7cc;--c-text-3:#a1a1a6;
+  --c-line:rgba(120,120,128,.42);--c-fill:rgba(120,120,128,.24);--c-fill-2:rgba(120,120,128,.36);
+  /* Colour: state (green healthy, amber attention, red fault, grey unknown) and action (blue) */
+  --c-good:#30d158;--c-attn:#ff9f0a;--c-fault:#ff6961;--c-unknown:#a1a1a6;
+  --c-good-t:rgba(48,209,88,.16);--c-attn-t:rgba(255,159,10,.16);--c-fault-t:rgba(255,69,58,.18);--c-unknown-t:rgba(152,152,157,.16);
+  --c-action:#0062e6;--c-action-t:rgba(10,132,255,.2);--c-link:#64a8ff;--c-danger:#c4161c;
+  /* Type scale */
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --fs-1:12px;--fs-2:13px;--fs-3:15px;--fs-4:17px;--fs-5:20px;--fs-6:24px;--fs-7:28px;--lh:1.45;--lh-tight:1.2;
+  /* Spacing on an 8-point grid (4 is the half step) */
+  --sp-1:4px;--sp-2:8px;--sp-3:16px;--sp-4:24px;--sp-5:32px;--sp-6:48px;
+  /* Radius and elevation */
+  --r-1:6px;--r-2:10px;--r-3:14px;--r-pill:999px;
+  --e-1:0 0 0 .5px rgba(255,255,255,.07);--e-2:0 8px 24px rgba(0,0,0,.5);--e-3:0 24px 64px rgba(0,0,0,.65);
+  --measure:70ch;
+  /* Names the drawings and older rules use */
+  --bg:var(--c-page);--card:var(--c-surface);--inset:var(--c-raised);--elevated:var(--c-overlay);
+  --label:var(--c-text);--label2:var(--c-text-2);--label3:var(--c-text-3);--sep:var(--c-line);--fill:var(--c-fill);--fill2:var(--c-fill-2);--thumb:#636366;
+  --green:var(--c-good);--orange:var(--c-attn);--red:var(--c-fault);--blue:#0a84ff;--indigo:#5e5ce6;--teal:#40c8e0;--purple:#bf5af2;--gray:var(--c-unknown);
+  --green-t:var(--c-good-t);--orange-t:var(--c-attn-t);--red-t:var(--c-fault-t);--blue-t:var(--c-action-t);--gray-t:var(--c-unknown-t);
+  --shadow:var(--e-1);--radius:var(--r-3);
   --ease:cubic-bezier(.25,.1,.25,1);--ease-out:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.36,.64,1);
-  --radius:14px;
-  font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,"Segoe UI",Roboto,sans-serif;
-  -webkit-font-smoothing:antialiased;background:var(--bg);color:var(--label)}
-@media(prefers-color-scheme:dark){:root{
-  --bg:#000;--card:#1c1c1e;--inset:#2c2c2e;--elevated:#2c2c2e;
-  --label:#fff;--label2:rgba(235,235,245,.62);--label3:rgba(235,235,245,.3);
-  --sep:rgba(84,84,88,.6);--fill:rgba(120,120,128,.24);--fill2:rgba(120,120,128,.36);
-  --bar:rgba(18,18,20,.72);--thumb:#636366;
-  --green:#30d158;--orange:#ff9f0a;--red:#ff453a;--blue:#0a84ff;--indigo:#5e5ce6;--teal:#40c8e0;--purple:#bf5af2;--gray:#98989d;
-  --green-t:rgba(48,209,88,.18);--orange-t:rgba(255,159,10,.18);--red-t:rgba(255,69,58,.2);--blue-t:rgba(10,132,255,.2);--gray-t:rgba(152,152,157,.18);
-  --shadow:none}}
+  font:var(--fs-3)/var(--lh) var(--font);-webkit-font-smoothing:antialiased;background:var(--c-page);color:var(--c-text)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);min-height:100vh}
-main{max-width:1080px;margin:auto;padding:8px 20px 48px}
-h1,h2,h3{margin:0;letter-spacing:-.01em}
-h2{font-size:1.25rem;font-weight:700}
-h3{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);margin:18px 4px 6px}
-p{margin:6px 0}
-.muted{color:var(--label2)}
-.small{font-size:.82rem}
-.good{--tone:var(--green);--tone-t:var(--green-t)}
-.warn{--tone:var(--orange);--tone-t:var(--orange-t)}
-.bad{--tone:var(--red);--tone-t:var(--red-t)}
-.wait,.idle{--tone:var(--gray);--tone-t:var(--gray-t)}
-.info{--tone:var(--blue);--tone-t:var(--blue-t)}
+body{margin:0;background:var(--c-page);min-height:100vh}
+h1,h2,h3,h4{margin:0;line-height:var(--lh-tight);letter-spacing:-.01em}
+h1{font-size:var(--fs-6);font-weight:700}
+h2{font-size:var(--fs-4);font-weight:600}
+h3{font-size:var(--fs-1);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--c-text-2);margin:var(--sp-4) 0 var(--sp-2)}
+h4{font-size:var(--fs-2);font-weight:600;color:var(--c-text-2);margin:0 0 var(--sp-1)}
+p{margin:var(--sp-1) 0}
+a{color:var(--c-link)}
+.muted{color:var(--c-text-2)}
+.small{font-size:var(--fs-2)}
+.hint{color:var(--c-text-2);font-size:var(--fs-2);margin:var(--sp-2) 0 0;max-width:var(--measure)}
+.hint:empty{display:none}
+.lede{color:var(--c-text-2);margin:0 0 var(--sp-3);max-width:var(--measure)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:2px solid var(--c-link);outline-offset:2px}
+.good{--tone:var(--c-good);--tone-t:var(--c-good-t)}
+.warn{--tone:var(--c-attn);--tone-t:var(--c-attn-t)}
+.bad{--tone:var(--c-fault);--tone-t:var(--c-fault-t)}
+.wait,.idle{--tone:var(--c-unknown);--tone-t:var(--c-unknown-t)}
+.info{--tone:var(--c-link);--tone-t:var(--c-action-t)}
 
-/* Navigation bar with translucent material */
-.bar{position:sticky;top:0;z-index:10;background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--sep)}
-.bar-inner{max-width:1080px;margin:auto;padding:12px 20px 10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem}
-.app-icon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(160deg,var(--teal),var(--blue));color:#fff}
-.live{margin-right:auto;display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:600;color:var(--tone);background:var(--tone-t);padding:4px 10px 4px 9px;border-radius:999px;transition:color .4s var(--ease),background .4s var(--ease)}
+/* Shell: sidebar from 1000 px, a top bar and bottom tab bar below */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4) var(--sp-3);background:var(--c-side);border-right:.5px solid var(--c-line)}
+.brand{display:flex;align-items:center;gap:var(--sp-2);font-weight:700;font-size:var(--fs-4)}
+.app-icon{width:28px;height:28px;border-radius:var(--r-1);display:grid;place-items:center;background:var(--c-action);color:#fff}
+.live{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-2);font-weight:600;color:var(--tone);background:var(--tone-t);padding:var(--sp-1) 10px;border-radius:var(--r-pill)}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--tone);position:relative}
 .live.good .live-dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--tone);animation:breathe 2s var(--ease-out) infinite}
 @keyframes breathe{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
-
-/* Segmented control */
-.segmented{position:relative;display:grid;grid-template-columns:repeat(7,1fr);background:var(--fill);border-radius:9px;padding:2px;width:100%;max-width:700px;margin:0 auto}
-.segmented .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc((100% - 4px)/7);border-radius:7px;background:var(--thumb);box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transition:transform .42s var(--spring)}
-.segmented[data-tab=activity] .thumb{transform:translateX(100%)}
-.segmented[data-tab=diagnostics] .thumb{transform:translateX(200%)}
-.segmented[data-tab=programming] .thumb{transform:translateX(300%)}
-.segmented[data-tab=local] .thumb{transform:translateX(400%)}
-.segmented[data-tab=cca] .thumb{transform:translateX(500%)}
-.segmented[data-tab=setup] .thumb{transform:translateX(600%)}
-.segmented button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.segmented .short{display:none}
-@media(max-width:480px){#tabs.segmented button{font-size:.72rem;padding:6px 1px;letter-spacing:-.01em}.segmented .full{display:none}.segmented .short{display:inline}}
-@media(max-width:360px){#tabs.segmented button{font-size:.66rem}}
-.segmented button{position:relative;z-index:1;background:none;border:0;color:var(--label);font:inherit;font-size:.86rem;font-weight:500;padding:6px 4px;border-radius:7px;cursor:pointer;transition:opacity .2s}
-.segmented button[aria-selected=true]{font-weight:600}
-.segmented button:active{opacity:.6}
-.tab-badge{display:inline-block;min-width:8px;height:8px;border-radius:50%;background:var(--orange);margin-left:5px;vertical-align:middle}
+.nav{display:grid;gap:2px;margin-top:var(--sp-2)}
+.nav button{position:relative;display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);width:100%;min-height:40px;padding:var(--sp-2) 12px;border-radius:var(--r-2);background:none;color:var(--c-text-2);font-weight:500;text-align:left;transform:none}
+.nav button:hover{background:var(--c-fill);filter:none}
+.nav button[aria-selected=true]{background:var(--c-fill-2);color:var(--c-text);font-weight:600;box-shadow:inset 3px 0 var(--c-link)}
+.tab-badge{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c-attn);box-shadow:0 0 0 2px var(--c-side)}
 .tab-badge:empty{display:none}
+main{min-width:0;width:100%;max-width:1088px;margin:0 auto;padding:var(--sp-5) var(--sp-5) var(--sp-6)}
+.page-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);margin:0 0 var(--sp-3)}
+.section-h{font-size:var(--fs-1);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--c-text-2);margin:var(--sp-5) 0 var(--sp-2)}
+@media(max-width:999px){
+  .shell{display:block}
+  .side{position:sticky;top:0;z-index:10;height:auto;flex-direction:row;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);border-right:0;border-bottom:.5px solid var(--c-line);background:var(--c-side)}
+  .live{align-self:center}
+  .nav{position:fixed;left:0;right:0;bottom:0;z-index:20;margin:0;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;padding:var(--sp-1) var(--sp-1) calc(var(--sp-1) + env(safe-area-inset-bottom));background:rgba(14,14,16,.97);border-top:.5px solid var(--c-line);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+  .nav button{justify-content:center;min-height:48px;padding:var(--sp-2) 2px;font-size:var(--fs-1);border-radius:var(--r-1);text-align:center}
+  .nav button[aria-selected=true]{background:none;box-shadow:inset 0 2px var(--c-link)}
+  .nav .tab-badge{position:absolute;top:8px;right:8px}
+  main{padding:var(--sp-3) var(--sp-3) calc(88px + env(safe-area-inset-bottom))}
+}
 
-/* Panels, cards and grouped lists */
-.panel{animation:panel-in .45s var(--ease-out)}
-.panel[hidden]{display:none}
-@keyframes panel-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.card{background:var(--card);border-radius:var(--radius);padding:18px 20px;margin:16px 0;box-shadow:var(--shadow)}
-.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
-.lede{color:var(--label2);margin:4px 0 14px;max-width:70ch}
-.hero{display:flex;gap:16px;align-items:center;background:var(--card);border-radius:var(--radius);padding:20px;margin:20px 0 12px;box-shadow:var(--shadow);transition:background .4s var(--ease)}
-.hero-glyph{flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:1.6rem;font-weight:700;color:#fff;background:var(--tone);transition:background .5s var(--ease),transform .5s var(--spring)}
-.hero.good .hero-glyph{animation:pop .6s var(--spring)}
-@keyframes pop{0%{transform:scale(.6)}100%{transform:scale(1)}}
-.hero h1{font-size:1.6rem;font-weight:700;line-height:1.2}
-.hero p{color:var(--label2);margin:4px 0 0}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px}
-.tiles .tile{padding:12px 13px}.tiles .tile strong{font-size:1.08rem;line-height:1.2}.tiles .tile small{font-size:.76rem}
-.tile{background:var(--card);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;transition:transform .3s var(--spring)}
-.tile-dot{width:10px;height:10px;border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px var(--tone-t);transition:background .4s var(--ease),box-shadow .4s var(--ease)}
-.tile-label{font-size:.8rem;color:var(--label2);font-weight:500}
-.tile strong{grid-column:1/-1;font-size:1.25rem;font-weight:700;margin-top:6px;color:var(--tone)}
-.tile small{grid-column:1/-1;color:var(--label2);font-size:.8rem;margin-top:2px;overflow-wrap:anywhere}
-.list{background:var(--inset);border-radius:10px;overflow:hidden}
-.row{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--sep)}
+/* Panels and cards */
+.panel{animation:panel-in .35s var(--ease-out)}
+.panel[hidden],.view[hidden]{display:none}
+@keyframes panel-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{background:var(--c-surface);border-radius:var(--r-3);padding:var(--sp-4);margin:0 0 var(--sp-3);box-shadow:var(--e-1);min-width:0}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.card-head h2{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.card-head h2 small{display:block;font-size:var(--fs-2);font-weight:400;color:var(--c-text-2);margin-top:2px;letter-spacing:0}
+.device .card-head h2{display:block}
+.card>.card-head:last-child{margin-bottom:0}
+details.more-card>summary{cursor:pointer;font-weight:600;font-size:var(--fs-4);list-style:none}
+details.more-card>summary::-webkit-details-marker{display:none}
+details.more-card[open]>summary{margin-bottom:var(--sp-3)}
+@media(max-width:600px){.card{padding:var(--sp-3);border-radius:var(--r-2)}main .page-head h1{font-size:var(--fs-5)}}
+
+/* Status card (Home): the one sentence, then the checks behind it */
+.hero{background:var(--c-surface);border-radius:var(--r-3);padding:var(--sp-4);margin:0 0 var(--sp-3);box-shadow:inset 4px 0 var(--tone),var(--e-1)}
+.hero-main{display:flex;gap:var(--sp-3);align-items:flex-start}
+.hero-glyph{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-5);font-weight:700;color:#000;background:var(--tone)}
+.hero-text{min-width:0}
+.hero h1{font-size:clamp(22px,2.6vw,var(--fs-7));line-height:1.2;overflow-wrap:anywhere}
+.hero p{color:var(--c-text-2);margin:var(--sp-2) 0 0;max-width:var(--measure)}
+.checks-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-1) var(--sp-3);margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:.5px solid var(--c-line)}
+.checks-strip:empty{display:none}
+@media(max-width:999px){.checks-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{display:grid;grid-template-columns:8px minmax(0,1fr);column-gap:var(--sp-2);row-gap:2px;align-items:start;align-content:start;padding:var(--sp-2);margin:0 calc(-1 * var(--sp-2));border-radius:var(--r-2);min-width:0}
+.tile-dot{width:8px;height:8px;border-radius:50%;background:var(--tone);align-self:center}
+.tile-label{font-size:var(--fs-2);color:var(--c-text-2)}
+.tile strong{grid-column:2;font-size:var(--fs-3);font-weight:600;color:var(--c-text);overflow-wrap:anywhere}
+.tile small{grid-column:2;font-size:var(--fs-1);color:var(--c-text-3);overflow-wrap:anywhere}
+.tile[data-goto]{cursor:pointer}.tile[data-goto]:hover{background:var(--c-fill)}
+.tile .go{display:none}
+
+/* Needs attention */
+.attn{list-style:none;margin:0;padding:0;display:grid;gap:var(--sp-2)}
+.attn li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:var(--sp-1) var(--sp-3);align-items:start;padding:12px var(--sp-3);border-radius:var(--r-2);background:var(--c-raised);box-shadow:inset 3px 0 var(--tone)}
+.attn .ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-2);font-weight:700;color:#000;background:var(--tone)}
+.attn strong{display:block;font-weight:600;overflow-wrap:anywhere}
+.attn .since{display:block;color:var(--c-text-2);font-size:var(--fs-2);margin-top:2px}
+.attn .go{align-self:center;white-space:nowrap}
+@media(max-width:600px){.attn li{grid-template-columns:24px minmax(0,1fr)}.attn .go{grid-column:2;justify-self:start;padding-top:0}}
+
+/* Stat rows and lists */
+.list{background:var(--c-raised);border-radius:var(--r-2);overflow:hidden}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);padding:10px 14px;border-bottom:.5px solid var(--c-line)}
 .row:last-child{border-bottom:0}
-.row span{color:var(--label)}
-.row strong{font-weight:500;color:var(--label2);text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.row strong.warn,.row strong.bad{color:var(--tone);font-weight:600}
-.groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 16px}
-details.card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:1.25rem}
-details.card>summary::-webkit-details-marker{display:none}
-details.card>summary::after{content:"›";font-size:1.4rem;color:var(--label3);transform:rotate(90deg);transition:transform .35s var(--spring)}
-details[open].card>summary::after{transform:rotate(-90deg)}
-details[open].card>summary~*{animation:panel-in .35s var(--ease-out)}
+.row span{color:var(--c-text)}
+.row strong{font-weight:500;color:var(--c-text-2);text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;min-width:0}
+.row strong.warn,.row strong.bad,.row strong.good{color:var(--tone);font-weight:600}
+.groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0 var(--sp-3);align-items:start}
+.groups>div>h3:first-child{margin-top:var(--sp-3)}
+
+/* Device cards: status, a few vitals, then readings and controls on demand */
+.boards{display:grid;gap:0}
+.vitals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3) var(--sp-4)}
+.vitals[data-n="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
+.vitals:empty{display:none}
+@media(max-width:700px){.vitals,.vitals[data-n="4"]{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.vital{min-width:0}
+.vital>span{display:block;font-size:var(--fs-2);color:var(--c-text-2)}
+.vital strong{display:block;font-size:var(--fs-4);font-weight:600;line-height:1.25;margin-top:2px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.vital.warn strong,.vital.bad strong{color:var(--tone)}
+.vital small{display:block;font-size:var(--fs-1);color:var(--c-text-3);margin-top:2px;overflow-wrap:anywhere}
+.device>.hint{margin-top:var(--sp-3)}
+
+/* Disclosure: "All readings", "Update firmware", "Advanced" */
+details.more,details.raw{margin-top:var(--sp-3);border-top:.5px solid var(--c-line)}
+details.more>summary,details.raw>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;padding-top:var(--sp-3);font-size:var(--fs-3);font-weight:600;color:var(--c-text)}
+details.more>summary::-webkit-details-marker,details.raw>summary::-webkit-details-marker{display:none}
+details.more>summary::before,details.raw>summary::before{content:"";width:7px;height:7px;border-right:2px solid var(--c-text-2);border-bottom:2px solid var(--c-text-2);transform:rotate(-45deg);margin:0 4px 0 2px;transition:transform .2s var(--ease)}
+details.more[open]>summary::before,details.raw[open]>summary::before{transform:rotate(45deg)}
+details.more>summary .pill{margin-left:auto}
+.more-body{padding-top:var(--sp-2)}
+details.more[open]>.more-body{animation:panel-in .25s var(--ease-out)}
+
+/* Info control: a small button that shows the explanation in place */
+button.info{display:inline-grid;place-items:center;width:22px;height:22px;min-height:0;padding:0;border-radius:50%;background:var(--c-fill-2);color:var(--c-text);font:italic 700 13px/1 Georgia,serif;flex:none}
+button.info[aria-expanded=true]{background:var(--c-action);color:#fff}
+.tip{background:var(--c-raised);border-radius:var(--r-2);padding:12px var(--sp-3);margin:0 0 var(--sp-3);font-size:var(--fs-2);color:var(--c-text-2);max-width:var(--measure)}
+.tip p{margin:0 0 var(--sp-2)}.tip p:last-child{margin:0}
+.tip .legend{margin-top:var(--sp-2)}
 
 /* Pills */
-.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--tone);background:var(--tone-t);white-space:nowrap;transition:color .3s,background .3s}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-pill);font-size:var(--fs-2);font-weight:600;color:var(--tone);background:var(--tone-t);white-space:nowrap}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.code{display:block;font:11px ui-monospace,"SF Mono",Menlo,monospace;color:var(--label3);margin-top:3px}
+.pill:empty{display:none}
+.code{display:block;font:11px var(--mono);color:var(--c-text-3);margin-top:3px}
 
-/* Controls */
-label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.82rem;color:var(--label2);font-weight:500}
-input,select,textarea{font:inherit;font-size:15px;color:var(--label);background:var(--fill);border:0;border-radius:10px;padding:9px 12px;outline:none;transition:box-shadow .2s var(--ease)}
-input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px var(--blue-t),0 0 0 1px var(--blue)}
-textarea{display:block;width:100%;min-height:220px;font:13px/1.5 ui-monospace,"SF Mono",Menlo,monospace;resize:vertical}
-button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:9px 18px;cursor:pointer;background:var(--blue);color:#fff;transition:transform .25s var(--spring),opacity .2s,filter .2s}
-button:hover{filter:brightness(1.06)}
-button:active{transform:scale(.96)}
-button:disabled{opacity:.4;cursor:default;transform:none}
-button.secondary{background:var(--blue-t);color:var(--blue)}
-.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
-.file{position:relative;display:inline-flex;align-items:center;gap:10px;margin:0;color:var(--label);font-size:15px}
+/* Controls: one primary per card, secondary, plain and destructive */
+label{display:inline-grid;gap:var(--sp-1);margin:6px var(--sp-3) 6px 0;font-size:var(--fs-2);color:var(--c-text-2);font-weight:500}
+label.field{display:grid;margin:0;min-width:0}
+label.field input,label.field select{width:100%;min-width:0}
+input,select,textarea{font:inherit;font-size:var(--fs-3);color:var(--c-text);background:var(--c-fill);border:0;border-radius:var(--r-2);padding:9px 12px;outline:none;min-height:40px}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px var(--c-action-t),0 0 0 1px var(--c-link)}
+input[type=checkbox]{min-height:0}
+textarea{display:block;width:100%;min-height:220px;font:13px/1.5 var(--mono);resize:vertical}
+button{font:inherit;font-weight:600;font-size:var(--fs-3);border:0;border-radius:var(--r-2);padding:9px var(--sp-3);min-height:40px;cursor:pointer;background:var(--c-action);color:#fff;transition:transform .2s var(--spring),opacity .2s,filter .2s}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(.97)}
+button:disabled{opacity:.45;cursor:default;transform:none;filter:none}
+button.secondary{background:var(--c-fill-2);color:var(--c-text)}
+button.plain{background:none;color:var(--c-link);padding:var(--sp-2) var(--sp-1);min-height:0}
+button.plain.inline{padding:0;font-size:inherit;font-weight:600;vertical-align:baseline}
+button.danger{background:var(--c-danger);color:#fff}
+.danger-text{color:var(--c-fault)!important}
+.actions{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin-top:var(--sp-3)}
+.toolbar>button{margin:6px 0}
+.local-grid>.empty,.local-grid>.empty-state{grid-column:1/-1}
+.actions.inline{margin:0;align-self:end;padding-bottom:6px}
+.file{position:relative;display:inline-flex;align-items:center;gap:10px;margin:0;color:var(--c-text);font-size:var(--fs-3)}
 .file input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.file .btn{background:var(--blue-t);color:var(--blue);font-weight:600;border-radius:10px;padding:9px 18px}
-.steps{margin:4px 0 14px;padding-left:20px;color:var(--label2)}
-.steps li{margin:3px 0}
-.notice{border-radius:10px;padding:10px 14px;background:var(--tone-t);color:var(--label);margin-top:12px}
+.steps{margin:var(--sp-1) 0 var(--sp-3);padding-left:20px;color:var(--c-text-2)}
+.notice{border-radius:var(--r-2);padding:10px 14px;background:var(--tone-t);box-shadow:inset 3px 0 var(--tone);color:var(--c-text);margin-top:12px}
 .notice:empty{display:none}
+.empty-state{text-align:center;color:var(--c-text-2);padding:var(--sp-5) var(--sp-3);background:var(--c-raised);border-radius:var(--r-2);margin:0}
+.empty-state strong{display:block;color:var(--c-text);font-size:var(--fs-3);margin-bottom:var(--sp-1)}
+
+/* Segmented control (Activity views) */
+.seg{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--c-fill);border-radius:var(--r-2);padding:2px}
+.seg button{background:none;color:var(--c-text-2);min-height:36px;padding:6px var(--sp-3);font-weight:500;border-radius:8px;white-space:nowrap}
+.seg button[aria-pressed=true]{background:#636366;color:var(--c-text);font-weight:600}
+@media(max-width:600px){.page-head .seg{display:grid;width:100%}.seg button{padding:6px var(--sp-1);font-size:var(--fs-2)}}
+
+/* Command path strip (Home) */
+.path{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) repeat(5,minmax(16px,40px) minmax(0,1fr));align-items:start}
+.path .stop{display:grid;justify-items:center;text-align:center;gap:2px;min-width:0}
+.path .node{width:16px;height:16px;border-radius:50%;border:2px solid var(--c-text-3);background:var(--c-surface);margin-bottom:var(--sp-1);transition:background .4s,border-color .4s}
+.path .node.good{border-color:var(--c-good);background:var(--c-good-t)}.path .node.warn{border-color:var(--c-attn);background:var(--c-attn-t)}.path .node.bad{border-color:var(--c-fault);background:var(--c-fault-t)}
+.path .stop b{font-size:var(--fs-2);font-weight:600}
+.path .detail{font-size:var(--fs-1);color:var(--c-text-2);overflow-wrap:anywhere}
+.path .detail.good{color:var(--c-good)}.path .detail.warn{color:var(--c-attn)}.path .detail.bad{color:var(--c-fault)}
+.path .link{display:grid;gap:5px;padding-top:4px}
+.path .edge{display:block;height:2px;background:var(--c-text-3);border-radius:1px}
+.path .return{display:block;height:0;border-top:2px dashed var(--c-line)}
+.path .flow-pulse{background:linear-gradient(90deg,transparent 0,var(--pulse,var(--c-good)) 50%,transparent 100%) 0 0/200% 100%;height:3px;animation:flow 1s linear infinite}
+.path .return.flow-pulse{border-top-color:var(--pulse,var(--c-good));border-top-style:solid}
+.path .flow-pulse.warn{--pulse:var(--c-attn)}.path .flow-pulse.bad{--pulse:var(--c-fault)}
+@keyframes flow{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(max-width:700px){.path{grid-template-columns:1fr}.path .stop{grid-template-columns:16px auto minmax(0,1fr);justify-items:start;text-align:left;align-items:center;gap:var(--sp-2)}.path .node{margin:0}.path .detail{justify-self:end;text-align:right}.path .link{width:2px;height:14px;padding:0;margin-left:7px;display:block}.path .edge{width:2px;height:14px}.path .return{display:none}}
+#flow-note{font-weight:500}
 
 /* Tables */
 .scroll{overflow:auto;margin:0 -4px}
 table{width:100%;min-width:560px;border-collapse:collapse;font-variant-numeric:tabular-nums}
-th{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);text-align:left;padding:8px 10px;border-bottom:.5px solid var(--sep);white-space:nowrap}
-td{padding:11px 10px;border-bottom:.5px solid var(--sep);vertical-align:top;overflow-wrap:anywhere}
+th{font-size:var(--fs-1);font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--c-text-2);text-align:left;padding:8px 10px;border-bottom:.5px solid var(--c-line);white-space:nowrap}
+td{padding:11px 10px;border-bottom:.5px solid var(--c-line);vertical-align:top;overflow-wrap:anywhere}
 tbody tr:last-child td{border-bottom:0}
-tbody tr{transition:background .2s}
-tbody tr:hover{background:var(--fill)}
+tbody tr:hover{background:var(--c-fill)}
 tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
-@keyframes row-in{from{opacity:0;background:var(--blue-t)}to{opacity:1}}
-#events tr.gap{background:var(--orange-t)}
-#events tr.gap td:first-child{box-shadow:inset 3px 0 var(--orange)}
-.empty{text-align:center;color:var(--label3);padding:22px}
-.sub{display:block;color:var(--label2);font-size:.8rem}
+@keyframes row-in{from{opacity:0;background:var(--c-action-t)}to{opacity:1}}
+#events tr.gap{background:var(--c-attn-t)}
+#events tr.gap td:first-child{box-shadow:inset 3px 0 var(--c-attn)}
+.empty{text-align:center;color:var(--c-text-2);padding:22px}
+.sub{display:block;color:var(--c-text-2);font-size:var(--fs-2)}
+
+/* Danger zone (Settings): last, red, always confirmed */
+.danger-zone{box-shadow:inset 0 0 0 1px rgba(255,105,97,.5)}
+.danger-zone h2{color:var(--c-fault)}
+.danger-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-3) 0;border-top:.5px solid var(--c-line)}
+.danger-row:last-child{padding-bottom:0}
+.danger-row>div{min-width:0}
+.danger-row button{flex:none}
+@media(max-width:600px){.danger-row{flex-direction:column;align-items:stretch}}
+
+/* Side sheet (gateway rule editor) */
+dialog.side-sheet{position:fixed;inset:0 0 0 auto;margin:0;height:100%;max-height:100%;width:min(600px,100vw);max-width:100vw;border:0;padding:0;background:var(--c-surface);color:var(--c-text);box-shadow:var(--e-3)}
+dialog.side-sheet[open]{display:flex;flex-direction:column;animation:side-in .3s var(--ease-out)}
+dialog.side-sheet::backdrop{background:rgba(0,0,0,.55)}
+@keyframes side-in{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+.side-sheet>header{display:flex;align-items:center;gap:var(--sp-2) var(--sp-3);flex-wrap:wrap;padding:var(--sp-3) var(--sp-4);border-bottom:.5px solid var(--c-line)}
+.side-sheet>header h2{margin-right:auto}
+.side-sheet .sheet-body{flex:1;overflow:auto;padding:var(--sp-3) var(--sp-4)}
+.side-sheet>footer{padding:var(--sp-2) var(--sp-4) var(--sp-3);border-top:.5px solid var(--c-line)}
+.side-sheet>footer .actions{margin-top:var(--sp-2)}
+.rule-forms{display:grid;gap:var(--sp-3);margin:var(--sp-3) 0}
+fieldset.rule-form{border:0;margin:0;padding:var(--sp-3);background:var(--c-raised);border-radius:var(--r-2);display:grid;gap:var(--sp-3);min-width:0}
+.rule-form legend{float:left;font-weight:700;font-size:var(--fs-4);padding:0}
+.rule-form-head{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);margin-top:-2px}
+.rule-form-head label.check{margin:0}
+.rule-form .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px var(--sp-3)}
+.rule-form .fields>h4{grid-column:1/-1;margin:0}
+.rule-form .fields input{background:var(--c-overlay)}
+.rule-form .fields select{background:var(--c-overlay)}
+.rule-form>label.field input{background:var(--c-overlay)}
+@media(max-width:600px){.rule-form .fields{grid-template-columns:1fr}.side-sheet>header,.side-sheet .sheet-body,.side-sheet>footer{padding-left:var(--sp-3);padding-right:var(--sp-3)}}
 .meter{display:block;height:4px;border-radius:2px;background:var(--fill2);margin-top:6px;max-width:120px;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .6s var(--ease-out)}
 /* Lights: one card per bridged lamp, Lutron | bridge | lamp side by side */
@@ -222,30 +350,6 @@ tbody tr[data-new]{animation:row-in .5s var(--ease-out)}
   .event-steps .when,.event-steps .code{flex-basis:100%}
 }
 
-/* Topology */
-.topology{width:100%;min-width:680px;height:auto;display:block;background:var(--inset);border-radius:12px}
-.topology .edge{stroke:var(--label3);stroke-width:3;stroke-linecap:round;fill:none;marker-end:url(#arrow);transition:stroke .3s}
-.topology .return{stroke:var(--label3);stroke-width:2;stroke-dasharray:4 6;stroke-linecap:round;marker-end:url(#arrow-return)}
-.topology .node{fill:var(--card);stroke:var(--label3);stroke-width:2.5;transition:fill .45s var(--ease),stroke .45s var(--ease)}
-.topology .node.good{fill:var(--green-t);stroke:var(--green)}
-.topology .node.warn{fill:var(--orange-t);stroke:var(--orange)}
-.topology .node.bad{fill:var(--red-t);stroke:var(--red)}
-.topology .step{fill:var(--label2);font-size:15px;font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
-.topology .label{fill:var(--label);font-size:15px;font-weight:600;text-anchor:middle}
-.topology .detail{fill:var(--label2);font-size:12px;text-anchor:middle;transition:fill .3s}
-.topology .detail.good{fill:var(--green)}.topology .detail.warn{fill:var(--orange)}.topology .detail.bad{fill:var(--red)}
-.topology .lane{fill:var(--label3);font-size:11px;font-weight:600;letter-spacing:.06em}
-.topology .arrowhead{fill:var(--label3)}
-.topology .flow-pulse{stroke:var(--green);stroke-width:4;stroke-dasharray:2 12;animation:flow .9s linear infinite;filter:drop-shadow(0 0 3px var(--green))}
-.topology .flow-pulse.warn{stroke:var(--orange);filter:drop-shadow(0 0 3px var(--orange))}
-.topology .flow-pulse.bad{stroke:var(--red);filter:drop-shadow(0 0 3px var(--red))}
-@keyframes flow{to{stroke-dashoffset:-28}}
-.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:.8rem;color:var(--label2)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend i{width:10px;height:10px;border-radius:50%;border:2px solid var(--tone);background:var(--tone-t)}
-.legend b{width:22px;border-top:3px solid var(--label3)}
-.legend b.dash{border-top:2px dashed var(--label3)}
-#flow-note{font-weight:500;color:var(--label)}
 
 /* Programming chart */
 .chart{width:100%;height:auto;background:var(--inset);border-radius:12px;grid-column:1/-1}
@@ -269,7 +373,6 @@ code{overflow-wrap:anywhere}
 #program-viz[aria-busy=true]{opacity:.45}
 .prog-section{margin-top:22px}
 .prog-section>h3{margin-left:0}
-.empty-state{text-align:center;color:var(--label2);padding:36px 16px;background:var(--inset);border-radius:12px;margin:12px 0 0}
 .sched-summary{font-size:1rem;color:var(--label);margin:2px 0 14px}
 .sched-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 16px;margin-bottom:10px}
 .readout{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px}
@@ -303,16 +406,10 @@ code{overflow-wrap:anywhere}
 .kf .bar i{display:block;height:100%;border-radius:3px;background:var(--c)}
 .kf .temp{font-weight:500;color:var(--label2)}
 @media(max-width:560px){.chart.schedule .axis{font-size:15px}.chart.schedule path.line{stroke-width:5}.chart.schedule .now rect,.chart.schedule .now text{display:none}.kf{grid-template-columns:5.4em auto 1fr}.kf .bar{display:none}.kf .temp{justify-self:end}.readout .big{font-size:1.7rem}}
-.when{font-size:.86rem;background:var(--inset);border-radius:10px;padding:8px 12px;margin:8px 0 10px;color:var(--label)}
-.when b:first-child{color:var(--label2);font-weight:600}
-.setup-intro{color:var(--label2);margin:18px 4px 0}
-.setup-h{font-size:.85rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--label2);margin:26px 4px -4px}
 .fw-targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 20px}
 .fw-target h3{margin-top:10px}
 #sidecar-facts strong{overflow-wrap:anywhere;min-width:0}
 .explain{margin-top:8px}.explain p{max-width:75ch;color:var(--label2);font-size:.88rem}
-.tile[data-goto]{cursor:pointer}.tile[data-goto]:hover{transform:translateY(-1px)}.tile[data-goto]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.tile .go{grid-column:1/-1;font-size:.76rem;color:var(--blue);margin-top:4px}
 /* Lights: one compact row per lamp; details on demand */
 .zone.lamp{background:var(--inset);border-radius:12px;padding:0;box-shadow:inset 3px 0 var(--tone,var(--label3))}
 .lamp>summary{list-style:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:6px 12px;align-items:center;padding:10px 14px;cursor:pointer}
@@ -337,10 +434,6 @@ code{overflow-wrap:anywhere}
 .pipeline .pill{align-self:center}
 .sync-table td{vertical-align:top}.presets td{vertical-align:top}.presets small{display:block;color:var(--label2);font-size:.78rem}.presets .swatch{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 1px var(--sep)}.good-text{color:var(--green)!important}.chip.member{cursor:default}.chip.member.good{background:var(--green-t)}.chip.member.info{background:var(--blue-t)}.sync-table tr.pick{cursor:pointer}.sync-table tr.pick:hover td{background:var(--fill)}
 .sync-table small{display:block;color:var(--label2);font-size:.78rem}
-.help{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:6px;padding:0;border-radius:50%;background:var(--fill);color:var(--label2);font-size:.72rem;font-weight:700;vertical-align:middle;position:relative;cursor:help}
-.help:hover,.help:focus-visible{background:var(--blue);color:#fff}
-.help::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 8px);z-index:20;width:min(340px,80vw);padding:10px 12px;border-radius:10px;background:var(--elevated);color:var(--label);box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:.82rem;font-weight:400;line-height:1.4;text-align:left;letter-spacing:0;text-transform:none;white-space:normal;opacity:0;pointer-events:none;transition:opacity .15s}
-.help:hover::after,.help:focus-visible::after,.help:focus::after{opacity:1}
 @media(prefers-reduced-motion:reduce){.chart path.line{stroke-dasharray:none!important;stroke-dashoffset:0!important}}
 a.link{color:var(--blue);text-decoration:none;margin-top:4px}a.link:hover{text-decoration:underline}
 .ha-match{font-size:.82rem;line-height:1.3}.ha-match .sub{font-size:.75rem}
@@ -348,8 +441,6 @@ a.link{color:var(--blue);text-decoration:none;margin-top:4px}a.link:hover{text-d
 .chart .night{fill:var(--fill)}
 .chart .sun-label{fill:var(--label2);font-size:10.5px;font-weight:600}
 .chart .sun-tick{stroke:var(--label3);stroke-width:1.5}
-details.raw{margin-top:18px}
-details.raw>summary{cursor:pointer;color:var(--blue);font-size:.86rem;font-weight:500}
 
 /* Setup tab: mapping editor */
 table.editor{min-width:660px}
@@ -362,8 +453,6 @@ table.editor.with-ha{min-width:860px}
 .editor input.invalid{box-shadow:0 0 0 1px var(--red);background:var(--red-t)}
 .editor .w-id{width:92px}.editor .w-grp{width:104px}.editor .w-x{width:40px}
 button.remove{width:26px;height:26px;padding:0;border-radius:50%;background:var(--red);color:#fff;font-size:17px;line-height:26px;font-weight:700}
-button.plain{background:none;color:var(--blue);padding:8px 2px}
-button.plain:hover{filter:none;opacity:.7}
 .dirty{color:var(--orange);font-size:.82rem;font-weight:600}
 .json-editor textarea{margin-top:10px}
 
@@ -498,7 +587,6 @@ details[open].dsec>summary::after{transform:rotate(90deg)}
 .show-key .k-next{width:9px;height:9px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--label2)}
 .show-key .k-dia{width:8px;height:8px;background:var(--blue);transform:rotate(45deg)}
 
-@media(max-width:700px){.hero{align-items:flex-start}.hero-glyph{width:44px;height:44px;font-size:1.3rem}main{padding:4px 14px 40px}.bar-inner{padding:10px 14px 8px}.hero{padding:16px}.hero h1{font-size:1.3rem}.card{padding:16px}.segmented button{font-size:.8rem}}
 /* CCA controls use the same cards and inputs as the rest of the app. */
 .cca-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:2px 12px}.cca-fields label{display:grid;margin:6px 0;min-width:0}.cca-fields input,.cca-fields select{width:100%;min-width:0}
 .cca-list{display:grid;gap:10px}.cca-item{background:var(--inset);border-radius:10px;padding:12px}.cca-item textarea{min-height:90px}.cca-json{display:block;margin:10px 0;padding:12px;border-radius:10px;background:var(--inset);color:var(--label);font:12px/1.45 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.cca-activity{display:grid;gap:6px;max-height:600px;overflow:auto}.cca-activity details{background:var(--inset);border-radius:9px;padding:9px 12px}.cca-activity summary{cursor:pointer;overflow-wrap:anywhere}.cca-activity pre{white-space:pre-wrap;overflow-wrap:anywhere}.cca-break{overflow-wrap:anywhere}
@@ -534,294 +622,309 @@ html,body{overflow-anchor:none}
 .feed-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--label2);margin:4px 0}.feed-bar button{visibility:hidden;padding:4px 2px}.feed-bar.held{color:var(--blue)}.feed-bar.held button{visibility:visible}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.topology .flow-pulse{stroke-dasharray:none}}
 </style></head><body>
-<header class="bar"><div class="bar-inner">
+<div class="shell">
+<header class="side">
   <div class="brand"><span class="app-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="16" r="1.6" fill="currentColor"/></svg></span>CCX Bridge</div>
   <div id="live" class="live wait" role="status"><span class="live-dot"></span><span id="live-text">Connecting</span></div>
-  <nav id="tabs" class="segmented" data-tab="overview" role="tablist" aria-label="Sections"><span class="thumb"></span>
-    <button id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview">Overview</button>
-    <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity">Activity<span id="activity-badge" class="tab-badge"></span></button>
-    <button id="tab-diagnostics" role="tab" aria-selected="false" aria-controls="panel-diagnostics">Health<span id="diag-badge" class="tab-badge"></span></button>
-    <button id="tab-programming" role="tab" aria-selected="false" aria-controls="panel-programming" aria-label="Programming"><span class="full">Programming</span><span class="short">Program</span><span id="program-badge" class="tab-badge"></span></button>
-    <button id="tab-local" role="tab" aria-selected="false" aria-controls="panel-local" aria-label="Local programming">Local</button>
-    <button id="tab-cca" role="tab" aria-selected="false" aria-controls="panel-cca">CCA</button>
-    <button id="tab-setup" role="tab" aria-selected="false" aria-controls="panel-setup">Setup</button>
+  <nav id="tabs" class="nav" data-tab="home" role="tablist" aria-label="Sections">
+    <button id="tab-home" role="tab" aria-selected="true" aria-controls="panel-home" tabindex="0">Home</button>
+    <button id="tab-activity" role="tab" aria-selected="false" aria-controls="panel-activity" tabindex="-1">Activity<span id="activity-badge" class="tab-badge"></span></button>
+    <button id="tab-devices" role="tab" aria-selected="false" aria-controls="panel-devices" tabindex="-1">Devices<span id="diag-badge" class="tab-badge"></span></button>
+    <button id="tab-automation" role="tab" aria-selected="false" aria-controls="panel-automation" tabindex="-1">Automation<span id="program-badge" class="tab-badge"></span></button>
+    <button id="tab-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1">Settings</button>
   </nav>
-</div></header>
+</header>
 <main>
 
-<div id="panel-overview" class="panel" role="tabpanel">
-  <section id="hero" class="hero wait" aria-live="polite"><div id="hero-glyph" class="hero-glyph" aria-hidden="true">…</div><div><h1 id="headline">Connecting to the gateway…</h1><p id="headline-detail">Live status refreshes every second. Gateway credentials stay inside the add-on.</p><p id="health-note" class="small"></p></div></section>
-  <div id="summary" class="tiles"></div>
-
-
-
+<div id="panel-home" class="panel" role="tabpanel" aria-labelledby="tab-home">
+  <section id="hero" class="hero wait" aria-live="polite">
+    <div class="hero-main"><span id="hero-glyph" class="hero-glyph" aria-hidden="true">…</span>
+      <div class="hero-text"><h1 id="headline">Connecting to the gateway…</h1><p id="headline-detail">Live status refreshes every second.</p></div></div>
+    <div id="summary" class="checks-strip" aria-label="System checks"></div>
+    <p id="health-note" class="hint"></p>
+  </section>
+  <section class="card" id="attention-card" hidden>
+    <div class="card-head"><h2>Needs attention</h2><span id="attention-count" class="pill warn"></span></div>
+    <ul id="attention" class="attn"></ul>
+  </section>
   <section class="card" id="lights-card">
-    <div class="card-head"><h2>Lights</h2><span id="device-count" class="muted small"></span></div>
-    <p class="lede">One row per bridged lamp, comparing the lamp with what <b>Lutron</b> shows (or what a running Natural Show calls for). <b>In sync</b> means within 2 percentage points of brightness and 10 mired of colour, which is hard to see on one lamp. Select a lamp for the details.</p>
+    <div class="card-head"><h2>Rooms <button type="button" class="info" aria-expanded="false" aria-controls="tip-rooms" aria-label="How to read a room">i</button></h2><span id="device-count" class="muted small"></span></div>
+    <div id="tip-rooms" class="tip" hidden>
+      <p>Each room compares three things: what <b>Lutron</b> shows, what the <b>bridge</b> last sent, and what the <b>lamp</b> reports. Lutron is the reference; when a lamp differs, set the level from Lutron again. <b>In sync</b> means within 2 percentage points of brightness and 10 mired of colour.</p>
+      <p>Open a room for its details. On the bar, the fill is the lamp, ▼ is Lutron, the thin line is what the bridge sent and ◆ is the show target. K is colour temperature (lower is warmer); vibrancy is Ketra's colour saturation, 0–100.</p>
+      <p>Readings count as current for 2 minutes through the N4 hub and 7 minutes on direct Zigbee, which reads each lamp after a command and every 5 minutes (every 30 s during a Natural Show).</p>
+    </div>
     <div id="zones" class="zones" aria-live="polite"></div>
-    <p id="device-note" class="muted small">Waiting for live device data.</p><p id="ha-note" class="muted small"></p>
-    <details class="raw explain"><summary>How to read a lamp's details</summary>
-      <p>Each lamp is checked three ways, left to right: what <b>Lutron</b> shows, what the <b>bridge</b> last sent, and what the <b>lamp</b> reports (through the Ketra N4 hub, or read directly over Zigbee). <b>Lutron is the reference</b>: it shows the zone level the processor last commanded. Lamp reports reach the processor but don’t change that level, so when a lamp differs from Lutron it is the bridge that is out of step; send the level from Lutron again to line them up.</p>
-      <p>On the bar, the fill is the <b>lamp</b>, ▼ is <b>Lutron</b>, the thin line is what the <b>bridge sent</b> and ◆ is the <b>show</b> target. <b>K</b> is colour temperature (lower is warmer); <b>vibrancy</b> is Ketra's colour saturation, 0–100.</p>
-      <p>Readings count as current for 2 minutes through the N4 hub and 7 minutes on direct Zigbee, which reads each lamp after a command and every 5 minutes (every 30 s during a Natural Show). Colour is compared only when both Lutron and the lamp report it.</p>
-    </details>
+    <p id="device-note" class="hint">Waiting for live device data.</p><p id="ha-note" class="hint"></p>
   </section>
-
-
-</div>
-
-<div id="panel-activity" class="panel" role="tabpanel" hidden>
   <section class="card" id="flow-card">
-    <div class="card-head"><h2>Command flow <button type="button" class="help" aria-label="About this diagram" data-tip="A lighting command travels left to right along the solid arrows, from the Thread network to the gateway's lighting output (the Ketra N4 hub, or direct Zigbee). Confirmations and reports travel back along the dashed arrows. Arrows only animate when the gateway reports a real event.">?</button></h2></div>
-    <div class="scroll"><svg id="topology" class="topology" viewBox="0 0 1080 190" role="img" aria-label="Live Thread to endpoint to UART to gateway to lighting output topology and report return path"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrowhead" d="M0,0 L8,4 L0,8 z"/></marker><marker id="arrow-return" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrowhead" d="M0,0 L8,4 L0,8 z"/></marker></defs>
-      <text class="lane" x="125" y="30">COMMAND →</text><text class="lane" x="125" y="112">← REPORT</text>
-      <g id="edges"><line id="edge-thread-endpoint" class="edge" x1="124" y1="64" x2="236" y2="64"/><line id="edge-endpoint-uart" class="edge" x1="304" y1="64" x2="416" y2="64"/><line id="edge-uart-gateway" class="edge" x1="484" y1="64" x2="596" y2="64"/><line id="edge-gateway-n4" class="edge" x1="664" y1="64" x2="776" y2="64"/><line id="edge-n4-report" class="edge" x1="844" y1="64" x2="956" y2="64"/><line id="return-report-n4" class="return" x1="956" y1="80" x2="844" y2="80"/><line id="return-n4-gateway" class="return" x1="776" y1="80" x2="664" y2="80"/><line id="return-gateway-uart" class="return" x1="596" y1="80" x2="484" y2="80"/><line id="return-uart-endpoint" class="return" x1="416" y1="80" x2="304" y2="80"/><line id="return-endpoint-thread" class="return" x1="236" y1="80" x2="124" y2="80"/></g>
-      <g><circle id="node-thread" class="node" cx="92" cy="72" r="26"><title>Thread mesh network the endpoint listens on</title></circle><circle id="node-endpoint" class="node" cx="272" cy="72" r="26"><title>Endpoint board (ESP32-C6 on Thread)</title></circle><circle id="node-uart" class="node" cx="452" cy="72" r="26"><title>Serial (UART) link between the two boards</title></circle><circle id="node-gateway" class="node" cx="632" cy="72" r="26"><title id="gateway-title">Gateway board</title></circle><circle id="node-n4" class="node" cx="812" cy="72" r="26"><title id="title-n4">N4 lighting output the gateway writes to</title></circle><circle id="node-report" class="node" cx="992" cy="72" r="26"><title>Status reported back to Thread</title></circle>
-        <text class="step" x="92" y="72">1</text><text class="step" x="272" y="72">2</text><text class="step" x="452" y="72">3</text><text class="step" x="632" y="72">4</text><text class="step" x="812" y="72">5</text><text class="step" x="992" y="72">6</text>
-        <text class="label" x="92" y="138">Thread</text><text id="detail-thread" class="detail" x="92" y="158">waiting</text><text class="label" x="272" y="138">Endpoint</text><text id="detail-endpoint" class="detail" x="272" y="158">waiting</text><text class="label" x="452" y="138">UART link</text><text id="detail-uart" class="detail" x="452" y="158">waiting</text><text class="label" x="632" y="138">Gateway</text><text id="detail-gateway" class="detail" x="632" y="158">waiting</text><text id="label-n4" class="label" x="812" y="138">N4 output</text><text id="detail-n4" class="detail" x="812" y="158">unobserved</text><text class="label" x="992" y="138">Report</text><text id="detail-report" class="detail" x="992" y="158">unobserved</text></g></svg></div>
-    <p id="flow-note" class="small">No event outcome is inferred; the flow animates only from observed event records.</p>
-    <div class="legend" aria-hidden="true"><span><i class="good"></i>Healthy</span><span><i class="warn"></i>Needs attention</span><span><i class="bad"></i>Problem</span><span><i class="idle"></i>Not observed yet</span><span><b></b>Command path</span><span><b class="dash"></b>Report path</span></div>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Activity</h2><span id="events-count" class="muted small"></span></div>
-    <p class="lede">Each row is one lighting command and the steps it went through, or a status report or query reply, newest first. Select a row to see every step. <span id="events-tz"></span></p>
-    <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
-    <p class="event-legend muted small">Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. Reports to Lutron update the processor’s record of the lamp, not the zone level Lutron shows. Step times are measured from when Lutron's command arrived. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the Ketra hub reports the lights are at. Reports without a command association are listed as status updates. Report details separate the report counter from brightness and show why each report was sent. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
-    <div id="events-feed" class="scroll feed"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
-    <p id="events-note" class="muted small">No events yet.</p>
-    <p id="cursor-note" class="muted small"></p>
-  </section>
-  <section class="card" id="ccx-events-card">
-    <div class="card-head"><h2>CCX event inspector</h2><span id="ccx-stream-pill" class="pill wait">Connecting</span></div>
-    <p class="lede">Messages observed by the passive listener, including local rule decisions and correlated action steps. Times and missing events are reported separately from lighting confirmation.</p>
-    <p id="ccx-stream-note" class="muted small">Waiting for the CCX event stream.</p>
-    <p id="ccx-clock-note" class="muted small">Clock status not yet available.</p>
-    <p id="ccx-latency" class="muted small">No event timings yet.</p>
-    <div class="toolbar"><label>Event kind <select id="ccx-filter-kind"><option value="">All kinds</option></select></label><label>Source serial or zone <input id="ccx-filter-source" placeholder="All sources"></label></div>
-    <div class="actions"><button id="ccx-copy" class="secondary">Copy log</button></div><p id="ccx-copy-note" class="small muted" role="status"></p>
-    <div id="ccx-events" class="feed feed-list"></div>
+    <div class="card-head"><h2>Command path <button type="button" class="info" aria-expanded="false" aria-controls="tip-path" aria-label="About the command path">i</button></h2></div>
+    <div id="tip-path" class="tip" hidden><p>A lighting command travels left to right, from Lutron's Thread network to the gateway's lighting output (the Ketra N4 hub, or direct Zigbee). Confirmations travel back along the dashed line. A line moves only when the gateway reports a real event; green is healthy, amber needs attention, red is a problem, grey is not observed yet.</p></div>
+    <ol id="topology" class="path" aria-label="Command path from Thread to the lighting output and back">
+      <li class="stop"><span id="node-thread" class="node"></span><b>Thread</b><span id="detail-thread" class="detail">waiting</span></li>
+      <li class="link" aria-hidden="true"><i id="edge-thread-endpoint" class="edge"></i><i id="return-endpoint-thread" class="return"></i></li>
+      <li class="stop"><span id="node-endpoint" class="node"></span><b>Endpoint</b><span id="detail-endpoint" class="detail">waiting</span></li>
+      <li class="link" aria-hidden="true"><i id="edge-endpoint-uart" class="edge"></i><i id="return-uart-endpoint" class="return"></i></li>
+      <li class="stop"><span id="node-uart" class="node"></span><b>Board link</b><span id="detail-uart" class="detail">waiting</span></li>
+      <li class="link" aria-hidden="true"><i id="edge-uart-gateway" class="edge"></i><i id="return-gateway-uart" class="return"></i></li>
+      <li class="stop"><span id="node-gateway" class="node"></span><b>Gateway<span id="gateway-title" class="sr">Gateway board</span></b><span id="detail-gateway" class="detail">waiting</span></li>
+      <li class="link" aria-hidden="true"><i id="edge-gateway-n4" class="edge"></i><i id="return-n4-gateway" class="return"></i></li>
+      <li class="stop"><span id="node-n4" class="node"></span><b id="label-n4">N4 output</b><span id="title-n4" class="sr">N4 lighting output the gateway writes to</span><span id="detail-n4" class="detail">unobserved</span></li>
+      <li class="link" aria-hidden="true"><i id="edge-n4-report" class="edge"></i><i id="return-report-n4" class="return"></i></li>
+      <li class="stop"><span id="node-report" class="node"></span><b>Report</b><span id="detail-report" class="detail">unobserved</span></li>
+    </ol>
+    <p id="flow-note" class="hint">No event outcome is inferred; the path moves only for observed events.</p>
   </section>
 </div>
 
-<div id="panel-diagnostics" class="panel" role="tabpanel" hidden>
-  <section class="card" id="diag-card">
-    <div class="card-head"><h2>Components</h2><span id="diag-pill" class="pill wait">Waiting</span></div>
-    <p class="lede">Everything both boards report, grouped by the part of the bridge it describes, in the order a command travels. Anything worth checking is listed first, and its section opens on its own. Normal values are not highlighted.</p>
-    <div id="diag-attention"></div>
-    <div id="health" class="diag"></div>
-  </section>
-  <section class="card" id="perf-card">
-    <div class="card-head"><h2>Response times</h2><span id="perf-count" class="muted small"></span></div>
-    <p class="lede">How long a lighting command takes at each hop, timed on the gateway's own clock. Each figure is the median of recent commands; p95 is the slowest one in twenty. Lower is better; green is good, orange is slow.</p>
-    <div id="perf-stats" class="perf-stats"></div>
-    <h3>Recent commands</h3>
-    <div id="perf-waterfall" class="waterfall"></div>
-    <div class="legend" aria-hidden="true"><span><i class="seg seg-hub"></i><span id="leg-hub">Lutron → hub accepted</span></span><span><i class="seg seg-confirmed"></i>Result to endpoint</span><span><i class="seg seg-lamp"></i><span id="leg-lamp">First hub reading</span></span><span><i class="seg seg-back"></i>Reported to Lutron</span><span><i class="seg seg-held"></i>Held</span><span><i class="seg seg-fail"></i>Failed</span></div>
-    <p id="perf-note" class="muted small"></p>
-  </section>
-
+<div id="panel-activity" class="panel" role="tabpanel" aria-labelledby="tab-activity" hidden>
+  <div class="page-head"><h1>Activity</h1>
+    <div id="activity-views" class="seg" role="group" aria-label="Activity view"><button type="button" data-view="commands" aria-pressed="true">Commands</button><button type="button" data-view="listener" aria-pressed="false">Listener events</button><button type="button" data-view="cca" aria-pressed="false">CCA packets</button></div></div>
+  <div id="view-commands" class="view">
+    <section class="card" id="events-card">
+      <div class="card-head"><h2>Command timeline <button type="button" class="info" aria-expanded="false" aria-controls="tip-events" aria-label="How to read the timeline">i</button></h2><span id="events-count" class="muted small"></span></div>
+      <div id="tip-events" class="tip" hidden>
+        <p>Each row is one lighting command and the steps it went through, or a status report, newest first. Select a row to see every step. Step times are measured from when Lutron's command arrived.</p>
+        <p>Each step shows who sent it and who received it: <span class="hop">Lutron → Bridge</span> <span class="hop">Bridge → Ketra hub</span> <span class="hop">Ketra hub → Bridge</span> <span class="hop">Bridge → Lutron</span>. <b>Asked</b> is the level Lutron requested; <b>Lights</b> is the level the lights report. Reports to Lutron update the processor's record of the lamp, not the zone level Lutron shows. <span class="unknown"><span class="unknown-icon">?</span>??</span> marks a value the bridge couldn't interpret, shown exactly as received.</p>
+      </div>
+      <div class="toolbar"><label>Zone <select id="filter-zone"><option value="">All zones</option></select></label><label>Step <select id="filter-stage"><option value="">All steps</option></select></label><label class="check"><input type="checkbox" id="filter-problems"> Problems only</label></div>
+      <p class="hint"><span id="events-tz"></span></p>
+      <div id="events-feed" class="scroll feed"><table class="activity"><thead><tr><th>Time</th><th>Zone</th><th>What happened</th><th>Level</th><th><span hidden>Details</span></th></tr></thead><tbody id="events"></tbody></table></div>
+      <p id="events-note" class="hint">No events yet.</p>
+      <details class="more"><summary>Advanced</summary><div class="more-body"><p id="cursor-note" class="hint"></p></div></details>
+    </section>
+    <section class="card" id="perf-card">
+      <div class="card-head"><h2>Response times <button type="button" class="info" aria-expanded="false" aria-controls="tip-perf" aria-label="About response times">i</button></h2><span id="perf-count" class="muted small"></span></div>
+      <div id="tip-perf" class="tip" hidden><p>How long a lighting command takes at each hop, timed on the gateway's own clock. Each figure is the median of recent commands; p95 is the slowest one in twenty. Lower is better.</p>
+        <div class="legend"><span><i class="seg seg-hub"></i><span id="leg-hub">Lutron → hub accepted</span></span><span><i class="seg seg-confirmed"></i>Result to endpoint</span><span><i class="seg seg-lamp"></i><span id="leg-lamp">First hub reading</span></span><span><i class="seg seg-back"></i>Reported to Lutron</span><span><i class="seg seg-held"></i>Held</span><span><i class="seg seg-fail"></i>Failed</span></div></div>
+      <div id="perf-stats" class="perf-stats"></div>
+      <h3>Recent commands</h3>
+      <div id="perf-waterfall" class="waterfall"></div>
+      <details class="more"><summary>How these are measured</summary><div class="more-body"><p id="perf-note" class="hint"></p></div></details>
+    </section>
+  </div>
+  <div id="view-listener" class="view" hidden>
+    <section class="card" id="ccx-events-card">
+      <div class="card-head"><h2>Listener events</h2><span id="ccx-stream-pill" class="pill wait">Connecting</span></div>
+      <p class="hint">Messages the passive CCX listener heard, with the gateway's own rule decisions.</p>
+      <div class="toolbar"><label>Event kind <select id="ccx-filter-kind"><option value="">All kinds</option></select></label><label>Source serial or zone <input id="ccx-filter-source" placeholder="All sources"></label><div class="actions inline"><button id="ccx-copy" class="secondary">Copy log</button></div></div>
+      <p id="ccx-copy-note" class="hint" role="status"></p>
+      <div id="ccx-events" class="feed feed-list"></div>
+      <details class="more"><summary>Advanced</summary><div class="more-body">
+        <p id="ccx-stream-note" class="hint">Waiting for the CCX event stream.</p>
+        <p id="ccx-clock-note" class="hint">Clock status not yet available.</p>
+        <p id="ccx-latency" class="hint">No event timings yet.</p></div></details>
+    </section>
+  </div>
+  <div id="view-cca" class="view" hidden>
+    <section class="card">
+      <div class="card-head"><h2>CCA packets</h2><span id="cca-events-pill" class="pill wait">Connecting</span></div>
+      <div class="cca-fields"><label>Filter activity<input id="cca-events-filter" placeholder="Command, request ID, raw bytes…"></label></div>
+      <div class="actions"><button id="cca-events-download" class="secondary">Download browser history</button></div><p id="cca-events-note" class="hint" role="status"></p><div id="cca-events" class="cca-activity feed"></div>
+    </section>
+  </div>
 </div>
 
-<div id="panel-programming" class="panel" role="tabpanel" hidden>
-  <section class="card" id="sync-card">
-    <div class="card-head"><h2>Programming sync</h2><span id="sync-pill" class="pill wait">Checking</span></div>
-    <p class="lede">Programming travels from Lutron Designer to the bridge, then to the lamps. Each step says whether it has caught up. A transfer from Designer reaches the endpoint over Thread; the gateway then re-reads each zone's shows and presets, and on direct Zigbee loads Lutron's scenes onto the lamps.</p>
-    <ol id="sync-steps" class="pipeline"></ol>
-    <h3>By zone</h3>
-    <div class="scroll"><table class="activity sync-table"><thead><tr><th>Zone</th><th>Last from Lutron</th><th>Gateway's copy</th><th>Shows</th></tr></thead><tbody id="sync-zones"></tbody></table></div>
-    <p id="sync-note" class="muted small"></p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Zone programming</h2><span class="pill info">Read-only</span></div>
-    <p class="lede">See what the gateway has programmed for a zone: its daily level schedule (shows) and its presets. Viewing a zone never changes the device.</p>
-    <div id="program-zones" class="chips" role="group" aria-label="Known zones"></div>
-    <div class="toolbar"><label>Zone number <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" style="margin:6px 0">Load snapshot</button></div>
-    <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
-    <details class="raw"><summary>Raw data</summary><pre id="program" class="muted">No programming data loaded.</pre></details>
-  </section>
-</div>
-
-<div id="panel-local" class="panel" role="tabpanel" hidden>
-  <section class="card" id="local-rules-card">
-    <div class="card-head"><h2>Gateway rules</h2><span id="local-rules-pill" class="pill wait">Not loaded</span></div>
-    <p class="lede">What the gateway does by itself when it hears a CCX message from a keypad or control. These rules run on the gateway, without the app or MQTT. Viewing them never changes anything.</p>
-    <div id="local-rules" class="local-grid"></div>
-    <div class="actions"><button id="local-rules-reload" class="secondary">Reload rules</button><button id="local-rules-edit" class="plain">Edit rules in Setup</button></div>
-    <p id="local-rules-note" class="small muted" role="status"></p>
-  </section>
-  <section class="card" id="local-cca-card">
-    <div class="card-head"><h2>CCA node shade feedback</h2><span id="local-cca-pill" class="pill wait">Not listed</span></div>
-    <p class="lede">Shade groups whose motors the CCA node reports feedback for after a shade command. These mappings are stored on the CCA node. Listing them reads the node; it sends nothing over RF.</p>
-    <div id="local-shades" class="local-grid"></div>
-    <div class="actions"><button id="local-cca-list" class="secondary">List mappings</button><button id="local-cca-open" class="plain">Open CCA</button></div>
-    <p id="cca-local-note" class="small muted" role="status"></p>
-  </section>
-</div>
-
-<div id="panel-cca" class="panel" role="tabpanel" hidden>
-  <section class="card">
-    <div class="card-head"><h2>CCA radio</h2><span id="cca-status-pill" class="pill wait">Loading</span></div>
-    <p class="lede">Commands are sent through the CCA radio. Local transmission and sequence telemetry do not confirm that a Lutron device received or applied a command. Shade feedback is reported separately; it does not confirm RA3 state or measure shade position.</p>
-    <div id="cca-status-facts" class="groups"></div><p id="cca-status-note" class="small muted" role="status">Open this tab to load CCA status.</p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>CCA node firmware</h2><span id="cca-node-pill" class="pill wait">Loading</span></div>
-    <p class="lede">Update the CCA C6 itself with a signed image. The CCA radio and controls pause during the update; CCX and the shared event feed continue. A one-time USB bootstrap is required first. The CCA update path is prepared but has not yet been qualified on physical hardware.</p>
-    <div id="cca-node-facts" class="groups"></div>
-    <label class="dropzone"><input id="cca-node-file" type="file" accept=".bin,application/octet-stream" aria-label="Signed CCA node firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="cca-node-file-name">Choose a signed CCA node image</strong><span id="cca-node-file-note" class="muted small">8,192–1,048,576 bytes, in 4,096-byte blocks</span></label>
-    <p id="cca-node-progress" class="small muted" role="status"></p><div class="meter"><i id="cca-node-progress-bar" style="width:0"></i></div>
-    <div class="actions"><button id="cca-node-upload" disabled>Update CCA node firmware</button></div><p id="cca-node-note" class="small muted" role="status">Waiting for CCA node status.</p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Send a command</h2></div>
-    <p class="lede">Choose a command and review the exact JSON before sending. IDs accept decimal or 0x-prefixed hexadecimal.</p>
-    <div class="cca-fields"><label>Target defaults<select id="cca-target-select"></select></label><label>Command<select id="cca-command-select"></select></label><label>Saved preset<select id="cca-preset-select"></select></label></div>
-    <div class="actions"><button id="cca-load-preset" class="secondary">Load preset</button></div>
-    <div id="cca-command-fields" class="cca-fields"></div>
-    <p id="cca-command-help" class="small muted"></p>
-    <strong class="small">Exact command JSON</strong><pre id="cca-command-preview" class="cca-json"></pre>
-    <div class="actions"><button id="cca-command-send">Send command</button><button id="cca-save-preset" class="secondary">Save as preset</button></div>
-    <p id="cca-command-note" class="small muted" role="status"></p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Targets and presets</h2></div>
-    <p class="lede">These are saved in the add-on. Targets fill matching address fields; presets hold the exact native command and never send when loaded.</p>
-    <label>Expected CCA board MAC<input id="cca-expected-mac" placeholder="10:bd:a3:b1:5b:1c" autocomplete="off"></label>
-    <h3>Targets</h3><p class="small muted">A Pico target is drawn as the remote. Select a button to see and change the preset it runs.</p><div id="cca-targets" class="cca-list"></div><div class="actions"><select id="cca-add-pico" aria-label="Add a Pico from Lutron"></select><button id="cca-add-target" class="secondary">Add target by hand</button></div>
-    <h3>Presets</h3><p class="small muted">Saved commands. Each shows what it sends and which Pico buttons run it.</p><div id="cca-presets" class="cca-list"></div><div class="actions"><button id="cca-add-preset" class="secondary">Add preset</button></div>
-    <div class="actions"><button id="cca-config-save">Save targets and presets</button><button id="cca-config-reload" class="secondary">Reload saved settings</button></div><p id="cca-config-note" class="small muted" role="status"></p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Presence</h2></div>
-    <p class="lede">Update a manual presence state or use the example in Home Assistant. Native LRF occupancy emulation is unsupported; these inputs do not send RF packets.</p>
-    <div class="cca-fields"><label>Sensor serial<input id="cca-presence-serial" placeholder="Decimal or 0x hexadecimal"></label><label>State<select id="cca-presence-state"><option value="occupied">Occupied</option><option value="vacant">Vacant</option><option value="unavailable">Unavailable</option></select></label></div>
-    <div class="actions"><button id="cca-presence-send">Set state</button><button id="cca-presence-copy" class="secondary">Copy HA automation</button></div><p id="cca-presence-note" class="small muted" role="status"></p><pre id="cca-presence-example" class="cca-json"></pre>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Lutron end-device firmware over CCA</h2><span id="cca-ota-pill" class="pill wait">No file</span></div>
-    <p class="lede">Select an LDF container or an already extracted body explicitly. The add-on strips the 0x80-byte LDF header and stages at most 110 KiB. Stage resets the existing session; resume compares the staged prefix before continuing. Neither starts RF automatically.</p>
-    <div class="cca-fields"><label>File format<select id="cca-ota-format"><option value="">Choose a format</option><option value="ldf">LDF container</option><option value="body">Extracted body</option></select></label><label>Firmware file<input id="cca-ota-file" type="file"></label><label>Device ID<input id="cca-ota-device" placeholder="Decimal or 0x hexadecimal"></label><label>Subnet<input id="cca-ota-subnet" placeholder="Decimal or 0x hexadecimal"></label></div>
-    <div class="actions"><button id="cca-ota-upload" class="secondary">Upload file to add-on</button><button id="cca-ota-stage">Stage</button><button id="cca-ota-resume" class="secondary">Resume staging</button><button id="cca-ota-stop" class="secondary">Stop staging</button><button id="cca-ota-clear" class="secondary">Clear staged session</button></div>
-    <div class="actions"><button id="cca-ota-start">Start RF transfer</button></div><p id="cca-ota-note" class="small muted cca-break" role="status">No file selected.</p><div id="cca-ota-facts" class="groups"></div>
-    <p class="small muted">Stopping staging stops the add-on upload only. RF sequence completion reports local attempts; it does not establish device receipt, flash or installation.</p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Packets and activity</h2><span id="cca-events-pill" class="pill wait">Connecting</span></div>
-    <p class="lede">CCA has its own cached stream, boot and cursor. Entries show local command stages and observed packets; gaps are reported rather than filled in.</p>
-    <div class="cca-fields"><label>Filter activity<input id="cca-events-filter" placeholder="Command, request ID, raw bytes…"></label></div>
-    <div class="actions"><button id="cca-events-download" class="secondary">Download browser history</button></div><p id="cca-events-note" class="small muted" role="status"></p><div id="cca-events" class="cca-activity feed"></div>
-  </section>
-  <details class="card"><summary>Advanced JSON</summary><p class="lede">Send a native command object through the same endpoint as the guided controls. Native OTA commands act directly; the firmware workflow above provides prefix-verified staging and resume.</p><textarea id="cca-advanced-json" spellcheck="false" aria-label="Advanced CCA command JSON">{"cmd":"query"}</textarea><div class="actions"><button id="cca-advanced-send">Send JSON</button></div><p id="cca-advanced-note" class="small muted" role="status"></p></details>
-</div>
-
-<div id="panel-setup" class="panel" role="tabpanel" hidden>
-  <p class="setup-intro">Nothing here is needed for day-to-day use. Changes that affect lighting ask before they are applied.</p>
-  <h2 class="setup-h">Everyday controls</h2>
-  <section class="card" id="maintenance-card">
-    <div class="card-head"><h2>Maintenance mode</h2></div>
-    <p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and endpoint or Zigbee node firmware uploads require maintenance mode.</p>
-    <p class="when"><b>When to use:</b> you rarely need to turn it on yourself: Apply mapping, Apply lamps, Enroll node and endpoint or Zigbee node firmware uploads turn it on when needed. Turn it off when you finish so lighting control resumes at once; it also ends by itself when idle.</p>
-    <div class="actions"><button id="maintenance-toggle" class="secondary">Enter maintenance</button></div>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Endpoint control</h2><span id="endpoint-control-pill" class="pill wait">Loading</span></div>
-    <p class="when"><b>When to use:</b> to take the endpoint off Lutron's Thread network while you troubleshoot the Lutron system, or to clear a latched safety fault once its cause is fixed. Lighting from Lutron stops while the endpoint is disabled.</p>
-    <p id="endpoint-control-note" role="status">Waiting for gateway status…</p>
-    <div class="actions"><button id="endpoint-toggle" class="secondary" disabled>Disable endpoint</button><button id="endpoint-clear" hidden disabled>Clear fault latch</button></div>
-    <p class="muted small">Enable and disable set the gateway's operator choice. Without a physical power switch, disable stops the endpoint's radio in software; it does not cut power and relies on the endpoint firmware honouring the stop.</p>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Show time zone</h2></div>
-    <p class="lede">The gateway uses this time zone for every daily show. Changes take effect within seconds and can change show-driven lighting.</p>
-    <p class="when"><b>When to use:</b> once, so Natural Shows follow your local clock. Change it only if shows run at the wrong time of day, or it differs from Home Assistant.</p>
-    <label>Gateway time zone <select id="show-timezone" disabled>
-      <option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific</option>
-      <option value="America/Denver">Mountain</option><option value="America/Phoenix">Arizona</option>
-      <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option>
-      <option value="America/Anchorage">Alaska</option><option value="Pacific/Honolulu">Hawaii</option>
-    </select></label>
-    <div class="actions"><button id="save-timezone" disabled>Apply time zone</button></div>
-    <p id="timezone-note" class="muted small" role="status">Loading gateway time zone…</p>
-  </section>
-  <h2 class="setup-h">Configuration</h2>
-  <section class="card" id="ccx-rules-card">
-    <div class="card-head"><h2>CCX local rules</h2><span id="ccx-rules-pill" class="pill wait">Not loaded</span></div>
-    <p class="lede">Match passive CCX messages and set a target zone's brightness or select a Natural Show on the gateway. A blank match field accepts any value; all blank fields match every event. Rules run without Home Assistant.</p>
-    <p class="when">Changes take effect on the gateway. A new rule starts disabled. Existing rules are never enabled or changed merely by opening this page.</p>
-    <p id="ccx-rules-note" class="muted small">Open Setup to load the gateway's rules.</p>
-    <div class="scroll"><table class="editor"><thead><tr><th>ID</th><th>Enabled</th><th>Event kind</th><th>Message type</th><th>Source serial</th><th>Source zone</th><th>Action</th><th>Target zone</th><th>Level</th><th>Show ID</th><th>Remove</th></tr></thead><tbody id="ccx-rule-rows"></tbody></table></div>
-    <datalist id="ccx-kinds"><option value="ccx.local_level"><option value="ccx.level_control"><option value="ccx.button_press"><option value="ccx.dim_hold"><option value="ccx.dim_step"><option value="ccx.property_report"><option value="ccx.message"></datalist>
-    <datalist id="ccx-target-zones"></datalist><datalist id="ccx-show-ids"></datalist>
-    <p class="muted small">Level is <code>event</code> or 0–10000 (0 is off, 10000 is 100%). For a Show it may be blank to use its default level. Load a zone's programming to suggest its Show IDs.</p>
-    <p id="ccx-rules-errors" class="notice bad"></p>
-    <div class="actions"><button id="ccx-add-rule" class="plain" disabled>＋ Add rule</button><button id="ccx-save-rules" disabled>Apply rules</button><button id="ccx-reload-rules" class="secondary">Load rules</button><span id="ccx-rules-dirty" class="dirty"></span></div>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Zone mapping</h2><span id="config-pill" class="pill wait">Loading</span></div>
-    <p id="config-state" class="muted">Loading configuration…</p>
-    <p class="when"><b>When to use:</b> when you add, remove or rename a bridged Lutron zone, or change its N4 group, serial or warm-dim curve. Not needed after a Designer transfer that keeps the same zones.</p>
-    <p class="lede">Each row links a lighting zone to its N4 output group. Edit the fields, then select <b>Apply mapping</b>. All rows are sent as one change. Both boards may restart briefly, and the change shows as “Applying…” until both boards report the same hash.</p>
-    <div class="scroll"><table id="zone-table" class="editor"><thead><tr><th class="w-id">Zone ID</th><th>Name</th><th class="w-grp">N4 group</th><th>Serial</th><th>Warm-dim curve</th><th id="ha-editor-col" hidden>Home Assistant</th><th class="w-x"><span class="small" style="position:absolute;left:-9999px">Remove</span></th></tr></thead><tbody id="zone-rows"></tbody></table></div>
-    <div class="actions" style="margin-top:4px"><button id="add-zone" class="plain">＋ Add zone</button><button id="fill-names" class="plain" hidden>Fill empty names from Home Assistant</button></div><datalist id="ha-serials"></datalist>
-    <p id="config-errors" class="notice bad"></p>
-    <details class="raw json-editor"><summary>Edit as JSON (advanced)</summary><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><p id="json-note" class="small muted">The zones list as JSON. Changes here update the table above.</p></details>
-    <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
-  </section>
-  <section class="card">
-    <div class="card-head"><h2>Ketra lamps</h2><span id="ketra-pill" class="pill wait">Loading</span></div>
-    <p class="lede">The lamps direct Zigbee output drives: each Lutron zone's Ketra group and its lamps (Zigbee address and Ketra logical address), with each lamp's live state. Changes need maintenance mode and take effect without a restart.</p>
-    <p class="when"><b>When to use:</b> only with direct Zigbee output (or a hybrid gateway): when you set it up, add, replace or re-pair a Ketra lamp, or move a lamp to another Lutron zone. A lamp listed as unreachable or unresolved here is the first thing to check when one lamp misbehaves. N4-only installations don't use it: the N4 hub keeps its own lamp list.</p>
-    <div id="ketra-zones" class="groups"></div>
-    <details class="raw json-editor"><summary>Edit as JSON</summary><textarea id="ketra-json" spellcheck="false" aria-label="Ketra lamp inventory JSON"></textarea><p class="small muted">The gateway's own Ketra address as <code>source</code>, and per zone <code>zone_id</code>, <code>group</code> (pan, logical or null) and <code>lamps</code> (16-hex <code>eui_wire</code> and <code>logical</code> pan, logical, interface, channel, subchannel).</p></details>
-    <details class="raw"><summary>Import a lab inventory</summary><textarea id="ketra-import" spellcheck="false" aria-label="Lab inventory JSON"></textarea><div class="actions"><button id="ketra-import-go" class="plain">Convert into the editor</button></div><p id="ketra-import-note" class="small muted">Paste a ketra-lab-inventory-v1 file. Zones are matched to the mapping by name; the source address is kept from the editor.</p></details>
-    <div class="actions"><button id="ketra-apply" disabled>Apply lamps</button><button id="ketra-reload" class="secondary">Reload</button></div>
-    <p id="ketra-note" class="muted small" role="status"></p>
-  </section>
-  <h2 class="setup-h">Zigbee node and firmware</h2>
-  <section class="card" id="zigbee-node-card" hidden>
-    <div class="card-head"><h2>Zigbee node</h2><span id="zigbee-node-pill" class="pill wait">Loading</span></div>
-    <p class="lede">The small radio board that talks Zigbee to the Ketra lamps for direct output. The gateway runs its session and re-arms it after every restart; <b>Running</b> is the normal state.</p>
-    <div id="zigbee-node-facts" class="groups"></div>
-    <p class="when"><b>When to use:</b> <b>Enroll node</b> only once: right after the node's supervised USB install and first join (or after replacing the node board), while it has just started. It is never needed after restarts or firmware updates. If the node shows <b>Record mismatch</b>, find out why (for example a restored or swapped board) before enrolling again.</p>
-    <div class="actions"><button id="zigbee-enroll" class="secondary">Enroll node</button></div>
-    <p id="zigbee-node-note" class="muted small" role="status"></p>
-  </section>
-  <section class="card" id="firmware-card">
-    <div class="card-head"><h2>Firmware updates</h2></div>
-    <p class="lede">Two boards take firmware through the gateway. Use the one that matches the file you were given; each checks the file's size before sending.</p>
-    <div class="fw-targets">
-      <div class="fw-target">
-        <h3>Endpoint board (CCX on Thread)</h3>
-        <p class="small muted">The C6 that joins Lutron's Thread network and receives commands from the processor. File: an ESP32 app image (<code>.bin</code>, first byte 0xE9), up to 768 KB. Lutron lighting pauses while it restarts; this page watches it come back.</p>
+<div id="panel-devices" class="panel" role="tabpanel" aria-labelledby="tab-devices" hidden>
+  <div class="page-head"><h1>Devices</h1><span id="diag-pill" class="pill wait">Waiting</span></div>
+  <div id="diag-attention"></div>
+  <div id="health" class="boards">
+    <section class="card device" id="dev-gateway">
+      <div class="card-head"><h2>Gateway<small>Runs the bridge and talks to Home Assistant</small></h2><span id="dev-gateway-pill" class="pill wait">Waiting</span></div>
+      <div id="dev-gateway-vitals" class="vitals"></div>
+      <details class="more" id="dev-gateway-more"><summary>All readings</summary><div id="dev-gateway-readings" class="more-body groups"></div></details>
+    </section>
+    <section class="card device" id="dev-endpoint">
+      <div class="card-head"><h2>Thread endpoint<small>Joins Lutron's Thread network and receives commands</small></h2><span id="dev-endpoint-pill" class="pill wait">Waiting</span></div>
+      <div id="dev-endpoint-vitals" class="vitals"></div>
+      <details class="more" id="dev-endpoint-more"><summary>All readings</summary><div id="dev-endpoint-readings" class="more-body groups"></div></details>
+      <details class="more" id="firmware-card"><summary>Update firmware</summary><div class="more-body">
+        <p class="hint">An ESP32 app image (<code>.bin</code>), up to 768 KB. Lutron lighting pauses while the endpoint restarts; this page watches it come back.</p>
         <label id="dropzone" class="dropzone"><input id="firmware" type="file" aria-label="Firmware image"><span id="dz-icon" class="dz-icon" aria-hidden="true">↑</span><strong id="firmware-name">Choose a firmware image</strong><span id="firmware-meta" class="muted small">or drag a .bin file here · up to 768 KB (786,432 bytes)</span><span class="meter"><i id="firmware-size" style="width:0"></i></span></label>
         <ol class="stepper" aria-label="Firmware update progress"><li id="fw-step-upload">Upload to gateway</li><li id="fw-step-restart">Uptime decrease observed</li><li id="fw-step-stable">Online again after 30 s</li></ol>
         <div class="actions"><button id="upload" disabled>Upload firmware</button></div>
         <p id="upload-note" class="notice info" role="status"></p>
-      </div>
-      <div class="fw-target" id="zigbee-fw" hidden>
-        <h3>Zigbee node (Ketra radio)</h3>
-        <p class="small muted">The radio board for direct Zigbee output. File: a <b>signed</b> node image, up to 1.5 MB. The node checks the signature, restarts into it and rolls back unless the gateway resumes it. Direct lighting pauses meanwhile; a hybrid gateway uses N4.</p>
+      </div></details>
+      <p class="hint">To take the endpoint off Thread or clear a safety latch, use <button type="button" class="plain inline" data-goto="settings:danger-zone">Settings › Danger zone</button>.</p>
+    </section>
+    <section class="card device" id="zigbee-node-card" hidden>
+      <div class="card-head"><h2>Zigbee node<small>Talks Zigbee to the Ketra lamps for direct output</small></h2><span id="zigbee-node-pill" class="pill wait">Loading</span></div>
+      <div id="dev-zigbee-vitals" class="vitals"></div>
+      <details class="more" id="dev-zigbee-more"><summary>All readings</summary><div class="more-body"><div id="zigbee-node-facts" class="groups"></div><div id="dev-zigbee-readings" class="groups"></div></div></details>
+      <details class="more" id="zigbee-fw" hidden><summary>Update firmware</summary><div class="more-body">
+        <p class="hint">A <b>signed</b> node image, up to 1.5 MB. The node checks the signature, restarts into it and rolls back unless the gateway resumes it. Direct lighting pauses meanwhile; a hybrid gateway uses N4.</p>
         <label class="dropzone"><input id="zigbee-firmware" type="file" aria-label="Zigbee node firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="zigbee-firmware-name">Choose a signed node image</strong><span class="muted small">up to 1.5 MB (1,572,864 bytes)</span></label>
         <div class="actions"><button id="zigbee-upload" disabled>Update node firmware</button></div>
-        <p id="zigbee-fw-note" class="muted small" role="status"></p>
-      </div>
-    </div>
+        <p id="zigbee-fw-note" class="hint" role="status"></p>
+      </div></details>
+      <details class="more"><summary>Enroll the node</summary><div class="more-body">
+        <p class="hint">Only once: right after the node's supervised USB install and first join, or after replacing the node board. Never needed after restarts or firmware updates. If the node shows <b>Record mismatch</b>, find out why before enrolling again.</p>
+        <div class="actions"><button id="zigbee-enroll" class="secondary">Enroll node</button></div>
+        <p id="zigbee-node-note" class="hint" role="status"></p>
+      </div></details>
+    </section>
+    <section class="card device" id="sidecar-firmware-card">
+      <div class="card-head"><h2>CCX listener<small>The passive B1 board that hears keypads and touch bars</small></h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
+      <div id="dev-sidecar-vitals" class="vitals"></div>
+      <details class="more"><summary>All readings</summary><div id="sidecar-facts" class="more-body groups"></div></details>
+      <details class="more"><summary>Passive CCX listener (B1) firmware</summary><div class="more-body">
+        <p class="hint">A signed <code>.bin</code> image. Only listener input and its actions pause during the update; other bridge lighting continues. The listener needs its external antenna and a one-time USB bootstrap first.</p>
+        <p id="sidecar-feed-note" class="hint">The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.</p>
+        <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">8,192–720,896 bytes, in 4,096-byte blocks</span></label>
+        <p id="sidecar-progress" class="hint" role="status"></p>
+        <div class="meter"><i id="sidecar-progress-bar" style="width:0"></i></div>
+        <div class="actions"><button id="sidecar-upload" disabled>Update sidecar firmware</button></div>
+      </div></details>
+      <p id="sidecar-fw-note" class="hint" role="status">Waiting for sidecar status.</p>
+    </section>
+    <section class="card device" id="dev-cca">
+      <div class="card-head"><h2>CCA radio<small>Sends and hears Lutron Clear Connect type A</small></h2><span id="cca-status-pill" class="pill wait">Loading</span></div>
+      <div id="cca-vitals" class="vitals"></div>
+      <p id="cca-status-note" class="hint" role="status">Loading CCA status.</p>
+      <details class="more"><summary>All readings</summary><div id="cca-status-facts" class="more-body groups"></div></details>
+      <details class="more" id="cca-node-card"><summary>CCA node firmware <span id="cca-node-pill" class="pill wait">Loading</span></summary><div class="more-body">
+        <p class="hint">Update the CCA C6 itself with a signed image. CCA pauses during the update; CCX and the shared event feed continue. A one-time USB bootstrap is required first; this path is not yet qualified on hardware.</p>
+        <div id="cca-node-facts" class="groups"></div>
+        <label class="dropzone"><input id="cca-node-file" type="file" accept=".bin,application/octet-stream" aria-label="Signed CCA node firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="cca-node-file-name">Choose a signed CCA node image</strong><span id="cca-node-file-note" class="muted small">8,192–1,048,576 bytes, in 4,096-byte blocks</span></label>
+        <p id="cca-node-progress" class="hint" role="status"></p><div class="meter"><i id="cca-node-progress-bar" style="width:0"></i></div>
+        <div class="actions"><button id="cca-node-upload" disabled>Update CCA node firmware</button></div><p id="cca-node-note" class="hint" role="status">Waiting for CCA node status.</p>
+      </div></details>
+      <details class="more"><summary>Lutron end-device firmware over CCA <span id="cca-ota-pill" class="pill wait">No file</span></summary><div class="more-body">
+        <p class="hint">Choose an LDF container or an extracted body. The add-on strips the 0x80-byte LDF header and stages at most 110 KiB. Neither staging nor resume starts RF by itself.</p>
+        <div class="cca-fields"><label>File format<select id="cca-ota-format"><option value="">Choose a format</option><option value="ldf">LDF container</option><option value="body">Extracted body</option></select></label><label>Firmware file<input id="cca-ota-file" type="file"></label><label>Device ID<input id="cca-ota-device" placeholder="Decimal or 0x hexadecimal"></label><label>Subnet<input id="cca-ota-subnet" placeholder="Decimal or 0x hexadecimal"></label></div>
+        <div class="actions"><button id="cca-ota-upload" class="secondary">Upload file to add-on</button><button id="cca-ota-stage" class="secondary">Stage</button><button id="cca-ota-resume" class="secondary">Resume staging</button><button id="cca-ota-stop" class="secondary">Stop staging</button><button id="cca-ota-clear" class="secondary">Clear staged session</button></div>
+        <div class="actions"><button id="cca-ota-start">Start RF transfer</button></div><p id="cca-ota-note" class="hint cca-break" role="status">No file selected.</p><div id="cca-ota-facts" class="groups"></div>
+        <p class="hint">Stopping staging stops the add-on upload only. RF completion reports local attempts; it does not establish that the device received, flashed or installed the image.</p>
+      </div></details>
+    </section>
+    <section class="card device" id="dev-ketra">
+      <div class="card-head"><h2>Ketra hub<small>The N4 hub, when the gateway sends lighting through it</small></h2><span id="dev-ketra-pill" class="pill wait">Waiting</span></div>
+      <div id="dev-ketra-vitals" class="vitals"></div>
+      <details class="more" id="dev-ketra-more"><summary>All readings</summary><div id="dev-ketra-readings" class="more-body groups"></div></details>
+    </section>
+  </div>
+</div>
+
+<div id="panel-automation" class="panel" role="tabpanel" aria-labelledby="tab-automation" hidden>
+  <div class="page-head"><h1>Automation</h1></div>
+  <section class="card" id="local-rules-card">
+    <div class="card-head"><h2>Gateway rules <button type="button" class="info" aria-expanded="false" aria-controls="tip-rules" aria-label="About gateway rules">i</button></h2><span id="local-rules-pill" class="pill wait">Not loaded</span></div>
+    <div id="tip-rules" class="tip" hidden><p>What the gateway does by itself when it hears a CCX message from a keypad or touch bar. Rules run on the gateway, without Home Assistant or MQTT. Viewing them never changes anything; a new rule starts disabled.</p></div>
+    <div id="local-rules" class="local-grid"></div>
+    <div class="actions"><button id="local-rules-edit">Edit rules</button><button id="local-rules-reload" class="secondary">Reload</button></div>
+    <p id="local-rules-note" class="hint" role="status"></p>
   </section>
-  <section class="card" id="sidecar-firmware-card">
-    <div class="card-head"><h2>Passive CCX listener (B1) firmware</h2><span id="sidecar-pill" class="pill wait">Loading</span></div>
-    <p class="lede">Update the passive B1 sidecar through the gateway using a signed <code>.bin</code> image. Only sidecar input and its actions pause during the update; other bridge lighting continues.</p>
-    <p class="small muted">The sidecar needs its external antenna and a one-time USB bootstrap before it can update over the three wires. If it cannot run its updater, recover it over USB.</p>
-    <p id="sidecar-feed-note" class="small muted">The CCX event feed pauses during a sidecar update and resumes from a live baseline, without replaying missed events.</p>
-    <div id="sidecar-facts" class="groups"></div>
-    <label class="dropzone"><input id="sidecar-firmware" type="file" accept=".bin,application/octet-stream" aria-label="Signed sidecar firmware image"><span class="dz-icon" aria-hidden="true">↑</span><strong id="sidecar-firmware-name">Choose a signed sidecar image</strong><span id="sidecar-file-note" class="muted small">8,192–720,896 bytes, in 4,096-byte blocks</span></label>
-    <p id="sidecar-progress" class="muted small" role="status"></p>
-    <div class="meter"><i id="sidecar-progress-bar" style="width:0"></i></div>
-    <div class="actions"><button id="sidecar-upload" disabled>Update sidecar firmware</button></div>
-    <p id="sidecar-fw-note" class="muted small" role="status">Waiting for sidecar status.</p>
+  <section class="card" id="sync-card">
+    <div class="card-head"><h2>Lutron programming <button type="button" class="info" aria-expanded="false" aria-controls="tip-sync" aria-label="About programming sync">i</button></h2><span id="sync-pill" class="pill wait">Checking</span></div>
+    <div id="tip-sync" class="tip" hidden><p>Programming travels from Lutron Designer to the bridge, then to the lamps. A transfer from Designer reaches the endpoint over Thread; the gateway then re-reads each zone's shows and presets, and on direct Zigbee loads Lutron's scenes onto the lamps.</p></div>
+    <ol id="sync-steps" class="pipeline"></ol>
+    <h3>By zone</h3>
+    <div class="scroll"><table class="activity sync-table"><thead><tr><th>Zone</th><th>Last from Lutron</th><th>Gateway's copy</th><th>Shows</th></tr></thead><tbody id="sync-zones"></tbody></table></div>
+    <p id="sync-note" class="hint"></p>
+  </section>
+  <section class="card" id="program-card">
+    <div class="card-head"><h2>Zone programming</h2><span class="pill info">Read-only</span></div>
+    <div id="program-zones" class="chips" role="group" aria-label="Known zones"></div>
+    <div class="toolbar"><label>Zone number <input id="program-zone" type="number" min="0" value="0" size="6"></label><button id="load-program" class="secondary">Load snapshot</button></div>
+    <div id="program-viz"><p class="empty-state">Pick a zone above, or enter its number, to see its schedule and presets.</p></div>
+    <details class="more"><summary>Advanced: raw data</summary><div class="more-body"><pre id="program" class="muted">No programming data loaded.</pre></div></details>
+  </section>
+  <h2 class="section-h">CCA remotes and shades</h2>
+  <section class="card" id="cca-targets-card">
+    <div class="card-head"><h2>Targets and presets <button type="button" class="info" aria-expanded="false" aria-controls="tip-targets" aria-label="About targets and presets">i</button></h2></div>
+    <div id="tip-targets" class="tip" hidden><p>Saved in the add-on. Targets fill matching address fields; presets hold the exact native command and never send when loaded. A Pico target is drawn as the remote: select a button to see and change the preset it runs.</p></div>
+    <h3>Targets</h3><div id="cca-targets" class="cca-list"></div><div class="actions"><select id="cca-add-pico" aria-label="Add a Pico from Lutron"></select><button id="cca-add-target" class="secondary">Add target by hand</button></div>
+    <h3>Presets</h3><div id="cca-presets" class="cca-list"></div><div class="actions"><button id="cca-add-preset" class="secondary">Add preset</button></div>
+    <details class="more"><summary>CCA board identity</summary><div class="more-body"><label class="field">Expected CCA board MAC<input id="cca-expected-mac" placeholder="10:bd:a3:b1:5b:1c" autocomplete="off"></label><p class="hint">Commands are sent only to the board with this MAC.</p></div></details>
+    <div class="actions"><button id="cca-config-save">Save targets and presets</button><button id="cca-config-reload" class="secondary">Reload saved settings</button></div><p id="cca-config-note" class="hint" role="status"></p>
+  </section>
+  <section class="card" id="local-cca-card">
+    <div class="card-head"><h2>Shade feedback</h2><span id="local-cca-pill" class="pill wait">Not listed</span></div>
+    <p class="hint">Shade motors the CCA node reports after a shade command. Listing reads the node; it sends nothing over RF.</p>
+    <div id="local-shades" class="local-grid"></div>
+    <div class="actions"><button id="local-cca-list" class="secondary">List mappings</button><button id="local-cca-open" class="plain">Open targets</button></div>
+    <p id="cca-local-note" class="hint" role="status"></p>
+  </section>
+  <section class="card" id="cca-command-card">
+    <div class="card-head"><h2>Try a command</h2></div>
+    <div class="cca-fields"><label>Target defaults<select id="cca-target-select"></select></label><label>Command<select id="cca-command-select"></select></label><label>Saved preset<select id="cca-preset-select"></select></label></div>
+    <div class="actions"><button id="cca-load-preset" class="secondary">Load preset</button></div>
+    <div id="cca-command-fields" class="cca-fields"></div>
+    <p id="cca-command-help" class="hint"></p>
+    <details class="more"><summary>Advanced: exact command JSON</summary><div class="more-body"><pre id="cca-command-preview" class="cca-json"></pre></div></details>
+    <div class="actions"><button id="cca-command-send">Send command</button><button id="cca-save-preset" class="secondary">Save as preset</button></div>
+    <p id="cca-command-note" class="hint" role="status"></p>
+  </section>
+  <section class="card" id="cca-presence-card">
+    <div class="card-head"><h2>Presence</h2></div>
+    <p class="hint">Set a manual presence state, or copy the Home Assistant example. These inputs do not send RF packets.</p>
+    <div class="cca-fields"><label>Sensor serial<input id="cca-presence-serial" placeholder="Decimal or 0x hexadecimal"></label><label>State<select id="cca-presence-state"><option value="occupied">Occupied</option><option value="vacant">Vacant</option><option value="unavailable">Unavailable</option></select></label></div>
+    <div class="actions"><button id="cca-presence-send">Set state</button><button id="cca-presence-copy" class="secondary">Copy HA automation</button></div><p id="cca-presence-note" class="hint" role="status"></p>
+    <details class="more"><summary>Advanced: automation example</summary><div class="more-body"><pre id="cca-presence-example" class="cca-json"></pre></div></details>
+  </section>
+  <details class="card more-card"><summary>Advanced: send native JSON</summary><p class="hint">Sends a native command object through the same endpoint as the guided controls. Native OTA commands act directly.</p><textarea id="cca-advanced-json" spellcheck="false" aria-label="Advanced CCA command JSON">{"cmd":"query"}</textarea><div class="actions"><button id="cca-advanced-send">Send JSON</button></div><p id="cca-advanced-note" class="hint" role="status"></p></details>
+</div>
+
+<div id="panel-settings" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
+  <div class="page-head"><h1>Settings</h1></div>
+  <section class="card" id="mapping-card">
+    <div class="card-head"><h2>Zone mapping <button type="button" class="info" aria-expanded="false" aria-controls="tip-mapping" aria-label="About zone mapping">i</button></h2><span id="config-pill" class="pill wait">Loading</span></div>
+    <div id="tip-mapping" class="tip" hidden><p>Each row links a Lutron zone to its N4 output group. Change it when you add, remove or rename a bridged zone, or change its group, serial or warm-dim curve; not after a Designer transfer that keeps the same zones. All rows are sent as one change; both boards may restart briefly and it shows “Applying…” until both report the same hash.</p></div>
+    <p id="config-state" class="hint">Loading configuration…</p>
+    <div class="scroll"><table id="zone-table" class="editor"><thead><tr><th class="w-id">Zone ID</th><th>Name</th><th class="w-grp">N4 group</th><th>Serial</th><th>Warm-dim curve</th><th id="ha-editor-col" hidden>Home Assistant</th><th class="w-x"><span class="sr">Remove</span></th></tr></thead><tbody id="zone-rows"></tbody></table></div>
+    <div class="actions"><button id="add-zone" class="plain">＋ Add zone</button><button id="fill-names" class="plain" hidden>Fill empty names from Home Assistant</button></div><datalist id="ha-serials"></datalist>
+    <p id="config-errors" class="notice bad"></p>
+    <details class="more json-editor"><summary>Advanced: edit as JSON</summary><div class="more-body"><textarea id="config-json" spellcheck="false" aria-label="Zone mapping JSON"></textarea><p id="json-note" class="hint">The zones list as JSON. Changes here update the table above.</p></div></details>
+    <div class="actions"><button id="save-config" disabled>Apply mapping</button><button id="reload-config" class="secondary">Reload</button><span id="dirty-note" class="dirty"></span></div>
+  </section>
+  <section class="card" id="ketra-card">
+    <div class="card-head"><h2>Ketra lamps <button type="button" class="info" aria-expanded="false" aria-controls="tip-ketra" aria-label="About Ketra lamps">i</button></h2><span id="ketra-pill" class="pill wait">Loading</span></div>
+    <div id="tip-ketra" class="tip" hidden><p>The lamps direct Zigbee output drives: each Lutron zone's Ketra group and its lamps, with each lamp's live state. Needed only with direct Zigbee output (or a hybrid gateway): when you set it up, add, replace or re-pair a lamp, or move one to another zone. N4-only installations don't use it. Changes need maintenance mode and take effect without a restart.</p></div>
+    <div id="ketra-zones" class="groups"></div>
+    <details class="more json-editor"><summary>Advanced: edit as JSON</summary><div class="more-body"><textarea id="ketra-json" spellcheck="false" aria-label="Ketra lamp inventory JSON"></textarea><p class="hint">The gateway's own Ketra address as <code>source</code>, and per zone <code>zone_id</code>, <code>group</code> (pan, logical or null) and <code>lamps</code> (16-hex <code>eui_wire</code> and <code>logical</code> pan, logical, interface, channel, subchannel).</p></div></details>
+    <details class="more"><summary>Advanced: import a lab inventory</summary><div class="more-body"><textarea id="ketra-import" spellcheck="false" aria-label="Lab inventory JSON"></textarea><div class="actions"><button id="ketra-import-go" class="plain">Convert into the editor</button></div><p id="ketra-import-note" class="hint">Paste a ketra-lab-inventory-v1 file. Zones are matched to the mapping by name; the source address is kept from the editor.</p></div></details>
+    <div class="actions"><button id="ketra-apply" disabled>Apply lamps</button><button id="ketra-reload" class="secondary">Reload</button></div>
+    <p id="ketra-note" class="hint" role="status"></p>
+  </section>
+  <section class="card" id="timezone-card">
+    <div class="card-head"><h2>Show time zone</h2></div>
+    <p class="hint">Natural Shows follow this clock. Change it only if shows run at the wrong time of day.</p>
+    <div class="toolbar"><label>Gateway time zone <select id="show-timezone" disabled>
+      <option value="UTC">UTC</option><option value="America/Los_Angeles">Pacific</option>
+      <option value="America/Denver">Mountain</option><option value="America/Phoenix">Arizona</option>
+      <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option>
+      <option value="America/Anchorage">Alaska</option><option value="Pacific/Honolulu">Hawaii</option>
+    </select></label><button id="save-timezone" disabled>Apply time zone</button></div>
+    <p id="timezone-note" class="hint" role="status">Loading gateway time zone…</p>
+  </section>
+  <section class="card" id="maintenance-card">
+    <div class="card-head"><h2>Maintenance mode</h2></div>
+    <p id="maintenance-note">Normal operation: lighting control has priority. Mapping changes and endpoint or Zigbee node firmware uploads require maintenance mode.</p>
+    <p class="hint">Rarely needed by hand: applying a mapping or lamps, enrolling the node and firmware uploads turn it on themselves. It ends by itself when idle.</p>
+    <div class="actions"><button id="maintenance-toggle" class="secondary">Enter maintenance</button></div>
+  </section>
+  <section class="card danger-zone" id="danger-zone">
+    <div class="card-head"><h2>Danger zone</h2><span id="endpoint-control-pill" class="pill wait">Loading</span></div>
+    <p id="endpoint-control-note" role="status">Waiting for gateway status…</p>
+    <div class="danger-row"><div><strong>Disable the endpoint</strong><p class="hint">Takes the endpoint off Lutron's Thread network while you troubleshoot. Lighting from Lutron stops until you enable it again. Without a power switch this stops the radio in software.</p></div><button id="endpoint-toggle" class="danger" disabled>Disable endpoint</button></div>
+    <div class="danger-row"><div><strong>Clear the safety latch</strong><p class="hint">Only after you know why the endpoint latched a safety fault. Offered when the endpoint is disabled and reports a latched fault.</p></div><button id="endpoint-clear" class="danger" hidden disabled>Clear fault latch</button></div>
   </section>
 </div>
 </main>
+</div>
 <dialog id="sheet" class="sheet"><h3 id="sheet-title"></h3><p id="sheet-body"></p><div class="sheet-actions"><button id="sheet-cancel" class="secondary">Cancel</button><button id="sheet-ok">OK</button></div></dialog>
+<dialog id="rules-sheet" class="side-sheet" aria-labelledby="rules-sheet-title">
+  <header><h2 id="rules-sheet-title">Edit gateway rules</h2><span id="ccx-rules-pill" class="pill wait">Not loaded</span><button type="button" id="rules-sheet-close" class="secondary">Close</button></header>
+  <div class="sheet-body" id="ccx-rules-card">
+    <p id="ccx-rules-note" class="hint">Loading the gateway's rules…</p>
+    <p class="hint">A blank match field accepts any value. Level is <code>event</code> (the level the control sent) or 0–10000, where 10000 is 100%. A Show may leave Level blank to use its default. Show ID 0 is valid only with a level.</p>
+    <div id="ccx-rule-rows" class="rule-forms"></div>
+    <datalist id="ccx-kinds"><option value="ccx.local_level"><option value="ccx.level_control"><option value="ccx.button_press"><option value="ccx.dim_hold"><option value="ccx.dim_step"><option value="ccx.property_report"><option value="ccx.message"></datalist>
+    <datalist id="ccx-target-zones"></datalist><datalist id="ccx-show-ids"></datalist>
+    <button id="ccx-add-rule" class="secondary" disabled>＋ Add rule</button>
+  </div>
+  <footer><p id="ccx-rules-errors" class="notice bad"></p><div class="actions"><button id="ccx-save-rules" disabled>Apply rules</button><button id="ccx-reload-rules" class="secondary">Reload rules</button><span id="ccx-rules-dirty" class="dirty"></span></div></footer>
+</dialog>
 <script src="live.js"></script><script>
 const $=id=>document.getElementById(id);const base=new URL('.',location.href);const api=p=>new URL('api/'+p,base);let eventCursor=0,eventRows=[],eventKeys=new Set(),eventBootId=null,latestStatus=null,statusReceivedAt=0;let refreshing=false,shownEvents=new Set();
 async function req(path,opts){const r=await fetch(api(path),opts);const ct=r.headers.get('content-type')||'';const d=ct.includes('json')?await r.json():await r.text();if(!r.ok)throw Error(d?.error||`HTTP ${r.status}`);return d}
@@ -1077,7 +1180,7 @@ function syncView(){const st=syncState(),ol=$('sync-steps');$('sync-pill').class
   $('sync-note').textContent=st.rows.length?'“Last from Lutron” comes from the endpoint’s programming events, kept for seven days in the add-on’s archive.':'';
   const b=$('program-badge');b.textContent=['warn','bad'].includes(st.tone)?'​':'';b.title=['warn','bad'].includes(st.tone)?'Programming needs a look':'';return st}
 /* Overview tiles open the place that explains them. */
-function goTo(tab,id){showTab(tab);const t=$(id);if(t?.tagName==='DETAILS')t.open=true;t?.scrollIntoView?.({behavior:'smooth',block:'start'})}
+function goTo(tab,id){showTab(tab);const t=$(id);if(t?.tagName==='DETAILS')t.open=true;for(let p=t?.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;t?.scrollIntoView?.({behavior:'smooth',block:'start'})}
 /* A healthy bridge needs no banner: the tiles already show it. The banner appears only when something needs a look. */
 function setHero(tone,title,detail,online=true){$('hero').className='hero '+tone;$('hero').hidden=tone==='good';$('hero-glyph').textContent={good:'✓',warn:'!',bad:'✕',wait:'…'}[tone];$('headline').textContent=title;$('headline-detail').textContent=detail;$('live').className='live '+(online?'good':'bad');$('live-text').textContent=online?'Live':'Reconnecting'}
 function tile(label,value,tone,hint,goto){const d=el('div','tile '+tone);d.append(el('span','tile-dot'),el('span','tile-label',label),el('strong','',value),el('small','',hint||' '));
@@ -1090,7 +1193,7 @@ const RESET_REASON={0:['Unknown',''],1:['Power on',''],2:['External reset',''],3
 const flaggedRows=groups=>groups.flatMap(g=>(g.rows||[]).filter(r=>r[2]==='warn'||r[2]==='bad').map(r=>({group:g.title_,key:r[0],value:typeof r[1]==='object'?r[1].textContent:r[1],tone:r[2]})));
 function diagSection(key,icon,title,sub,groups){const flags=flaggedRows(groups),tone=flags.some(f=>f.tone==='bad')?'bad':flags.length?'warn':'good',d=el('details','dsec '+tone),sm=el('summary'),t=el('span','dsec-t',title);
   t.append(el('small','',sub));sm.append(el('span','dsec-ic',icon),t,pill(flags.length?`${flags.length} to check`:'OK',tone));const body=el('div','dsec-body'),grid=el('div','groups');grid.append(...groups);body.append(grid);d.append(sm,body);
-  const auto=tone!=='good';d.open=diagOpen[key]??auto;d.addEventListener('toggle',()=>{if(d.open!==auto)diagOpen[key]=d.open;else delete diagOpen[key]});d.flags=flags.map(f=>({...f,section:title}));return d}
+  const auto=tone!=='good';d.open=diagOpen[key]??auto;d.addEventListener('toggle',()=>{if(d.open!==auto)diagOpen[key]=d.open;else delete diagOpen[key]});d.flags=flags.map(f=>({...f,section:title}));d.key=key;return d}
 /* Lamp scene storage (the gateway's scene cache). Scenes still work while it is
    not ready, sent as ordinary commands, so flag it only once it has stayed
    not ready for 10 minutes. */
@@ -1131,14 +1234,14 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
   const lampLine=held?'':lampStats.lamps.length?(lampStats.pending&&!lampStats.issues.length?`${lampStats.good} of ${lampStats.lamps.length} lamps in sync, ${lampStats.pending} waiting for a reading`:`${lampStats.good} of ${lampStats.lamps.length} lamps in sync`):'';
   setHero(tone,tone==='good'?'Everything is working':issues.length===1?issues[0][1]:`${issues.length} things need attention`,tone==='good'?['Endpoint on Thread with safety checks passing',`${out.name} carrying lighting`,lampLine].filter(Boolean).join(' · ')+'.':(issues.length===1?issues[0][2]||'':issues.map(i=>i[1]).join(' · ')+'.')+(state.tone==='good'?'':` ${state.detail}`));
   $('summary').replaceChildren(
-    tile('Gateway network',current?(netOk===true?(net==='Network'?'Connected':net):netOk===false?'Down':'Unknown'):'Unavailable',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',s.gateway_uptime_ms===undefined?'':'Up for '+duration(s.gateway_uptime_ms),['diagnostics','diag-card','Health']),
-    tile('Thread safety',state.label,state.tone,current?'Role '+role+' · RLOC16 '+hex16(s.rloc16):'Current safety status unknown',['diagnostics','diag-card','Health']),
-    tile('Endpoint board',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000),['diagnostics','diag-card','Health']),
-    tile('Zone mapping',current?(s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown'):'Unavailable',current&&s.config_match===true?'good':'warn',s.config_match===true?'Same on both boards':'Hash '+val(s.config_hash),['programming','sync-card','Programming sync']),
-    tile('Lighting output',!current?'Unavailable':out.fallback?'N4 fallback':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; N4 carrying output':out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Gateway drives the lamps over Zigbee'):'Backend '+val(out.reason),['diagnostics','diag-card','Health']),
-    ...(zl?.enabled?[tile('Zigbee member',current?zl.label:'Unavailable',current?zl.tone:'warn','Serial link only; not RF membership',['diagnostics','diag-card','Health'])]:[]),
-    tile('Programming',current?sync.label:'Unavailable',!current?'warn':sync.tone==='wait'?'wait':sync.tone,sync.steps.find(x=>x[0]===sync.tone&&sync.tone!=='good')?.[1]||'Lutron → bridge → lamps',['programming','sync-card','Programming sync']),
-    tile('Bridged lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length?'warn':lampStats.pending?'wait':'good',held?'Commands are held at the gateway':!lampStats.current?'Current comparisons unavailable':lampStats.pending?`${lampStats.pending} waiting for a reading`:'Compared with Lutron',['overview','lights-card','Lights']));
+    tile('Gateway network',current?(netOk===true?(net==='Network'?'Connected':net):netOk===false?'Down':'Unknown'):'Unavailable',!current?'warn':netOk===true?'good':netOk===false?'bad':'warn',s.gateway_uptime_ms===undefined?'':'Up for '+duration(s.gateway_uptime_ms),['devices','dev-gateway','Devices']),
+    tile('Thread safety',state.label,state.tone,current?'Role '+role+' · RLOC16 '+hex16(s.rloc16):'Current safety status unknown',['devices','dev-endpoint','Devices']),
+    tile('Endpoint board',current?(s.endpoint_online===true?'Online':s.endpoint_online===false?'Offline':'Unknown'):'Unavailable',current&&s.endpoint_online===true?state.tone:'warn',s.endpoint_uptime_s===undefined?'':'Up for '+duration(Number(s.endpoint_uptime_s)*1000),['devices','dev-endpoint','Devices']),
+    tile('Zone mapping',current?(s.config_match===true?'In sync':s.config_match===false?'Out of sync':'Unknown'):'Unavailable',current&&s.config_match===true?'good':'warn',s.config_match===true?'Same on both boards':'Hash '+val(s.config_hash),['automation','sync-card','Lutron programming']),
+    tile('Lighting output',!current?'Unavailable':out.fallback?'N4 fallback':out.kind==='n4'?'N4 hub':out.kind==='direct'?(held?'Held':'Direct Zigbee'):'Unknown',!current?'warn':out.fallback?'warn':held?(out.kind==='direct'?'bad':'warn'):'good',out.fallback?'Direct Zigbee unavailable; N4 carrying output':out.kind==='n4'?'Ketra N4 over the network':out.kind==='direct'?(held?'Direct Zigbee output not admitted':'Gateway drives the lamps over Zigbee'):'Backend '+val(out.reason),['devices','dev-endpoint','Devices']),
+    ...(zl?.enabled?[tile('Zigbee member',current?zl.label:'Unavailable',current?zl.tone:'warn','Serial link only; not RF membership',['devices','dev-endpoint','Devices'])]:[]),
+    tile('Programming',current?sync.label:'Unavailable',!current?'warn':sync.tone==='wait'?'wait':sync.tone,sync.steps.find(x=>x[0]===sync.tone&&sync.tone!=='good')?.[1]||'Lutron → bridge → lamps',['automation','sync-card','Lutron programming']),
+    tile('Bridged lamps',held?'Not driven':!lampStats.current?'Unavailable':lampStats.lamps.length?`${lampStats.good} of ${lampStats.lamps.length} in sync`:'Checking',held||!lampStats.current?'warn':!lampStats.lamps.length?'wait':lampStats.issues.length?'warn':lampStats.pending?'wait':'good',held?'Commands are held at the gateway':!lampStats.current?'Current comparisons unavailable':lampStats.pending?`${lampStats.pending} waiting for a reading`:'Compared with Lutron',['home','lights-card','Rooms']));
   const yn=v=>typeof v==='boolean'?(v?'Yes':'No'):val(v),dg=s.diagnostics&&typeof s.diagnostics==='object'?s.diagnostics:{},has=k=>dg[k]!==undefined&&dg[k]!==null,opt=(k,row)=>has(k)?[row]:[];
   if(Number.isInteger(dg.accepted_count)){if(perfLastCount!==null&&dg.accepted_count<perfLastCount)perfSamples=[];if(dg.accepted_count>0&&dg.accepted_count!==perfLastCount&&Number.isFinite(dg.acceptance_last_ms))perfSamples=[...perfSamples,dg.acceptance_last_ms].slice(-30);perfLastCount=dg.accepted_count}
   const disconnects=dg.link_disconnects??dg.wifi_disconnects,crc=Number(s.uart_crc_errors),frames=Number(s.uart_frames_ok),crcRate=frames+crc>0&&Number.isFinite(crc)?crc/(frames+crc):null;
@@ -1166,7 +1269,7 @@ function health(s,receivedAt){if(s!==latestStatus||receivedAt!==undefined){lates
       ...(out.kind!=='n4'?[group('Direct Zigbee output (reported)',[['Backend',out.kind==='direct'?'Direct Zigbee':val(out.reason)],['Output admitted',yn(dz.output_admitted),dz.output_admitted===true?'':'bad'],['Reason',val(dz.reason)],['Radio UART pins configured',yn(dz.pins_configured)],['Receiver started',yn(dz.receiver_started)],['Diagnostic HELLO in last 15 s',yn(dz.hello_online)],['Role (unverified claim)',dz.unverified_role===undefined?'—':zigbeeRole(dz.unverified_role)],['Bytes',num(dz.uart_bytes)],['Frames OK',num(dz.frames_ok)],['CRC errors',num(dz.crc_errors),errTone(dz.crc_errors)],['Valid HELLOs',num(dz.valid_hellos)],['Rejected HELLOs',num(dz.rejected_hellos),errTone(dz.rejected_hellos)]])]:[]),
       ...(zl?.enabled?[group('Zigbee member link (reported)',[['Responding',yn(zu.online===true&&zu.bidirectional===true),zl.tone==='good'?'':'warn'],['Last response',Number.isFinite(zu.last_response_age_ms)&&zu.last_response_age_ms>0?duration(zu.last_response_age_ms)+' ago':'—'],['UART2 TX / RX GPIO',`${val(zu.tx_gpio)} / ${val(zu.rx_gpio)}`],['Baud',num(zu.baud)],['Receiver started',yn(zu.receiver_started),zu.receiver_started===false?'warn':''],['Requests',num(zu.requests)],['Valid responses',num(zu.valid_responses)],['Rejected responses',num(zu.rejected_responses),errTone(zu.rejected_responses)],['Timeouts',num(zu.timeouts),errTone(zu.timeouts)],['Partial-line timeouts',num(zu.partial_timeouts),errTone(zu.partial_timeouts)],['Overflows',num(zu.overflows),errTone(zu.overflows)],['Send failures',num(zu.tx_failures),errTone(zu.tx_failures)],['Receiver errors',num(zu.receiver_errors),errTone(zu.receiver_errors)],['Device (claimed)',val(zu.device||null)],['Board (claimed)',val(zu.board||null)],['Base MAC (claimed)',val(zu.base_mac||null)],['IEEE address (claimed)',val(zu.ieee_address||null)],['Build SHA-256 (claimed)',typeof zu.build_elf_sha256==='string'&&zu.build_elf_sha256?zu.build_elf_sha256.slice(0,12)+'…':'—'],['Boot ID (claimed)',val(zu.boot_id||null)],['Role (claimed)',val(zu.role||null)],['Role verified (claim)',yn(zu.role_verified_claim)],['Member state (claimed)',val(zu.state||null)],['Radio (claimed)',val(zu.radio||null)],['Identity authenticated',yn(zu.identity_authenticated)],['RF membership verified',yn(zu.rf_membership_verified)]])]:[])]),
     diagSection('ha','⌂','Home Assistant',haData?`Connected · ${haData.time_zone||'time zone unknown'}`:'Not available',[haGroup()])];
-  $('health').replaceChildren(...sections);$('diag-attention').replaceChildren(attentionList(sections));{const n=sections.flatMap(s=>s.flags||[]).length,b=$('diag-badge');b.textContent=n?'\u200b':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
+  {const place={endpoint:'dev-endpoint-readings',uart:'dev-endpoint-readings',gateway:'dev-gateway-readings',ha:'dev-gateway-readings',output:'dev-ketra-readings'},by={};for(const x of sections)(by[place[x.key]]||=[]).push(x);for(const id of new Set(Object.values(place)))$(id).replaceChildren(...(by[id]||[]))}$('diag-attention').replaceChildren(attentionList(sections));{const n=sections.flatMap(s=>s.flags||[]).length,b=$('diag-badge');b.textContent=n?'\u200b':'';b.title=n?`${n} item${n===1?'':'s'} to check`:''}
   const flagCount=sections.reduce((n,x)=>n+x.flags.length,0),flagTone=sections.some(x=>x.flags.some(f=>f.tone==='bad'))?'bad':flagCount?'warn':'good';$('diag-pill').className='pill '+flagTone;$('diag-pill').textContent=flagCount?`${flagCount} to check`:'All normal';
   $('health-note').textContent=`${age===null?'Snapshot age unavailable':`Snapshot ${age.toFixed(1)} seconds old`}${current?' · endpoint online means a recent HELLO':' · current endpoint state is unknown'}.`;
   perfView();
@@ -1673,8 +1776,8 @@ function renderLocalShades(){const box=$('local-shades'),cca=typeof CCAUI!=='und
     const ul=el('ul','motor-list');for(const m of list)ul.append(el('li','',`Motor ${m.serial} · link ${m.link_index}`+(m.component!==undefined?` · component ${m.component}`:'')));card.append(head,ul);return card}))}
 async function loadLocal(){if(!localWired&&typeof CCAUI!=='undefined'){localWired=true;CCAUI.local.onChange(renderLocalShades)}
   renderLocalShades();loadLocalRules();if(typeof CCAUI!=='undefined'){try{await CCAUI.show()}catch{}renderLocalShades()}}
-$('local-rules-reload').onclick=loadLocalRules;$('local-rules-edit').onclick=()=>{goTo('setup','ccx-rules-card');if(ccxRules===null)loadCcxRules()};
-$('local-cca-open').onclick=()=>goTo('cca','cca-targets');
+$('local-rules-reload').onclick=loadLocalRules;$('local-rules-edit').onclick=openRulesSheet;$('rules-sheet-close').onclick=closeRulesSheet;$('rules-sheet').addEventListener('cancel',e=>{e.preventDefault?.();closeRulesSheet()});
+$('local-cca-open').onclick=()=>goTo('automation','cca-targets-card');
 $('local-cca-list').onclick=async()=>{if(typeof CCAUI==='undefined')return;await CCAUI.local.list('local-note');renderLocalShades()};
 async function refreshCcx(){if(ccxFetching)return;ccxFetching=true;try{const data=await req('ccx/events?after='+ccxCursor+(ccxBoot===null?'':'&boot_id='+encodeURIComponent(ccxBoot)));ccxEventView(data)}catch(e){$('ccx-stream-note').textContent='CCX event feed unavailable: '+e.message}finally{ccxFetching=false}}
 async function loadCcxHealth(){if(Date.now()-ccxHealthAt<10000)return;ccxHealthAt=Date.now();
@@ -1699,20 +1802,28 @@ function ccxRulePayload(){const errors=[],rules=[],ids=new Set();const number=(s
 function ccxRulesChanged(){const {errors}=ccxRulePayload(),dirty=ccxRules!==null&&JSON.stringify(ccxRules)!==JSON.stringify(ccxRulesBase);$('ccx-rules-errors').textContent=[...new Set(errors)].join(' · ');$('ccx-rules-dirty').textContent=dirty?'Unsaved changes':'';$('ccx-save-rules').disabled=!dirty||!!errors.length;$('ccx-reload-rules').textContent=dirty?'Discard changes':'Reload rules';return dirty}
 function ccxRuleHints(){const zones=(configBase?.zones||[]).filter(z=>Number.isInteger(z?.zone_id));$('ccx-target-zones').replaceChildren(...zones.map(z=>Object.assign(document.createElement('option'),{value:String(z.zone_id),label:z.name||'Zone '+z.zone_id})));
   const shows=Array.isArray(lastProgram?.shows)?lastProgram.shows:[];$('ccx-show-ids').replaceChildren(...shows.filter(s=>Number.isInteger(s?.id)).map(s=>Object.assign(document.createElement('option'),{value:String(s.id),label:'Show '+s.id})))}
-function renderCcxRules(){ccxRuleHints();const rows=(ccxRules||[]).map((r,i)=>{const tr=el('tr');
-    const input=(key,label,list)=>{const td=el('td'),e=el('input');e.value=r[key];e.setAttribute('aria-label',`Rule ${i+1} ${label}`);if(key==='kind'&&r.emptyKind)e.placeholder='Exact empty kind';if(list)e.setAttribute('list',list);e.addEventListener('input',()=>{r[key]=e.value;if(key==='kind')r.emptyKind=false;ccxRulesChanged()});td.append(e);tr.append(td)};
-    input('id','ID');{const td=el('td'),e=el('input');e.type='checkbox';e.checked=r.enabled;e.setAttribute('aria-label',`Rule ${i+1} enabled`);e.addEventListener('change',()=>{r.enabled=e.checked;ccxRulesChanged()});td.append(e);tr.append(td)}
-    input('kind','event kind','ccx-kinds');input('message_type','message type');input('serial','source serial');input('zone_id','source zone');
-    {const td=el('td'),s=el('select');s.setAttribute('aria-label',`Rule ${i+1} action`);s.append(Object.assign(el('option'),{value:'set_level',textContent:'Set level'}),Object.assign(el('option'),{value:'select_show',textContent:'Select Show'}));s.value=r.action;s.addEventListener('change',()=>{r.action=s.value;renderCcxRules()});td.append(s);tr.append(td)}
-    input('target_zone','target zone','ccx-target-zones');input('level','level');input('show_id','Show ID','ccx-show-ids');
-    const td=el('td'),remove=el('button','remove','−');remove.type='button';remove.setAttribute('aria-label',`Remove rule ${i+1}`);remove.onclick=()=>{ccxRules.splice(i,1);renderCcxRules()};td.append(remove);tr.append(td);return tr});
-  $('ccx-rule-rows').replaceChildren(...rows);$('ccx-add-rule').disabled=ccxRules===null||ccxRules.length>=16;ccxRulesChanged()}
+/* The rule editor: one form per rule in a side sheet, every field full width and labelled. */
+function renderCcxRules(){ccxRuleHints();const forms=(ccxRules||[]).map((r,i)=>{const f=el('fieldset','rule-form'),head=el('div','rule-form-head'),when=el('div','fields'),then=el('div','fields');
+    const field=(parent,key,label,opts={})=>{const l=el('label','field'),e=el('input');l.append(label);e.value=r[key];e.setAttribute('aria-label',`Rule ${i+1} ${label}`);if(opts.placeholder)e.placeholder=opts.placeholder;if(key==='kind'&&r.emptyKind)e.placeholder='Exact empty kind';if(opts.list)e.setAttribute('list',opts.list);if(opts.mode)e.setAttribute('inputmode',opts.mode);
+      e.addEventListener('input',()=>{r[key]=e.value;if(key==='kind')r.emptyKind=false;ccxRulesChanged()});l.append(e);parent.append(l);return e};
+    f.append(el('legend','',`Rule ${i+1}`));
+    {const l=el('label','check'),e=el('input');e.type='checkbox';e.checked=r.enabled;e.setAttribute('aria-label',`Rule ${i+1} enabled`);e.addEventListener('change',()=>{r.enabled=e.checked;ccxRulesChanged()});l.append(e,'Enabled');head.append(l)}
+    const remove=el('button','plain danger-text','Remove');remove.type='button';remove.setAttribute('aria-label',`Remove rule ${i+1}`);remove.onclick=()=>{ccxRules.splice(i,1);renderCcxRules()};head.append(remove);
+    field(f,'id','Rule ID',{placeholder:'Up to 24 characters'});
+    when.append(el('h4','','When the listener hears'));field(when,'kind','Event kind',{list:'ccx-kinds',placeholder:'Any kind'});field(when,'serial','Source serial',{mode:'numeric',placeholder:'Any source'});field(when,'zone_id','Source zone',{mode:'numeric',placeholder:'Any zone'});field(when,'message_type','Message type',{mode:'numeric',placeholder:'Any type'});
+    then.append(el('h4','','Then'));{const l=el('label','field'),s=el('select');l.append('Action');s.setAttribute('aria-label',`Rule ${i+1} action`);s.append(Object.assign(el('option'),{value:'set_level',textContent:'Set a level'}),Object.assign(el('option'),{value:'select_show',textContent:'Select a Natural Show'}));s.value=r.action;s.addEventListener('change',()=>{r.action=s.value;renderCcxRules()});l.append(s);then.append(l)}
+    field(then,'target_zone','Target zone',{list:'ccx-target-zones',mode:'numeric',placeholder:'Lutron zone ID'});field(then,'level','Level',{placeholder:r.action==='select_show'?'Blank for the show default, or event':'event, or 0–10000'});
+    if(r.action==='select_show')field(then,'show_id','Show ID',{list:'ccx-show-ids',mode:'numeric',placeholder:'0 needs a level'});
+    f.append(head,when,then);return f});
+  $('ccx-rule-rows').replaceChildren(...(forms.length?forms:[el('p','empty-state',ccxRules===null?'Rules are not loaded yet.':'No rules yet. Add one below; it starts disabled.')]));$('ccx-add-rule').disabled=ccxRules===null||ccxRules.length>=16;ccxRulesChanged()}
+function openRulesSheet(){const d=$('rules-sheet');if(typeof d.showModal==='function'&&!d.open)d.showModal();if(ccxRules===null)loadCcxRules();else renderCcxRules()}
+async function closeRulesSheet(){if(ccxRulesChanged()&&!await confirmSheet('Discard rule changes?','Your unsaved rule edits will be lost.','Discard'))return;if(ccxRulesBase)ccxRules=JSON.parse(JSON.stringify(ccxRulesBase));$('rules-sheet').close?.();loadLocalRules()}
 async function loadCcxRules(){try{const data=await req('ccx/rules');if(!Array.isArray(data?.rules))throw Error('invalid rules response');ccxRules=data.rules.map(ccxDraftRule);ccxRulesBase=JSON.parse(JSON.stringify(ccxRules));$('ccx-rules-pill').textContent='Loaded';$('ccx-rules-pill').className='pill good';$('ccx-rules-note').textContent=`${ccxRules.length} rule${ccxRules.length===1?'':'s'} on the gateway.`;renderCcxRules()}
   catch(e){$('ccx-rules-pill').textContent='Unavailable';$('ccx-rules-pill').className='pill wait';$('ccx-rules-note').textContent='Rules unavailable or unsupported: '+e.message}}
 $('ccx-add-rule').onclick=()=>{if(ccxRules===null||ccxRules.length>=16)return;ccxRules.push(ccxDraftRule({id:'rule-'+(ccxRules.length+1),enabled:false,match:{},action:{type:'set_level',level:'event'}}));renderCcxRules()};
 $('ccx-reload-rules').onclick=async()=>{if(ccxRulesChanged()&&!await confirmSheet('Discard rule changes?','Your unsaved CCX rule edits will be lost.','Discard'))return;await loadCcxRules()};
 $('ccx-save-rules').onclick=async()=>{const {rules,errors}=ccxRulePayload();if(!ccxRulesChanged()||errors.length)return;if(!await confirmSheet('Apply CCX rules?',`${rules.length} rule${rules.length===1?'':'s'} will be saved to the gateway and enabled rules can change lighting immediately.`,'Apply'))return;
-  $('ccx-save-rules').disabled=true;try{const current=await req('ccx/rules');if(!Array.isArray(current?.rules)||JSON.stringify(current.rules.map(ccxDraftRule))!==JSON.stringify(ccxRulesBase))throw Error('Rules changed on the gateway while you were editing; reload before applying.');await req('ccx/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rules})});await loadCcxRules()}
+  $('ccx-save-rules').disabled=true;try{const current=await req('ccx/rules');if(!Array.isArray(current?.rules)||JSON.stringify(current.rules.map(ccxDraftRule))!==JSON.stringify(ccxRulesBase))throw Error('Rules changed on the gateway while you were editing; reload before applying.');await req('ccx/rules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rules})});await loadCcxRules();loadLocalRules()}
   catch(e){$('ccx-rules-note').textContent='Rules not applied: '+e.message}finally{ccxRulesChanged()}};
 let configAutoPoll=true,configPollAfter=0,configMatch=null,configBase=null,draftFrom=null,draftZones=[],jsonError='';
 function configPill(text,tone){$('config-pill').className='pill '+tone;$('config-pill').textContent=text}
@@ -1828,7 +1939,7 @@ function renderEndpointControl(s){
   const c=endpointControl(s),t=$('endpoint-toggle'),k=$('endpoint-clear');
   $('endpoint-control-pill').className='pill '+c.tone;$('endpoint-control-pill').textContent=c.label;
   $('endpoint-control-note').textContent=endpointMessage&&Date.now()-endpointMessageAt<15000?endpointMessage+' '+c.note:c.note;
-  t.textContent=c.supported&&!c.enabled?'Enable endpoint':'Disable endpoint';t.disabled=endpointBusy||!c.supported||!c.canToggle;
+  t.textContent=c.supported&&!c.enabled?'Enable endpoint':'Disable endpoint';t.className=c.supported&&!c.enabled?'':'danger';t.disabled=endpointBusy||!c.supported||!c.canToggle;
   k.hidden=!c.canClear;k.disabled=endpointBusy||!c.canClear;
 }
 async function endpointAction(run){endpointBusy=true;endpointMessage='';if(latestStatus)renderEndpointControl(latestStatus);
@@ -1879,7 +1990,30 @@ async function refresh(){
   }finally{refreshing=false}
 }
 function uploadNote(text,tone){$('upload-note').className='notice '+tone;$('upload-note').textContent=text}
-const tabs=['overview','activity','diagnostics','programming','local','cca','setup'];function showTab(name){$('tabs').setAttribute('data-tab',name);for(const t of tabs){$('tab-'+t).setAttribute('aria-selected',String(t===name));$('panel-'+t).hidden=t!==name}if(name==='setup'&&ccxRules===null)loadCcxRules();if(name==='activity')loadCcxHealth();if(name==='cca'&&typeof CCAUI!=='undefined')CCAUI.show();if(name==='local')loadLocal()}for(const t of tabs)$('tab-'+t).onclick=()=>showTab(t);
+/* Five destinations. Older names (deep links, other code) map onto them. */
+const tabs=['home','activity','devices','automation','settings'],TAB_ALIASES={overview:'home',diagnostics:'devices',health:'devices',programming:'automation',local:'automation',cca:'automation',setup:'settings'};
+const destination=name=>tabs.includes(name)?name:Object.hasOwn(TAB_ALIASES,name)?TAB_ALIASES[name]:'home';
+function showTab(name){const dest=destination(name);$('tabs').setAttribute('data-tab',dest);
+  for(const t of tabs){const b=$('tab-'+t),on=t===dest;b.setAttribute('aria-selected',String(on));b.setAttribute('tabindex',on?'0':'-1');$('panel-'+t).hidden=!on}
+  if(name==='cca')activityView('commands');
+  if(dest==='activity')loadCcxHealth();
+  if((dest==='devices'||dest==='automation')&&typeof CCAUI!=='undefined')CCAUI.show();
+  if(dest==='automation')loadLocal();
+  if(dest==='devices')loadSidecarStatus();
+  try{if(location.hash!=='#'+dest&&typeof history!=='undefined')history.replaceState(null,'','#'+dest)}catch{}
+  return dest}
+for(const t of tabs){const b=$('tab-'+t);b.onclick=()=>showTab(t);b.addEventListener('keydown',e=>{const i=tabs.indexOf(t),k={ArrowRight:1,ArrowDown:1,ArrowLeft:-1,ArrowUp:-1}[e.key];
+  const next=k?tabs[(i+k+tabs.length)%tabs.length]:e.key==='Home'?tabs[0]:e.key==='End'?tabs[tabs.length-1]:null;if(!next)return;e.preventDefault?.();showTab(next);$('tab-'+next).focus?.()})}
+/* Activity: one segmented control for the command timeline, listener events and CCA packets. */
+const ACTIVITY_VIEWS=['commands','listener','cca'];
+function activityView(v){for(const x of ACTIVITY_VIEWS)$('view-'+x).hidden=x!==v;for(const b of $('activity-views').children||[])b.setAttribute?.('aria-pressed',String(b.dataset?.view===v));if(v==='listener')loadCcxHealth();if(v==='cca'&&typeof CCAUI!=='undefined')CCAUI.show()}
+for(const b of $('activity-views').children||[])b.onclick=()=>activityView(b.dataset.view);
+/* Info controls toggle their explanation; data-goto buttons open another destination. */
+document.addEventListener?.('click',e=>{const b=e.target?.closest?.('.info,[data-goto]');if(!b)return;
+  if(b.classList.contains('info')){const tip=$(b.getAttribute('aria-controls')),open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));tip.hidden=!open;return}
+  const [tab,id]=b.dataset.goto.split(':');goTo(tab,id)});
+function initialTab(){try{const h=String(location.hash||'').replace('#','');if(h)showTab(h)}catch{}}
+if(typeof window!=='undefined')window.addEventListener?.('hashchange',initialTab);
 $('load-program').onclick=()=>loadProgram(true);$('program-zone').addEventListener('input',markProgramZone);$('program-zone').addEventListener('keydown',e=>{if(e.key==='Enter')loadProgram()});
 $('reload-config').onclick=async()=>{if(isDirty()&&!await confirmSheet('Discard your changes?','Your edits to the zone mapping will be lost.','Discard'))return;loadConfig(true).catch(e=>$('config-state').textContent='Configuration unavailable: '+e.message)};
 $('add-zone').onclick=()=>{const next=Math.max(-1,...draftZones.map(r=>Number.isInteger(r.z.zone_id)?r.z.zone_id:-1))+1;const row=zoneRow({zone_id:next});draftZones.push(row);renderZones();row.inputs.name?.focus()};
@@ -1966,5 +2100,5 @@ $('sidecar-upload').onclick=async()=>{const f=sidecarFile;let s=sidecarStatus;if
 for(const id of ['filter-zone','filter-stage','filter-problems'])$(id).addEventListener('change',renderEvents);
 $('fill-names').onclick=()=>{for(const r of draftZones){const m=haFor(r.z);if(!r.z.name&&m?.light.name)useHAName(r,m.light.name)}};
 function refreshTick(){if(latestStatus&&(!snapshotFresh(latestStatus)||(lastDevices&&!deviceSnapshotFresh(lastDevices))||(lastZones&&!zoneSnapshotFresh(lastZones))))health(latestStatus);trackFirmwareStatus(null);refresh()}
-loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();loadSidecarStatus();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden)loadCcxHealth()},10000);setInterval(()=>{if(!$('panel-setup').hidden||sidecarSending||sidecarCandidate)loadSidecarStatus()},2000);
+loadHA();setInterval(loadHA,15000);loadTimezone();setInterval(loadTimezone,30000);loadKetra();setInterval(loadKetra,30000);refresh();refreshCcx();loadSidecarStatus();$('reload-config').click();setInterval(refreshTick,1000);setInterval(refreshCcx,1000);setInterval(()=>{if(!$('panel-activity').hidden&&!$('view-listener').hidden)loadCcxHealth()},10000);setInterval(()=>{if(!$('panel-devices').hidden||sidecarSending||sidecarCandidate)loadSidecarStatus()},2000);initialTab();
 </script><script src="cca-decoder.js"></script><script src="cca.js"></script></body></html>

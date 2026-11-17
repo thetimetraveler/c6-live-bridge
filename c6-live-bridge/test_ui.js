@@ -173,6 +173,8 @@ if(!document.getElementById('node-report').className.includes('good')) throw Err
 if(document.getElementById('flow-note').textContent.includes('<img')) throw Error('flow labels must remain text');
 
 const text=n=>typeof n==='string'?n:(n.textContent||'')+' '+(n.children||[]).map(text).join(' ');
+// Readings now live in one card per board on Devices.
+const boards=()=>({children:['dev-endpoint-readings','dev-gateway-readings','dev-ketra-readings','dev-zigbee-readings'].flatMap(id=>view(id).children)});
 for(const seq of [0,10,40,255,0]){
   const legacy={stage:'report-sent',requested:seq,confirmed:10000};
   if(!text({children:stepLevels(legacy)}).includes('100%')||reportSeq(legacy)!==seq) throw Error('legacy report counter must remain separate from level');
@@ -291,23 +293,23 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   health(direct);
   if(!view('hero').className.includes('bad')||!(view('headline').textContent+view('headline-detail').textContent).includes('Lighting output held'))throw Error('a held direct Zigbee output must be the headline problem');
   if(!view('node-n4').className.includes('bad')||view('label-n4').textContent!=='Zigbee output'||!view('detail-n4').textContent.includes('held'))throw Error('the topology must show the Zigbee output as held');
-  if(!text(view('summary')).includes('Held')||!text(view('health')).includes('Direct Zigbee output (reported)')||!text(view('health')).includes('production_contract_unavailable'))throw Error('overview must report the held backend and its reason');
+  if(!text(view('summary')).includes('Held')||!text(boards()).includes('Direct Zigbee output (reported)')||!text(boards()).includes('production_contract_unavailable'))throw Error('overview must report the held backend and its reason');
   if(!text(view('summary')).includes('Not driven'))throw Error('lamps must not be summarised as compared while output is held');
   health({...direct,direct_zigbee:{...direct.direct_zigbee,output_admitted:'true'}});
   if(!view('hero').className.includes('bad'))throw Error('only a boolean admission opens the direct output');
   health({...status,output_backend:'something-new'});
   if(view('hero').className.includes('good')||!text(view('summary')).includes('Unknown'))throw Error('an unrecognised backend must not look healthy');
   health(status);
-  if(view('label-n4').textContent!=='N4 output'||text(view('health')).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
+  if(view('label-n4').textContent!=='N4 output'||text(boards()).includes('Direct Zigbee output (reported)')||!text(view('summary')).includes('N4 hub'))throw Error('gateways without output_backend write to N4');
   if(text(view('summary')).includes('Zigbee member'))throw Error('no Zigbee member tile without a reported link');
   health({...status,zigbee_uart:{enabled:true,online:false,bidirectional:false,timeouts:3}});
   if(!heroText().includes('Zigbee member link not responding')||!text(view('summary')).includes('Not responding'))throw Error('a silent Zigbee member must be reported');
   health({...status,zigbee_uart:{enabled:true,online:true,bidirectional:true,role:'end_device',state:'disarmed',radio:'off',identity_authenticated:false,rf_membership_verified:false,build_elf_sha256:'a'.repeat(64)}});
   const member=view('summary').children.find(c=>text(c).includes('Zigbee member'));
   if(!member?.className.includes('good')||!text(member).includes('not RF membership'))throw Error('a responding member is a serial link, not RF membership');
-  if(!text(view('health')).includes('RF membership verified')||!text(view('health')).includes('Role (claimed)')||!text(view('health')).includes('aaaaaaaaaaaa…'))throw Error('member claims must be labelled as claims');
+  if(!text(boards()).includes('RF membership verified')||!text(boards()).includes('Role (claimed)')||!text(boards()).includes('aaaaaaaaaaaa…'))throw Error('member claims must be labelled as claims');
   health({...status,zigbee_uart:{enabled:false}});
-  if(text(view('summary')).includes('Zigbee member')||!text(view('health')).includes('Not enabled'))throw Error('a disabled member link has no tile');
+  if(text(view('summary')).includes('Zigbee member')||!text(boards()).includes('Not enabled'))throw Error('a disabled member link has no tile');
   // Activity: a held command stays held, without a "no progress" timeout.
   const heldGroups=groupEvents([typed(1,'requested',7,{requested:5000}),typed(2,'ketra-held',7,{requested:5000})]);
   health({...direct,gateway_uptime_ms:10_000_000});
@@ -336,7 +338,7 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
   const tileText=text(view('summary').children.find(c=>text(c).includes('Lighting output')));
   if(!tileText.includes('N4 fallback'))throw Error('a hybrid gateway on N4 must show the fallback');
   if(!(view('headline').textContent+view('headline-detail').textContent).includes('N4 is carrying lighting'))throw Error('the fallback must be named in the overview');
-  if(!text(view('health')).includes('Direct Zigbee routing (reported)')||!text(view('health')).includes('node unavailable'))throw Error('routing diagnostics must be shown');
+  if(!text(boards()).includes('Direct Zigbee routing (reported)')||!text(boards()).includes('node unavailable'))throw Error('routing diagnostics must be shown');
   health({...fallback,output_backend:'direct_zigbee',backend:{mode:'hybrid',phase:'direct',switches:3},direct_zigbee:{output_admitted:true,reason:'admitted'}});
   if(text(view('summary')).includes('N4 fallback')||!text(view('summary')).includes('Direct Zigbee'))throw Error('a hybrid gateway on direct shows Direct Zigbee');
   health(status);
@@ -351,7 +353,7 @@ if(haFor({zone_id:1379,name:'Kitchen'})?.by!=='zone') throw Error('lights should
     throw Error('a record mismatch must be shown as held');
   if(!(view('headline').textContent+view('headline-detail').textContent+text(view('summary'))).includes('does not match the gateway journal'))
     throw Error('a record mismatch needs attention in the overview');
-  if(!text(view('health')).includes('Node session')||!text(view('health')).includes('Record mismatch'))throw Error('diagnostics show the node session');
+  if(!text(boards()).includes('Node session')||!text(boards()).includes('Record mismatch'))throw Error('diagnostics show the node session');
   const fresh={...mismatch,direct_routing:{...mismatch.direct_routing,arming:{...mismatch.direct_routing.arming,state:'not_enrolled',enrolled:false},
     firmware:{transfer:'sending',offset:2048,size:4096}}};
   health(fresh);renderZigbeeNode(fresh);
@@ -454,7 +456,7 @@ const mappingChecks=`
       replies.rules={rules:[{id:'bedside-on',enabled:true,match:{kind:'ccx.button_press',serial:82324321},action:{type:'set_level',target_zone:2731,level:7500}},
         {id:'follow',enabled:false,match:{zone_id:9},action:{type:'select_show',target_zone:44,show_id:3,level:'event'}},{id:'all',enabled:true,match:{},action:{type:'set_level',target_zone:2731,level:0}}]};
       showTab('local');await loadLocalRules();const cards=view('local-rules').children,t=i=>text(cards[i]);
-      if(view('panel-local').hidden||cards.length!==3||view('local-rules-pill').textContent!=='2 of 3 enabled')throw Error('the Local tab shows every gateway rule: '+view('local-rules-pill').textContent);
+      if(view('panel-automation').hidden||cards.length!==3||view('local-rules-pill').textContent!=='2 of 3 enabled')throw Error('the Local tab shows every gateway rule: '+view('local-rules-pill').textContent);
       if(!t(0).includes('Button press')||!t(0).includes('from Bedside Position 2 (PJ2-4B-XXX-L31) · serial 82324321')||!t(0).includes('Set office · Master Bedroom (zone 2731) to 75%'))throw Error('a rule reads as When → Then with Lutron names: '+t(0));
       if(!cards[1].className.includes('off')||!t(1).includes('Disabled')||!t(1).includes('for zone 9')||!t(1).includes('Select Natural Show 3 on zone 44')||!t(1).includes("at the event's level"))throw Error('a disabled show rule: '+t(1));
       if(!t(2).includes('Any CCX event')||!t(2).includes('Matches every event')||!t(2).includes('to off'))throw Error('a blank match is called out: '+t(2));
@@ -587,7 +589,7 @@ const mappingChecks=`
   if(!heroText().includes('N4 is carrying lighting'))throw Error('a real fallback with an owned output must still be reported');
   if(backendHold({...heldStatus,backend:{...heldStatus.backend,hold_reason:'constructor'}}).text!=='constructor')throw Error('reason names must not resolve through object prototypes');
   // Startup sequence on the overview.
-  const startup=()=>{const all=n=>[n,...(n.children||[]).flatMap(all)],g=all(view('health')).find(c=>c.children?.[0]?.textContent==='Startup sequence'&&c.children?.[1]?.className==='list');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
+  const startup=()=>{const all=n=>[n,...(n.children||[]).flatMap(all)],g=all(boards()).find(c=>c.children?.[0]?.textContent==='Startup sequence'&&c.children?.[1]?.className==='list');if(!g)throw Error('startup sequence missing');return Object.fromEntries(g.children[1].children.map(r=>[r.children[0].textContent,r.children[1]]))};
   const windowRow='Stability window (≥ 300 s, receive-only)';
   health(safetyPatch({phase:'start-delay',gate_remaining_s:120,gate_adverts:0},{boot_hold_remaining_s:40}));
   let rows=startup();
@@ -613,7 +615,7 @@ const mappingChecks=`
   // Diagnostics: sections in command order, flagged rows listed first, no-hold builds not flagged.
   const tree=n=>[n,...(n.children||[]).flatMap(tree)];
   health({...status,uart_crc_errors:3,uart_frames_ok:997,diagnostics:{maintenance:false,heap_free:182000,sockets_used:19,socket_limit:20,reset_reason:4}});
-  const secs=view('health').children;
+  const secs=boards().children;
   if(secs.length!==5||!secs.every(x=>x.className.startsWith('dsec')))throw Error('diagnostics must be one section per part of the bridge');
   const titles=secs.map(x=>text(x.children[0]));
   for(const want of ['Thread & endpoint','Endpoint ↔ gateway link','Gateway','Lighting output','Home Assistant'])if(!titles.some(t=>t.includes(want)))throw Error('missing diagnostics section '+want);
@@ -742,5 +744,17 @@ const mappingChecks=`
     latestNative=null;zonesView(zoneSnapshot);health(status)}
 })()
 `;
-await vm.runInNewContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});
+const navChecks=`
+// Five destinations; every older tab name, hash or showTab() call lands on its new home.
+{const map={overview:'home',activity:'activity',diagnostics:'devices',health:'devices',programming:'automation',local:'automation',cca:'automation',setup:'settings',home:'home',devices:'devices',automation:'automation',settings:'settings',nonsense:'home'};
+  for(const [name,want] of Object.entries(map)){const got=showTab(name);
+    if(got!==want||view('panel-'+want).hidden||view('tab-'+want).getAttribute('aria-selected')!=='true'||view('tab-'+want).getAttribute('tabindex')!=='0')throw Error(name+' must open '+want+', got '+got);
+    for(const t of tabs)if(t!==want&&(!view('panel-'+t).hidden||view('tab-'+t).getAttribute('aria-selected')!=='false'||view('tab-'+t).getAttribute('tabindex')!=='-1'))throw Error(name+' leaves '+t+' showing')}
+  showTab('home');view('tab-home').onkeydown({key:'ArrowRight',preventDefault(){}});if(view('panel-activity').hidden)throw Error('arrow keys move between destinations');
+  view('tab-activity').onkeydown({key:'End',preventDefault(){}});if(view('panel-settings').hidden)throw Error('End opens the last destination');
+  view('tab-settings').onkeydown({key:'ArrowRight',preventDefault(){}});if(view('panel-home').hidden)throw Error('arrow keys wrap around');}
+`;
+vm.createContext(context);
+await vm.runInContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});
+await vm.runInContext(navChecks,context,{timeout:2000});
 console.log('management UI safety, mapping, event and flow tests passed');

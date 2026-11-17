@@ -30,7 +30,7 @@ const document = {
 const get = id => document.getElementById('cca-' + id);
 const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'cca.js'),'utf8');
 const html = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'index.html'),'utf8');
-assert.match(html, /id="tab-cca"/);
+assert.match(html, /id="dev-cca"/); // CCA radio card on Devices
 assert.match(html, /Passive CCX listener \(B1\) firmware/);
 assert.match(html, /CCA node firmware/);
 assert.match(html, /Lutron end-device firmware over CCA/);

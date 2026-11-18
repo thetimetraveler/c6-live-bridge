@@ -1,3 +1,7 @@
+## 0.25.2
+
+- Bridged occupancy reports no longer re-read the CCA radio's status before each send. They rely on the status the app read within the last 15 seconds (it reads every 3), and read it afresh only when that is older. Other CCA commands are unchanged.
+
 ## 0.25.1
 
 - Faster bridged occupancy. An `occupancy_bridges` entry can name the sensor's own MQTT topic (`mqtt_topic`, for example `zigbee2mqtt/Hall motion`); the app then acts on the sensor's `{"occupancy": true|false}` message as it arrives instead of waiting for the once-a-second read, which stays as a safety net.

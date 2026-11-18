@@ -51,6 +51,7 @@ class OccupancyBridge:
     STATUS_S = 900.0           # real sensors repeat their state about every 16 minutes
     UNAVAILABLE_S = 600.0
     REPEAT = 12
+    TRUST_STATUS_S = 15.0      # send on the radio status read this recently instead of reading it again
 
     def __init__(self, service, read_state, bridges, path=None, clock=time.monotonic, connect=None):
         self.service, self.read_state, self.path, self.clock = service, read_state, path, clock
@@ -83,7 +84,7 @@ class OccupancyBridge:
     def _send(self, item, occupied, report, event):
         payload = cca_occupancy.encode(item["serial"], occupied, report, event)
         try:
-            self.service.command({"cmd": "raw", "raw_payload": payload, "raw_repeat": self.REPEAT})
+            self.service.command({"cmd": "raw", "raw_payload": payload, "raw_repeat": self.REPEAT}, trust_s=self.TRUST_STATUS_S)
             item["error"] = None; item["sends"] += 1
             return True
         except Exception as exc:  # gateway busy, offline or refusing: retry with the then-current state

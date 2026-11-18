@@ -8,7 +8,8 @@ import cca_occupancy_bridge as ob
 
 class Service:
     def __init__(self): self.sent, self.fail = [], False
-    def command(self, payload):
+    def command(self, payload, trust_s=0):
+        self.trust = trust_s
         if self.fail: raise RuntimeError("cca command pending")
         self.sent.append(payload); return {"accepted": True, "request_id": len(self.sent)}
 
@@ -59,6 +60,7 @@ class BridgeTests(unittest.TestCase):
         bridge.step(item, "off", 2 + bridge.STATUS_S)
         self.assertEqual(decoded(service)[-1], (False, "status", "8a"))
         self.assertEqual(service.sent[0]["raw_repeat"], bridge.REPEAT)
+        self.assertEqual(service.trust, bridge.TRUST_STATUS_S)
 
     def test_flap_inside_gap_sends_only_latest(self):
         service, bridge, item = self.make()

@@ -423,10 +423,13 @@ class CcaService:
             result[name] = value
         return result
 
-    def _verified(self, expected_boot=None, retry=False):
-        with self.lock: mac = self.config["expected_mac"]
+    def _verified(self, expected_boot=None, retry=False, trust_s=0):
+        with self.lock:
+            mac = self.config["expected_mac"]
+            recent = self.gateway_status if trust_s and self.status_at is not None and time.monotonic() - self.status_at <= trust_s else None
         if not mac: raise CcaError("Set the expected CCA MAC before sending commands", 409)
-        status = self._status(retry=retry)
+        # trust_s lets a time-critical sender rely on the status the poller read moments ago.
+        status = recent if isinstance(recent, dict) else self._status(retry=retry)
         peer = status.get("c6")
         if not status.get("ready") or not status.get("i2c", {}).get("online") or not isinstance(peer, dict):
             raise CcaError("CCA node is not online")
@@ -443,7 +446,7 @@ class CcaService:
             raise CcaError("Gateway did not accept command; inspect status", 502)
         return result
 
-    def command(self, payload):
+    def command(self, payload, trust_s=0):
         command = self.validate_command(payload)
         if not self.operation.acquire(timeout=2): raise CcaError("CCA operation busy; try again")
         try:
@@ -451,7 +454,7 @@ class CcaService:
                 active = self.job["state"] in ("staging", "starting", "clearing")
             if active and command["cmd"] in ("ota_upload_reset", "ota_upload_start", "ota_upload_chunk", "ota_digest", "ota_full_tx"):
                 raise CcaError("Guided OTA operation is using the staging buffer", 409)
-            self._verified()
+            self._verified(trust_s=trust_s)
             if command["cmd"] in ("ota_upload_reset", "ota_upload_start", "ota_upload_chunk"):
                 with self.lock:
                     self.job.update(state="ready" if self.job["upload"] else "idle", staged=0,

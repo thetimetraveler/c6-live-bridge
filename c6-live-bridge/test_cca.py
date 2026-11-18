@@ -112,6 +112,25 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.service.command(command)
         self.assertEqual(self.gateway.writes, [])
 
+    def test_command_can_trust_a_recent_status(self):
+        reads, request = [], self.gateway.request
+        def counted(path, *args, **kwargs):
+            if path == "/api/cca/status": reads.append(path)
+            return request(path, *args, **kwargs)
+        self.gateway.request = counted
+        command = next(c for c in CAPS["commands"] if not any(f.get("required") for f in c.get("fields", [])))["name"]
+        self.assertTrue(self.service.command({"cmd": command}, trust_s=15)["accepted"])   # no status yet: read once
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(self.service.command({"cmd": command}, trust_s=15)["accepted"])   # fresh: no read
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(self.service.command({"cmd": command})["accepted"])               # default still reads
+        self.assertEqual(len(reads), 2)
+        self.service.status_at -= 60
+        self.service.command({"cmd": command}, trust_s=15)                                # stale: read again
+        self.assertEqual(len(reads), 3)
+        self.gateway.radio = False; self.service._status()
+        with self.assertRaisesRegex(Exception, "radio is not ready"): self.service.command({"cmd": command}, trust_s=15)
+
     def test_pico_layout_and_button_presets(self):
         dim = {"id": "dim", "name": "Dim", "command": {"cmd": "bridge_level", "device_id": 1, "level_pct": 50}}
         def config(**target):

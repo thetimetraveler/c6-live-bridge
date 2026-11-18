@@ -215,6 +215,7 @@ class CcaService:
                     "status_age_s": None if self.status_at is None else max(0, time.monotonic() - self.status_at),
                     "ota": dict(self.job), "error": self.error, "results": list(self.results),
                     "occupancy": self._occupancy_list(),
+                    "occupancy_bridges": self.occupancy_bridge.snapshot() if getattr(self, "occupancy_bridge", None) else [],
                     "node_upload": {"in_flight": self.node_in_flight, "awaiting_status": self.node_awaiting_status}}
 
     def node_update(self, image):

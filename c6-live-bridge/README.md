@@ -690,3 +690,23 @@ discovers one diagnostic device. Broker outages do not block dashboard controls.
 `{"serial":123,"state":"occupied"}` (also `vacant` or `unavailable`). This
 updates the presence model only. Native LRF2 occupancy encoding/enrollment is
 unavailable and sends no occupancy RF packets.
+
+## Bridged occupancy sensors (0.25.0)
+
+A Home Assistant binary sensor can stand in for a Lutron Radio Powr Savr occupancy
+sensor. Add one entry per sensor to the add-on's `occupancy_bridges` option:
+
+```yaml
+occupancy_bridges:
+  - name: Hall motion
+    entity_id: binary_sensor.hall_motion_occupancy
+    serial: 0A1B2C3D          # the sensor serial activated on the Lutron processor
+    on_unavailable: hold      # or vacant, applied after 10 minutes unavailable
+```
+
+The serial must already be activated on the processor as an occupancy sensor; the app
+does not activate it. When the entity turns on or off, the CCA radio sends that sensor's
+occupied or vacant report (12 copies). The current state is repeated every 15 minutes.
+Changes are limited to one every 2 seconds per sensor. The entity is read once a second
+through the Home Assistant API, so a change is sent up to a second after it happens.
+The CCA expected MAC must be set, as for any other CCA command. Up to 16 entries.

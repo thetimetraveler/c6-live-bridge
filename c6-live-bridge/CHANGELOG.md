@@ -1,3 +1,9 @@
+## 0.25.0
+
+- Bridge a Home Assistant binary sensor to a Lutron occupancy sensor. Each entry in the new `occupancy_bridges` option names an entity and the serial of a sensor already activated on the Lutron processor; the CCA radio then sends that sensor's occupied and vacant reports as the entity changes, and repeats the current state every 15 minutes as real sensors do.
+- A change is sent at most once every 2 seconds per sensor, and a refused command is retried with the state current at that moment. `on_unavailable` chooses what happens when the entity has been unavailable for 10 minutes: `hold` (default) or `vacant`.
+- The entity is read once a second. This update requires no gateway or C6 firmware changes.
+
 ## 0.24.0
 
 - Add Lutron occupancy sensors. A sensor heard by the CCA radio appears in Home Assistant as an occupancy binary sensor on the CCX Bridge CCA device, and in a new **Occupancy sensors** card. Received sensor packets read "occupied" or "vacant" in the activity list.

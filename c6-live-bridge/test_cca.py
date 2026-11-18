@@ -359,6 +359,28 @@ class OccupancyTests(unittest.TestCase):
     STATUS_OCCUPIED = "89000a1b2c3e210e04000226030a1b2c3e004706fe008172"
     STATUS_VACANT = "89000a1b2c3f210e04000226000a1b2c3f004707ff007b42"
 
+    def test_encode(self):
+        import cca_occupancy
+        # Byte for byte the captured frames, apart from byte 1 (set by the radio node) and the CRC.
+        cases = ((self.OCCUPIED, True, "change", 2, "ff02"), (self.VACANT, False, "change", 3, "ff02"),
+                 (self.STATUS_OCCUPIED, True, "status", 1, "fe00"), (self.STATUS_VACANT, False, "status", 1, "ff00"))
+        for raw, occupied, report, event, tail in cases:
+            serial = int(raw[4:12], 16)
+            out = cca_occupancy.encode(serial, occupied, report, event, bytes.fromhex(tail))
+            self.assertEqual(out, raw[:2] + "00" + raw[4:-4])
+            self.assertEqual(cca_occupancy.decode(out), {"serial": serial, "occupied": occupied, "report": report})
+        self.assertEqual(cca_occupancy.encode(1, True, event=4)[:2], "88")
+        for args in ((0, True), (1 << 32, True), (True, True), (1, 1), (1, True, "other"), (1, True, "change", -1), (1, True, "change", 0, b"\x00")):
+            with self.assertRaises(ValueError): cca_occupancy.encode(*args)
+
+    def test_encode_announce(self):
+        import cca_occupancy
+        # Shape of the announce captured during an RA3 sensor activation; serial replaced.
+        self.assertEqual(cca_occupancy.encode_announce(0x0a1b2c3d),
+            "ba000a1b2c3d212100ffffffffff0d050a1b2c3d0a1b2c3d00000000070000060801010000ffffffff" + "cc" * 10)
+        self.assertEqual(len(cca_occupancy.encode_announce(1)), 51 * 2)
+        with self.assertRaises(ValueError): cca_occupancy.encode_announce(0)
+
     def test_decode(self):
         import cca_occupancy
         self.assertEqual(cca_occupancy.decode(self.OCCUPIED), {"serial": 0x0a1b2c3d, "occupied": True, "report": "change"})

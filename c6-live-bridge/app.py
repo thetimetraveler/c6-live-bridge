@@ -1956,6 +1956,16 @@ def main():
     cca = CcaService(gateway)
     cca_mqtt = CcaMqtt(cca, lambda: mqtt_connect("ccx-bridge-cca", CcaMqtt.AVAILABILITY)) if supervisor_token else None
     cca.publisher = cca_mqtt
+    bridge = None
+    if supervisor_token:
+        import cca_occupancy_bridge
+        def entity_state(entity_id):
+            return json.loads(ha.request("GET", "/states/" + entity_id)).get("state")
+        try:
+            bridge = cca_occupancy_bridge.OccupancyBridge(cca, entity_state,
+                cca_occupancy_bridge.mappings(options.get("occupancy_bridges")), Path("/data/cca-occupancy-bridge.json"))
+        except ValueError as exc: logging.error("occupancy bridges disabled: %s", exc)
+    cca.occupancy_bridge = bridge
     ccx.cca = cca
     panel.cca = cca
     panel.sidecar.feed = ccx
@@ -1968,6 +1978,7 @@ def main():
         cca_mqtt.start()
     cca.start()
     ccx.start()
+    if bridge: bridge.start()
     sensors = sensor_thread = None
     if options.get("show_sensors", True) is True and supervisor_token:
         def connect():
@@ -1980,6 +1991,7 @@ def main():
         panel.stop.set()
         ccx.stop()
         cca.stop()
+        if bridge: bridge.stop()
         if cca_mqtt:
             cca_mqtt.stop()
         if ccx_publisher:

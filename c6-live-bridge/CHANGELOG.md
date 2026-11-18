@@ -1,3 +1,7 @@
+## 0.25.3
+
+- CCA activity shows the level and status-table entry for replies to a recently observed broadcast status poll.
+
 ## 0.25.2
 
 - Bridged occupancy reports no longer re-read the CCA radio's status before each send. They rely on the status the app read within the last 15 seconds (it reads every 3), and read it afresh only when that is older. Other CCA commands are unchanged.

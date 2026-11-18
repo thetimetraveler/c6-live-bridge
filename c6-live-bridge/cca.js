@@ -15,9 +15,11 @@ var CCAUI = (() => {
   const descriptor = name => commands().find(c => c.name === name);
   const addressFields = ['device_id', 'target_id', 'subnet'];
   const maxRows = 500;
+  const pollTail = [0,0x21,0x0a,0,0xff,0xff,0xff,0xff,0xff,9,6,0,0,0xcc,0xcc,0xcc,0xcc];
   const nodeMac = '10:bd:a3:b1:5b:1c', nodeMin = 8192, nodeMax = 1048576, hashPattern = /^[0-9a-f]{64}$/i;
   let capabilities = null, config = null, status = null, statusAt = 0, ota = null;
   let boot = null, cursor = 0, rows = [], keys = new Set(), stream = {}, lost = 0;
+  let lastPoll = null, pollAnswers = new WeakMap();
   // Rows the user has expanded, kept across re-renders so new packets do not collapse them.
   const openEvents = new Set(), eventListeners = [];
   let activeReceipt = null, formInputs = new Map(), presetDrafts = [];
@@ -194,6 +196,27 @@ var CCAUI = (() => {
       activeReceipt.feedback = {stage:'unknown',reason:'stream or node restarted before the final result'};
     showReceipt();
   }
+  // A poll answer has no sender or command of its own. Match it only to a
+  // nearby verified RX or successful TX poll, on this node and boot.
+  function observePoll(e) {
+    if (!['cca.rx','cca.tx'].includes(e.kind)) return;
+    if (!Number.isSafeInteger(e.node_boot_id) || e.node_boot_id <= 0 ||
+        !Number.isInteger(e.at_ms) || e.at_ms < 0 || e.at_ms > 0xffffffff || e.truncated ||
+        typeof e.raw_hex !== 'string' || !/^(?:[0-9a-f]{2}){1,53}$/i.test(e.raw_hex)) {
+      lastPoll = null; return;
+    }
+    if (lastPoll && (e.node_boot_id !== lastPoll.boot || e.at_ms < lastPoll.at)) lastPoll = null;
+    const bytes = e.raw_hex.match(/../g).map(v => Number.parseInt(v,16));
+    if (bytes.length > 5) {
+      const broadcast = bytes.length === (e.kind === 'cca.tx' ? 22 : 24) && bytes[0] >= 0x80 && bytes[0] <= 0x83 &&
+        bytes[2] === 0xa1 && pollTail.every((b,i) => bytes[i+5] === b);
+      lastPoll = broadcast && (e.kind === 'cca.tx' || e.crc_valid === true) ? {bytes, boot:e.node_boot_id, at:e.at_ms} : null;
+    } else if (bytes.length === 5 && e.kind === 'cca.rx' && bytes[0] >= 0x15 && bytes[0] <= 0x17 && lastPoll && e.at_ms - lastPoll.at < 300 &&
+               typeof CCAProtocol !== 'undefined') {
+      const said = CCAProtocol.describeShortAck(bytes, lastPoll.bytes);
+      if (said) pollAnswers.set(e, said);
+    } else if (e.kind === 'cca.tx') lastPoll = null;
+  }
   function eventView(data) {
     if (!data || !Array.isArray(data.events)) throw Error('Invalid CCA activity response');
     const nextBoot = data.boot_id ?? null;
@@ -201,14 +224,26 @@ var CCAUI = (() => {
     if (nextBoot !== boot || data.reset === true || rewound) {
       if (boot !== null) invalidateReceipt();
       boot = nextBoot; cursor = 0; rows = []; keys.clear(); openEvents.clear(); lost = 0;
+      lastPoll = null; pollAnswers = new WeakMap(); stream = {};
     }
+    // Loss can be anywhere in a page. Place it by missing IDs where possible.
+    let previous = cursor, missing = 0;
+    for (const e of data.events) if (Number.isInteger(e?.id) && e.id > previous) {
+      missing += e.id - previous - 1; previous = e.id;
+    }
+    if (data.cursor > previous) missing += data.cursor - previous;
+    if (data.lost > missing || data.stream?.missed - (stream.missed || 0) > missing ||
+        data.stream?.reconnects > (stream.reconnects || 0)) lastPoll = null;
     for (const e of data.events) {
-      if (!e || !Number.isInteger(e.id) || e.id < 0) continue;
+      if (!e || !Number.isInteger(e.id) || e.id < 0) { lastPoll = null; continue; }
       const key = String(boot) + ':' + e.id;
       if (keys.has(key)) continue;
+      if (e.id !== cursor + 1 || e.kind === 'cca.stream_gap') lastPoll = null;
+      if (e.id > cursor) observePoll(e);
       keys.add(key); rows.push(e); cursor = Math.max(cursor, e.id); updateReceipt(e);
     }
-    if (Number.isInteger(data.cursor) && data.cursor >= 0) cursor = Math.max(cursor, data.cursor);
+    if (Number.isInteger(data.cursor) && data.cursor > cursor) { lastPoll = null; cursor = data.cursor; }
+    if (data.stream?.state && data.stream.state !== 'online') lastPoll = null;
     if (rows.length > maxRows) { rows = rows.slice(-maxRows); keys = new Set(rows.map(e => String(boot) + ':' + e.id)); for (const k of openEvents) if (!keys.has(k)) openEvents.delete(k); }
     stream = data.stream || {}; lost += Math.max(0,Number(data.lost) || 0);
     const state = stream.state || 'connecting';
@@ -276,6 +311,10 @@ var CCAUI = (() => {
     }
     packet.undecoded_bytes = Object.fromEntries(hex.map((v,i) => [i,v]).filter(([i]) => !covered.has(i)));
     if (info.category === 'ACK') packet.check = bytes.length === 5 ? 'ACK check valid' : 'ACK prefix check valid; trailing bytes unclassified';
+    if (pollAnswers.has(e)) {
+      packet.poll_answer = pollAnswers.get(e);
+      packet.poll_note = 'Entry is in the poll table; it is not a runtime link or device identity.';
+    }
     if (info.typeName === 'SENSOR_VACANT') packet.type = 'BUTTON_SENSOR_FORMAT_0C';
     if (info.category === 'SENSOR') packet.description = 'Sensor RF packet; occupancy state is not inferred.';
     if (info.category === 'SENSOR') packet.note = 'Sensor flags are raw values; occupied/vacant meanings are not established for every frame.';
@@ -296,7 +335,7 @@ var CCAUI = (() => {
         packet?.serial !== undefined ? 'serial ' + packet.serial : '',
         packet && e.cmd && e.cmd !== 'unknown' ? 'command ' + e.cmd : '', e.request_id ? 'request ' + e.request_id : '',
         e.stage, Number.isFinite(e.at_ms) ? 'node uptime ' + e.at_ms + ' ms' : '',
-        e.rssi !== undefined ? 'RSSI ' + e.rssi : '', packet?.check,
+        e.rssi !== undefined ? 'RSSI ' + e.rssi : '', packet?.check, packet?.poll_answer ? 'Poll answer ' + packet.poll_answer : '',
         e.crc_valid === true && packet?.category !== 'ACK' ? 'CRC valid' : e.crc_valid === false ? 'CRC invalid' : ''];
       if (e.kind === 'cca.feedback' || e.kind === 'cca.feedback_mapping') {
         if (e.serial !== undefined) parts.push(e.serial === 0 && e.kind === 'cca.feedback' ? 'overall' : 'serial ' + display(e.serial));

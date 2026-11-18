@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./cca-decoder.js', import.meta.url), 'utf8'
 const context = vm.createContext({});
 vm.runInContext(source, context);
 const decoder = context.CCAProtocol;
-assert.deepEqual(Object.keys(decoder).sort(), ['identifyPacket', 'parseFieldValue']);
+assert.deepEqual(Object.keys(decoder).sort(), ['describeShortAck', 'identifyPacket', 'parseFieldValue']);
 
 // Synthetic/redacted sensor frame with a valid CRC-16/CA0F trailer.
 const frame = Buffer.from('8800deadbeef210e0400022600deadbeef004707ff005574', 'hex');
@@ -30,4 +30,7 @@ assert.equal(parsed.decoded, null);
 assert.equal(decoder.identifyPacket([0x07, 0x05, 0xcb, 0x2d, 0xf7]).typeName, 'ACK_07');
 assert.equal(decoder.identifyPacket([0x07, 0x05, 0xcb, 0x2d, 0xf6]).typeName, '0x07');
 assert.equal(decoder.identifyPacket(Buffer.from('072831000d617c614c3924fa', 'hex')).typeName, 'ACK_07');
+const poll = Buffer.from('8101a1123400210a00ffffffffff09060000cccccccc59e8', 'hex');
+assert.equal(decoder.describeShortAck(Buffer.from('17023d8498','hex'), poll), 'level=24% entry=5');
+assert.equal(decoder.describeShortAck(Buffer.from('17023d8499','hex'), poll), undefined);
 console.log('CCA decoder bundle tests passed');

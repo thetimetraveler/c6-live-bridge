@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const addonRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sourceRoot = path.resolve(process.argv[2] || path.join(addonRoot, '..'));
 const esbuild = createRequire(path.join(sourceRoot, 'package.json'))('esbuild');
-const entry = 'export { identifyPacket, parseFieldValue } from "./protocol/protocol-ui.ts";';
+const entry = 'export { describeShortAck, identifyPacket, parseFieldValue } from "./protocol/protocol-ui.ts";';
 const result = await esbuild.build({
   absWorkingDir: sourceRoot,
   stdin: { contents: entry, resolveDir: sourceRoot, loader: 'ts' },

@@ -224,6 +224,64 @@ assert.deepEqual(plain(t.state().rows.find(e=>e.id===3)),sensor,'decoding leaves
 t.setConfig(packetConfig);
 get('target-select').value=packetTarget; get('target-select').dispatch('change');
 
+// Poll answers use a nearby received poll, with no sender or runtime link implied.
+const poll81 = '8101a1123400210a00ffffffffff09060000cccccccc59e8';
+const poll82 = '8201a1123400210a00ffffffffff09060000ccccccccdc6b';
+const receivedPoll = (id=1, overrides={}) => ({id,kind:'cca.rx',node_boot_id:4,at_ms:1000,crc_valid:true,raw_hex:poll81,...overrides});
+const reply = (id=2, overrides={}) => ({id,kind:'cca.rx',node_boot_id:4,at_ms:1050,crc_valid:false,raw_hex:'17023d8498',...overrides});
+let pollBoot = 100;
+function viewPoll(events, extra={}) {
+  t.eventView({boot_id:pollBoot++,cursor:events.at(-1)?.id || 0,events,stream:{state:'online'},...extra});
+  return text(get('events'));
+}
+for (const raw_hex of [poll81,poll82]) {
+  const view = viewPoll([receivedPoll(1,{raw_hex}),reply()]);
+  assert.match(view,/Poll answer level=24% entry=5/,'a verified relay is decoded');
+  assert.match(view,/not a runtime link or device identity/);
+}
+assert.match(viewPoll([receivedPoll(1,{kind:'cca.tx',crc_valid:null,raw_hex:poll81.slice(0,44)}),reply()]),/Poll answer level=24% entry=5/,'successful TX poll is a source');
+let pollView = viewPoll([receivedPoll(),reply(),reply(3,{at_ms:1100,raw_hex:'16040a48a0'}),
+  reply(4,{at_ms:1200,raw_hex:'1526fefe4a'})]);
+assert.match(pollView,/level=4% entry=10/); assert.match(pollView,/level=100% entry=6/);
+get('events-filter').value='entry=10'; get('events-filter').dispatch('input');
+assert.equal(get('events').children.length,1,'poll answers are searchable');
+get('events-filter').value=''; get('events-filter').dispatch('input');
+assert.equal(t.state().rows[1].raw_hex,'17023d8498','raw events remain unchanged');
+for (const [name, events, extra] of [
+  ['no poll',[reply()],{}], ['unverified poll',[receivedPoll(1,{crc_valid:false}),reply()],{}],
+  ['TX with CRC bytes',[receivedPoll(1,{kind:'cca.tx'}),reply()],{}], ['other boot',[receivedPoll(),reply(2,{node_boot_id:5})],{}],
+  ['missing boot',[receivedPoll(),reply(2,{node_boot_id:undefined})],{}], ['missing time',[receivedPoll(),reply(2,{at_ms:undefined})],{}],
+  ['older timestamp',[receivedPoll(),reply(2,{at_ms:999})],{}], ['stale poll',[receivedPoll(),reply(2,{at_ms:1300})],{}],
+  ['invalid check',[receivedPoll(),reply(2,{raw_hex:'17023d8499'})],{}], ['truncated reply',[receivedPoll(),reply(2,{truncated:true})],{}],
+  ['non-broadcast',[receivedPoll(1,{raw_hex:poll81.replace('ffffffffff','ff00ffffff')}),reply()],{}],
+  ['intervening frame',[receivedPoll(),{...sensor,id:2,node_boot_id:4,at_ms:1020},reply(3)],{}],
+  ['unknown long low type',[receivedPoll(),reply(2,{raw_hex:'300102030405'}),reply(3)],{}], ['missing event',[receivedPoll(),reply(3)],{}],
+  ['gap event',[receivedPoll(),{id:2,kind:'cca.stream_gap'},reply(3)],{}],
+]) assert.doesNotMatch(viewPoll(events,extra),/Poll answer level=/,name);
+for (const offset of [2,5,8,18,19,20,21]) {
+  const b=Buffer.from(poll81,'hex'); b[offset]^=1;
+  assert.doesNotMatch(viewPoll([receivedPoll(1,{raw_hex:b.toString('hex')}),reply()]),/Poll answer level=/,'canonical poll byte '+offset);
+}
+pollView = viewPoll([receivedPoll(),reply(3),receivedPoll(4,{at_ms:1100,raw_hex:poll82}),reply(5,{at_ms:1150})]);
+assert.equal((pollView.match(/Poll answer level=/g) || []).length,1,'a new poll after a located gap can be decoded');
+pollView = viewPoll([receivedPoll(),reply(2,{raw_hex:'17023d8498aabb'}),reply(3)]);
+assert.match(pollView,/ACK prefix check valid; trailing bytes unclassified/);
+assert.doesNotMatch(pollView,/Poll answer level=/,'long frames cannot be poll replies and clear the poll');
+assert.match(viewPoll([receivedPoll(),reply()],{lost:1}),/Poll answer level=/,'a new poll establishes context after unlocated loss');
+viewPoll([receivedPoll()]);
+t.eventView({boot_id:pollBoot-1,after:1,cursor:2,events:[reply()],stream:{state:'online'}});
+assert.match(text(get('events')),/Poll answer level=24% entry=5/,'correlation survives a clean fetch boundary');
+viewPoll([receivedPoll()]);
+t.eventView({boot_id:pollBoot-1,after:1,cursor:4,lost:1,events:[reply(),{id:4,kind:'cca.command'}],stream:{state:'online'}});
+assert.match(text(get('events')),/Poll answer level=24% entry=5/,'a later page gap does not erase a contiguous reply');
+viewPoll([receivedPoll()]);
+t.eventView({boot_id:pollBoot-1,after:1,cursor:2,lost:1,events:[reply()],stream:{state:'online'}});
+assert.doesNotMatch(text(get('events')),/Poll answer level=/,'unlocated loss clears the previous poll');
+viewPoll([receivedPoll()]);
+t.eventView({boot_id:pollBoot-1,after:1,cursor:2,lost:1,events:[],stream:{state:'online',missed:1}});
+t.eventView({boot_id:pollBoot-1,after:2,cursor:3,events:[reply(3)],stream:{state:'online',missed:1}});
+assert.doesNotMatch(text(get('events')),/Poll answer level=/,'cursor advance without events ends the correlation');
+
 // Presence uses the state endpoint and a copyable HA MQTT automation; no RF encoding claim.
 get('presence-serial').value='0x1234'; get('presence-serial').dispatch('input');
 get('presence-state').value='occupied'; await get('presence-send').click();

@@ -1,3 +1,7 @@
+## 0.25.1
+
+- Faster bridged occupancy. An `occupancy_bridges` entry can name the sensor's own MQTT topic (`mqtt_topic`, for example `zigbee2mqtt/Hall motion`); the app then acts on the sensor's `{"occupancy": true|false}` message as it arrives instead of waiting for the once-a-second read, which stays as a safety net.
+
 ## 0.25.0
 
 - Bridge a Home Assistant binary sensor to a Lutron occupancy sensor. Each entry in the new `occupancy_bridges` option names an entity and the serial of a sensor already activated on the Lutron processor; the CCA radio then sends that sensor's occupied and vacant reports as the entity changes, and repeats the current state every 15 minutes as real sensors do.

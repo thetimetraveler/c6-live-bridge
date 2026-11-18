@@ -8,6 +8,7 @@ use. Frames go out through the gateway's raw CCA command.
 import json
 import logging
 import re
+import select
 import threading
 import time
 
@@ -25,7 +26,7 @@ def mappings(value):
     if not isinstance(value, list) or len(value) > MAX_BRIDGES: raise ValueError("occupancy_bridges must be a short list")
     result, serials, entities = [], set(), set()
     for item in value:
-        if not isinstance(item, dict) or not set(item) <= {"name", "entity_id", "serial", "on_unavailable"}:
+        if not isinstance(item, dict) or not set(item) <= {"name", "entity_id", "serial", "on_unavailable", "mqtt_topic"}:
             raise ValueError("invalid occupancy bridge")
         name, entity, serial = item.get("name"), item.get("entity_id"), item.get("serial")
         mode = item.get("on_unavailable", "hold")
@@ -33,10 +34,13 @@ def mappings(value):
         if not isinstance(entity, str) or not ENTITY.fullmatch(entity): raise ValueError("invalid occupancy bridge entity_id")
         if not isinstance(serial, str) or not SERIAL.fullmatch(serial) or not int(serial, 16): raise ValueError("invalid occupancy bridge serial")
         if mode not in ("hold", "vacant"): raise ValueError("invalid occupancy bridge on_unavailable")
+        topic = item.get("mqtt_topic") or None
+        if topic is not None and (not isinstance(topic, str) or len(topic) > 200 or any(c in topic for c in "#+\0")):
+            raise ValueError("invalid occupancy bridge mqtt_topic")
         number = int(serial, 16)
         if number in serials or entity in entities: raise ValueError("duplicate occupancy bridge")
         serials.add(number); entities.add(entity)
-        result.append({"name": name, "entity_id": entity, "serial": number, "on_unavailable": mode})
+        result.append({"name": name, "entity_id": entity, "serial": number, "on_unavailable": mode, "mqtt_topic": topic})
     return result
 
 
@@ -48,9 +52,10 @@ class OccupancyBridge:
     UNAVAILABLE_S = 600.0
     REPEAT = 12
 
-    def __init__(self, service, read_state, bridges, path=None, clock=time.monotonic):
+    def __init__(self, service, read_state, bridges, path=None, clock=time.monotonic, connect=None):
         self.service, self.read_state, self.path, self.clock = service, read_state, path, clock
         self.lock, self.stop_event, self.thread = threading.Lock(), threading.Event(), None
+        self.connect, self.listener, self.pushes = connect, None, 0
         saved = self._load()
         self.items = []
         for bridge in bridges:
@@ -113,14 +118,51 @@ class OccupancyBridge:
                     try: self.step(item, source, self.clock())
                     except Exception: LOG.exception("occupancy bridge step failed")
 
+    def offer(self, topic, raw):
+        """A sensor's own MQTT state message ({"occupancy": true|false}); acted on at once."""
+        try: value = json.loads(raw)
+        except (ValueError, UnicodeDecodeError): return
+        occupancy = value.get("occupancy") if isinstance(value, dict) else None
+        if not isinstance(occupancy, bool): return
+        for item in self.items:
+            if item["mqtt_topic"] == topic:
+                with self.lock:
+                    self.pushes += 1
+                    try: self.step(item, "on" if occupancy else "off", self.clock())
+                    except Exception: LOG.exception("occupancy bridge step failed")
+
+    def listen(self):
+        """Subscribe to the mapped sensors' MQTT topics; the once-a-second read stays as the safety net."""
+        topics = sorted({i["mqtt_topic"] for i in self.items if i["mqtt_topic"]})
+        retry = 1
+        while topics and not self.stop_event.is_set():
+            client = None
+            try:
+                client = self.connect()
+                for topic in topics: client.subscribe(topic)
+                retry = 1
+                while not self.stop_event.is_set():
+                    select.select([client.sock], [], [], 1.0)
+                    for topic, raw, _retained in client.service(): self.offer(topic, raw)
+            except (OSError, ConnectionError, ValueError) as exc:
+                LOG.warning("occupancy bridge MQTT unavailable: %s", exc)
+            finally:
+                if client:
+                    try: client.close()
+                    except Exception: pass
+            self.stop_event.wait(retry); retry = min(retry * 2, 30)
+
     def start(self):
         if self.items and not self.thread:
             self.thread = threading.Thread(target=self.run, name="occupancy-bridge", daemon=True)
             self.thread.start()
+            if self.connect and any(i["mqtt_topic"] for i in self.items):
+                self.listener = threading.Thread(target=self.listen, name="occupancy-bridge-mqtt", daemon=True)
+                self.listener.start()
 
     def stop(self): self.stop_event.set()
 
     def snapshot(self):
         with self.lock:
             return [{"name": i["name"], "entity_id": i["entity_id"], "serial": i["serial"], "source": i["source"],
-                     "occupied": i["sent"], "sends": i["sends"], "error": i["error"]} for i in self.items]
+                     "occupied": i["sent"], "sends": i["sends"], "error": i["error"], "mqtt_topic": i["mqtt_topic"]} for i in self.items]

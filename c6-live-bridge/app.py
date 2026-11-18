@@ -1963,7 +1963,8 @@ def main():
             return json.loads(ha.request("GET", "/states/" + entity_id)).get("state")
         try:
             bridge = cca_occupancy_bridge.OccupancyBridge(cca, entity_state,
-                cca_occupancy_bridge.mappings(options.get("occupancy_bridges")), Path("/data/cca-occupancy-bridge.json"))
+                cca_occupancy_bridge.mappings(options.get("occupancy_bridges")), Path("/data/cca-occupancy-bridge.json"),
+                connect=lambda: mqtt_connect("ccx-bridge-occupancy", "ccx_bridge/occupancy_bridge/availability"))
         except ValueError as exc: logging.error("occupancy bridges disabled: %s", exc)
     cca.occupancy_bridge = bridge
     ccx.cca = cca

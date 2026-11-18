@@ -28,11 +28,24 @@ class BridgeTests(unittest.TestCase):
 
     def test_mappings(self):
         self.assertEqual(ob.mappings(None), [])
-        self.assertEqual(ob.mappings(self.MAP), [{"name": "Test", "entity_id": "binary_sensor.motion", "serial": 0x0a1b2c3d, "on_unavailable": "hold"}])
+        self.assertEqual(ob.mappings(self.MAP), [{"name": "Test", "entity_id": "binary_sensor.motion", "serial": 0x0a1b2c3d, "on_unavailable": "hold", "mqtt_topic": None}])
         bad = ([{}], [dict(self.MAP[0], serial="00000000")], [dict(self.MAP[0], entity_id="light.x")], [dict(self.MAP[0], extra=1)],
                [dict(self.MAP[0], on_unavailable="occupied")], self.MAP * 2, "x", [dict(self.MAP[0], name="")])
         for value in bad:
             with self.assertRaises(ValueError): ob.mappings(value)
+
+    def test_mqtt_push(self):
+        service = Service()
+        bridge = ob.OccupancyBridge(service, lambda e: None, ob.mappings([dict(self.MAP[0], mqtt_topic="zigbee2mqtt/Hall motion")]), clock=lambda: 5.0)
+        for raw in (b"not json", b"[]", b'{"occupancy":"yes"}', b'{"battery":90}'): bridge.offer("zigbee2mqtt/Hall motion", raw)
+        bridge.offer("zigbee2mqtt/Other", b'{"occupancy":true}')
+        self.assertEqual(service.sent, [])
+        bridge.offer("zigbee2mqtt/Hall motion", b'{"occupancy":true,"battery":90}')
+        bridge.step(bridge.items[0], "off", 5.5)        # stale read just after the push: held by the minimum gap
+        bridge.step(bridge.items[0], "on", 8)
+        self.assertEqual(decoded(service), [(True, "change", "89")])
+        for topic in ("a/#", "a/+/b", "x" * 201):
+            with self.assertRaises(ValueError): ob.mappings([dict(self.MAP[0], mqtt_topic=topic)])
 
     def test_changes_and_status(self):
         service, bridge, item = self.make()

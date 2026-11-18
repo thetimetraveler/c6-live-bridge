@@ -702,6 +702,7 @@ occupancy_bridges:
     entity_id: binary_sensor.hall_motion_occupancy
     serial: 0A1B2C3D          # the sensor serial activated on the Lutron processor
     on_unavailable: hold      # or vacant, applied after 10 minutes unavailable
+    mqtt_topic: zigbee2mqtt/Hall motion   # optional: act on the sensor's own message at once
 ```
 
 The serial must already be activated on the processor as an occupancy sensor; the app

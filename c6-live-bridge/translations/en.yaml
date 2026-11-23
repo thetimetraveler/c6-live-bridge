@@ -11,3 +11,18 @@ configuration:
   show_sensors:
     name: Show sensors
     description: Publish each bridged zone's active Natural Show, show target, requested color temperature and brightness, and confirmed brightness, plus the gateway's lighting output and Zigbee member link, to Home Assistant through MQTT discovery. Needs an MQTT broker app such as Mosquitto.
+  n4_fallback:
+    name: App fallback through N4
+    description: "auto: while the gateway has been unreachable for two minutes, the app sends each bridged Lutron zone's state to its Ketra N4 group, and stops as soon as the gateway answers. off: never. force: always, whatever the gateway does; use it only while the gateway is powered off. Needs the N4 address and password below."
+  n4_host:
+    name: Ketra N4 hub address
+    description: IP address or host name of the Ketra N4 hub (for example 192.168.1.50). Leave empty to keep the fallback unconfigured.
+  n4_password:
+    name: Ketra N4 access token
+    description: The Ketra access token the hub's local API accepts as its password. It stays inside the add-on and is never logged.
+  n4_verify_tls:
+    name: Verify the hub's certificate
+    description: Check the hub's certificate against the Ketra device root. The host name is not checked, because the hub's certificate names its serial number. Turn off only if the hub presents a different certificate.
+  n4_seed_zones:
+    name: Fallback zones (seed)
+    description: "Zones the app may drive before the gateway has ever reported its mapping, one row each: zone_id (Lutron zone), name, n4_group (N4 group name or ID) and warm_dim_curve (0 default, 1 halogen, 2 Finiré 2700, 3 Finiré 3000, 4 generic daylight, 254 none). A row is ignored once the gateway has reported that zone."

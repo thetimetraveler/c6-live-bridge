@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import select
 import socket
+import sys
 import threading
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit
@@ -22,6 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ccx_events import CcxEventPublisher, CcxFeed
 from cca import CcaError, CcaService, MAX_BODY as MAX_CCA_BODY, MAX_NODE_IMAGE
 from cca_mqtt import CcaMqtt
+import n4_fallback
 
 LOG = logging.getLogger("c6-management")
 MAX_RESPONSE = 1_048_576
@@ -82,6 +84,7 @@ HA_TEMPLATE = """{%- set ns = namespace(lights=[]) -%}
 {%- set ns.lights = ns.lights + [{"entity_id": eid, "integration": integration,
   "name": state_attr(eid, 'friendly_name'), "state": states(eid),
   "brightness": state_attr(eid, 'brightness'), "color_temp_kelvin": state_attr(eid, 'color_temp_kelvin'),
+  "color_mode": state_attr(eid, 'color_mode'), "hs_color": state_attr(eid, 'hs_color'), "xy_color": state_attr(eid, 'xy_color'),
   "area": area_name(eid), "device_id": dev, "zone_id": state_attr(eid, 'zone_id'),
   "device": (device_attr(dev, 'name_by_user') or device_attr(dev, 'name')) if dev else none,
   "serial": device_attr(dev, 'serial_number') if dev else none,
@@ -145,6 +148,8 @@ class Gateway:
         self.scheme, self.hostname, self.port = parts.scheme, parts.hostname, parts.port
         self.token, self.timeout = token, timeout
         self.retry_after = 0
+        # Reachability observers (the N4 fallback): any HTTP response, or a request that got none.
+        self.on_response = self.on_failure = None
 
     def request(self, path, method="GET", body=None, content_type=None, timeout=None):
         conn_cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
@@ -159,8 +164,15 @@ class Gateway:
             if path in ("/api/endpoint/update", "/api/zigbee/update", "/api/sidecar/update", "/api/cca/node-update"):
                 headers["X-SHA256"] = hashlib.sha256(body).hexdigest()
         try:
-            conn.request(method, path, body=body, headers=headers)
-            response = conn.getresponse()
+            try:
+                conn.request(method, path, body=body, headers=headers)
+                response = conn.getresponse()
+            except (OSError, http.client.HTTPException):
+                if self.on_failure:
+                    self.on_failure()
+                raise
+            if self.on_response:
+                self.on_response(response.status)
             retry = response.getheader("Retry-After", "0")
             self.retry_after = min(300, int(retry)) if retry.isdecimal() else 0
             raw = response.read(MAX_RESPONSE + 1)
@@ -340,10 +352,16 @@ class HomeAssistant:
             return None
         brightness, kelvin, serial = item.get("brightness"), item.get("color_temp_kelvin"), item.get("serial")
         zone = item.get("zone_id")
+        def pair(value, maximum):
+            ok = isinstance(value, (list, tuple)) and len(value) == 2 and all(type(v) in (int, float) and 0 <= v <= maximum for v in value)
+            return [float(v) for v in value] if ok else None
         return {"entity_id": item["entity_id"][:255], "integration": clean_text(item.get("integration"), 64),
                 "name": clean_text(item.get("name")), "state": clean_text(item.get("state"), 32),
                 "brightness": brightness if type(brightness) is int and 0 <= brightness <= 255 else None,
                 "color_temp_kelvin": kelvin if type(kelvin) in (int, float) and 1000 <= kelvin <= 20000 else None,
+                # Lutron reports hs alongside a colour temperature; color_mode says which one was commanded.
+                "color_mode": clean_text(item.get("color_mode"), 16), "hs_color": pair(item.get("hs_color"), 360),
+                "xy_color": pair(item.get("xy_color"), 1),
                 "area": clean_text(item.get("area")), "device_id": clean_text(item.get("device_id"), 64),
                 "device": clean_text(item.get("device")), "model": clean_text(item.get("model")),
                 "serial": clean_text(str(serial), 64) if type(serial) in (str, int) and serial != "" else None,
@@ -957,6 +975,39 @@ def zone_summary(zone, program, program_age_s, local_ms, light, uptime_ms, outpu
                 "age_s": None if program_age_s is None else round(program_age_s, 1)}}
 
 
+def fallback_status(panel):
+    """The app-side N4 fallback's state; a fixed "not configured" shape when it isn't running."""
+    fallback = getattr(panel, "fallback", None)
+    if fallback is not None:
+        return fallback.status()
+    return {"mode": "off", "configured": False, "engaged": False, "since": None, "reason": None, "blocked": None,
+            "n4": {"host": None, "reachable": None, "error": None, "checked_at": None, "hub": None},
+            "last_write": None, "writes": 0, "failures": 0, "pending": 0, "zones": [], "history": []}
+
+
+def fallback_zones(view, status, lights):
+    """Say in the zone view when the app, not the gateway, is driving a lamp."""
+    view["fallback"] = {k: status.get(k) for k in ("mode", "configured", "engaged", "since", "reason")}
+    if not status["engaged"]:
+        return view
+    driven = {z["zone_id"]: z for z in status["zones"]}
+    summaries = {s.get("zone_id"): s for s in view["zones"]}
+    for zone_id, zone in driven.items():
+        summary = summaries.get(zone_id)
+        if summary is None:
+            # After a restart with the gateway down there is no gateway zone list; show the cached or seeded zone.
+            row = {"zone_id": zone_id, "name": zone["name"], "n4_group": zone["n4_group"]}
+            summary = zone_summary(row, None, None, view.get("local_ms"), match_light(row, lights) if lights else None, None)
+            view["zones"].append(summary)
+        detail = (f"The gateway is unreachable, so the app is sending Lutron's state for this zone to N4 group {zone['n4_group']}."
+                  + (" It is following the cached Natural Show." if zone["show"] else "")
+                  + ("" if zone["entity_id"] else " No matching Lutron light was found in Home Assistant, so nothing is sent yet."))
+        summary["checks"] = [_check("fallback", "warn", "App fallback is driving this lamp", detail)]
+        summary["verdict"] = {"tone": "warn", "title": "App fallback: the app, not the gateway, is driving this lamp"}
+        summary["driver"] = "app"
+    return view
+
+
 def show_clock(gateway_zone, ha_time_zone, now):
     """Milliseconds since local midnight in the gateway's show time zone, and that zone's name."""
     # A known gateway rule is authoritative. Unknown rules must not silently
@@ -1010,11 +1061,15 @@ class Panel:
         self.legacy_index = 0
         # Programming reads for show sensors; off unless sensors are publishing.
         self.track_programs = False
+        # The N4 fallback caches programming for an outage, whoever else is asking.
+        self.keep_programs = False
         # The dashboard's zone view also needs programming; reads continue briefly after it stops asking.
         self.programs_wanted_until = 0.0
         self.program_due = 0
         self.zone_programs = {}
         self.program_attempts = {}
+        # The app-side N4 fallback, when configured.
+        self.fallback = None
 
     @staticmethod
     def result(value, code=200):
@@ -1128,7 +1183,7 @@ class Panel:
         try:
             now = time.monotonic()
             self.next_poll = now + 1
-            wanted = self.track_programs or now < self.programs_wanted_until
+            wanted = self.track_programs or self.keep_programs or now < self.programs_wanted_until
             program_zone = self._program_zone(now) if wanted and now >= self.program_due else None
             if self.cache and now >= self.config_due:
                 route, path = "config", "/api/config"
@@ -1577,7 +1632,41 @@ class ShowSensors:
         self.now = now or (lambda tz: datetime.now(tz))
         self.client, self.retry_at, self.failures = None, 0.0, 0
         self.discovered, self.published, self.available = {}, {}, None
+        self.fallback_due = 0.0
         self.stop = threading.Event()
+
+    FALLBACK_TOPIC = PREFIX + "/n4_fallback/state"
+
+    def publish_fallback(self):
+        """binary_sensor "CCX Bridge N4 fallback active": on while the app, not the gateway, drives the lamps.
+
+        The shared availability topic goes offline exactly when the gateway does, so this
+        sensor expires on its own instead and is refreshed every minute.
+        """
+        fallback = getattr(self.panel, "fallback", None)
+        if fallback is None:
+            return
+        if "fallback" not in self.discovered:
+            config = {"name": "N4 fallback active", "unique_id": f"{self.PREFIX}_n4_fallback_active", "state_topic": self.FALLBACK_TOPIC,
+                      "value_template": "{{ value_json.active }}", "device_class": "problem", "expire_after": 180,
+                      "json_attributes_topic": self.FALLBACK_TOPIC, "json_attributes_template": "{{ value_json.attributes | tojson }}",
+                      "device": {"identifiers": [f"{self.PREFIX}_app"], "name": "CCX Bridge", "manufacturer": "CCX Bridge",
+                                 "model": "Home Assistant app"},
+                      "origin": {"name": "CCX Bridge", "support_url": "https://github.com/thetimetraveler/c6-live-bridge"}}
+            self.client.publish(f"homeassistant/binary_sensor/{self.PREFIX}_app/n4_fallback_active/config",
+                                json.dumps(config, separators=(",", ":")), retain=True)
+            self.discovered["fallback"] = True
+        status = fallback.status()
+        since = datetime.fromtimestamp(status["since"], timezone.utc).isoformat(timespec="seconds") if status["since"] else None
+        payload = json.dumps({"active": "ON" if status["engaged"] else "OFF",
+                              "attributes": {"mode": status["mode"], "since": since, "reason": status["reason"],
+                                             "not_engaging": status["blocked"], "n4_reachable": status["n4"]["reachable"],
+                                             "zones": [z["name"] for z in status["zones"]]}},
+                             separators=(",", ":"), sort_keys=True)
+        if self.published.get("fallback") != payload or time.monotonic() >= self.fallback_due:
+            self.client.publish(self.FALLBACK_TOPIC, payload, retain=True)
+            self.published["fallback"] = payload
+            self.fallback_due = time.monotonic() + 60
 
     def local_ms(self, gateway_zone=None):
         return show_clock(gateway_zone, self.ha.time_zone, self.now)
@@ -1618,6 +1707,7 @@ class ShowSensors:
         self.client.publish(f"{self.PREFIX}/zone/{zone_id}/state", b"", retain=True)
 
     def publish(self):
+        self.publish_fallback()
         inputs = self.panel.show_inputs()
         available = inputs["age_s"] is not None and inputs["age_s"] <= SNAPSHOT_STALE_S
         local_ms, tz_name = self.local_ms(inputs.get("timezone"))
@@ -1634,7 +1724,7 @@ class ShowSensors:
         for zone in inputs["zones"]:
             if type(zone.get("zone_id")) is int and zone["zone_id"] > 0 and type(zone.get("serial")) is int and zone["serial"] > 0:
                 zones[zone["zone_id"]] = zone
-        for zone_id in [z for z in self.discovered if z != "gateway" and z not in zones]:
+        for zone_id in [z for z in self.discovered if z not in ("gateway", "fallback") and z not in zones]:
             self.remove(zone_id)
             del self.discovered[zone_id]
             self.published.pop(zone_id, None)
@@ -1773,7 +1863,13 @@ class Handler(BaseHTTPRequestHandler):
         if parts.path == "/api/zones":
             if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
             ha = self.server.ha
-            return self.reply(200, self.server.panel.zone_summaries(ha.snapshot(), lambda gz: show_clock(gz, ha.time_zone, datetime.now)))
+            snapshot = ha.snapshot()
+            view = self.server.panel.zone_summaries(snapshot, lambda gz: show_clock(gz, ha.time_zone, datetime.now))
+            lights = snapshot.get("lights") if isinstance(snapshot, dict) and snapshot.get("available") else None
+            return self.reply(200, fallback_zones(view, fallback_status(self.server.panel), lights))
+        if parts.path == "/api/n4":
+            if parts.query or parts.fragment: return self.reply(404, {"error": "unknown endpoint"})
+            return self.reply(200, fallback_status(self.server.panel))
         route = {"/api/status": "status", "/api/devices": "devices", "/api/config": "config", "/api/timezone": "timezone",
                  "/api/ketra": "ketra", "/api/ketra/native": "native", "/api/ccx/status": "ccx_status",
                  "/api/ccx/clock": "ccx_clock", "/api/ccx/rules": "ccx_rules", "/api/ccx/events": "ccx_events",
@@ -1967,6 +2063,20 @@ def main():
                 connect=lambda: mqtt_connect("ccx-bridge-occupancy", "ccx_bridge/occupancy_bridge/availability"))
         except ValueError as exc: logging.error("occupancy bridges disabled: %s", exc)
     cca.occupancy_bridge = bridge
+    # App-side N4 fallback. A missing or invalid N4 setting leaves it unconfigured; it never engages on a config error.
+    n4 = None
+    mode = options.get("n4_fallback", "auto")
+    if mode != "off" and options.get("n4_host") and options.get("n4_password"):
+        try:
+            n4 = n4_fallback.N4Client(options["n4_host"], options["n4_password"], options.get("n4_verify_tls", True) is not False)
+        except ValueError as exc: logging.error("N4 fallback disabled: %s", exc)
+    fallback = n4_fallback.N4Fallback(panel, ha, n4, mode, n4_fallback.seed_zones(options.get("n4_seed_zones")),
+                                      n4_fallback.FallbackCache("/data/n4-fallback.json"), lib=sys.modules[__name__],
+                                      clock=lambda gz: show_clock(gz, ha.time_zone, datetime.now), engage_after=SNAPSHOT_STALE_S)
+    if n4 and supervisor_token:
+        fallback.events = n4_fallback.HaEvents(supervisor_token, fallback.on_state, fallback.on_connect)
+    panel.fallback = fallback
+    gateway.on_response, gateway.on_failure = fallback.gateway_response, fallback.gateway_failure
     ccx.cca = cca
     panel.cca = cca
     panel.sidecar.feed = ccx
@@ -1980,6 +2090,7 @@ def main():
     cca.start()
     ccx.start()
     if bridge: bridge.start()
+    fallback.start()
     sensors = sensor_thread = None
     if options.get("show_sensors", True) is True and supervisor_token:
         def connect():
@@ -1990,6 +2101,7 @@ def main():
     try: server.serve_forever()
     finally:
         panel.stop.set()
+        fallback.close()
         ccx.stop()
         cca.stop()
         if bridge: bridge.stop()

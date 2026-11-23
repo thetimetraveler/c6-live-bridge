@@ -1,5 +1,5 @@
 name: CCX Bridge
-version: 0.25.3
+version: 0.26.0
 slug: c6-live-bridge
 url: https://github.com/thetimetraveler/c6-live-bridge
 description: Ingress dashboard for CCX and CCA bridge health, lighting, events, configuration, and device firmware
@@ -25,6 +25,11 @@ options:
     - lutron
   show_sensors: true
   occupancy_bridges: []
+  n4_fallback: auto
+  n4_host: ""
+  n4_password: ""
+  n4_verify_tls: true
+  n4_seed_zones: []
 schema:
   gateway_host: url
   gateway_token: password
@@ -37,3 +42,13 @@ schema:
       serial: match(^[0-9A-Fa-f]{8}$)
       on_unavailable: list(hold|vacant)?
       mqtt_topic: str?
+  n4_fallback: list(auto|off|force)
+  n4_host: str?
+  n4_password: password?
+  n4_verify_tls: bool
+  n4_seed_zones:
+    - zone_id: int(1,65535)
+      name: str
+      n4_group: str
+      warm_dim_curve: int(0,254)
+      serial: int?

@@ -1,3 +1,12 @@
+## 0.26.0
+
+- App fallback through N4. While the gateway has been unreachable for two minutes, the app drives the bridged Ketra lamps itself: it reads each mapped Lutron light from Home Assistant and writes the matching state to that zone's N4 group. It hands control back, and sends nothing more, as soon as the gateway answers any request. New options: `n4_fallback` (`auto`, `off` or `force`; default `auto`), `n4_host`, `n4_password`, `n4_verify_tls` and `n4_seed_zones`. Without `n4_host` and `n4_password` nothing changes.
+- The app takes over only when gateway requests get no answer at all. An answer of any kind, including 401, 403 or a server error, counts as the gateway being there. It does not take over if maintenance was active in the gateway's last status, and after handing back it waits five minutes of silence, not two, for the next half hour.
+- What is sent: off turns the group off; a reported colour temperature is sent with the level; a colour (hs) command is sent as Lutron's xy chromaticity; Lutron's "white" mode and level-only commands use the zone's warm-dim curve, computed as the gateway firmware does. A zone that was following a Natural Show keeps following it from the cached programming, re-applied every 30 seconds; a brightness-only change overrides the show's level, and any other Lutron command ends the show.
+- The last gateway zone mapping and each zone's programming are saved in `/data/n4-fallback.json`, so the fallback works after an app restart with the gateway already down. `n4_seed_zones` supplies zones the gateway has not reported yet.
+- Lutron state arrives over Home Assistant's websocket, with five-second polling while the websocket is down. Writes keep one pending state per N4 group (the newest wins), at most one write per group every 1.5 seconds, and retry with backoff.
+- Home lists "App fallback: driving N4 since …" under Needs attention, Devices has an **App fallback** card with the hub's reachability and the last write, each room card says when the app is driving its lamp, and `/api/zones` carries the same verdict. With show sensors on, Home Assistant gets a **CCX Bridge N4 fallback active** binary sensor.
+
 ## 0.25.3
 
 - CCA activity shows the level and status-table entry for replies to a recently observed broadcast status poll.

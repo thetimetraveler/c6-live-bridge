@@ -691,6 +691,104 @@ discovers one diagnostic device. Broker outages do not block dashboard controls.
 updates the presence model only. Native LRF2 occupancy encoding/enrollment is
 unavailable and sends no occupancy RF packets.
 
+## App fallback through N4 (0.26.0)
+
+The gateway normally owns the whole lamp path. While it is unreachable, the app
+can drive the bridged Ketra lamps itself through the Ketra N4 hub's local API,
+and hand control back when the gateway returns. This is for outages and
+hardware work on the gateway; it is not a second, parallel output.
+
+```yaml
+n4_fallback: auto            # auto | off | force
+n4_host: 192.168.1.50
+n4_password: "KETRA_ACCESS_TOKEN"
+n4_verify_tls: true
+n4_seed_zones:
+  - zone_id: 30861
+    name: Office lamp
+    n4_group: office
+    warm_dim_curve: 3
+```
+
+Without `n4_host` and `n4_password` the feature is unconfigured and never acts.
+The password is the Ketra access token the hub accepts over HTTP Basic; it stays
+in `/data/options.json` and is never logged or shown. Fallback writes go to the
+N4 hub only. Nothing is sent to the gateway, the endpoint or the CCX network.
+
+**Who drives the lamps.** In `auto` the app takes over only when all of these hold:
+
+- no gateway request has been answered for 120 seconds (300 seconds for the
+  30 minutes after a hand-back, so a flapping gateway doesn't pass control back and forth);
+- a gateway request failed without any HTTP answer in the last 90 seconds;
+- maintenance was not active in the gateway's last status, including the status
+  saved before an app restart;
+- at least one zone mapping is cached or seeded.
+
+Any HTTP answer from the gateway, whatever its status, counts as the gateway
+being there: a 401, 403 or 5xx never causes a takeover, and while the app is
+driving, the first answer releases control at once. Releasing drops every queued
+write. A write already on the wire at that instant may still complete; nothing is
+sent after it. `force` drives the lamps whatever the gateway does; use it only
+while the gateway is powered off. Every takeover and hand-back is logged with its reason.
+
+If the gateway is running but the Home Assistant host cannot reach it, both
+would write to the hub. Set `n4_fallback: off` if that can happen on your network.
+
+**Zones.** The app saves the gateway's last `/api/config` zone mapping, each
+zone's programming snapshot, the show time zone and the maintenance flag in
+`/data/n4-fallback.json`. `n4_seed_zones` supplies zones the gateway has not
+reported yet, for a first start with the gateway already down; a seed row is
+ignored once the gateway has reported that zone. `warm_dim_curve` uses the
+gateway's numbers: 0 default, 1 halogen, 2 Finiré 2700, 3 Finiré 3000,
+4 generic daylight, 254 none. Each zone is matched to its Lutron light by zone
+ID, then serial, then name.
+
+**Input.** Lutron keeps reporting a bridged zone's commanded level and colour
+while the bridge is down. The app subscribes to `state_changed` on Home
+Assistant's websocket through the Supervisor, reconnects with backoff, and reads
+the mapped lights every 5 seconds while the websocket is down. On takeover and
+on every reconnect it brings every mapped zone to Lutron's current state.
+
+**Output.** One `PUT /Groups/{group}/State` per change, in the gateway's body shape:
+
+| Lutron reports | Sent to the N4 group |
+|---|---|
+| off | `PowerOn: false` |
+| on, colour mode `color_temp` | level and that colour temperature |
+| on, colour mode `hs` | level and Lutron's `xy_color` as chromaticity, so a saturated colour stays saturated |
+| on, colour mode `white` | level and Lutron's warm-dim evaluation of the zone's curve |
+| on, level only | level and the zone's warm-dim curve; brightness only for curve 254 |
+| unavailable or unknown | nothing; the lamp is left alone |
+
+The warm-dim arithmetic is a port of the gateway firmware's and is tested
+against values from it. Each N4 group holds one pending state, so the newest
+command wins and a burst collapses to its last value. Writes to one group are at
+least 1.5 seconds apart (Ketra's documented limit) and any two writes 250 ms
+apart. A failed write retries after 1, 2, 4 … 30 seconds; a rejected token
+retries after 5 minutes.
+
+**Natural Show.** Home Assistant does not show a show being selected, so the
+app goes by the cached programming. A zone whose cached programming had a show
+selected, and whose Lutron state is at one of that show's keyframes, follows the
+show: the app evaluates it as the endpoint does and re-applies it every 30
+seconds. Lutron stepping to the next keyframe keeps the show. A brightness-only
+change overrides the show's level while its colour keeps running. A colour
+temperature, colour, warm-dim or off command ends the show. A show selected
+again while the gateway is down is not detected. Zones known only from the seed
+have no cached programming and never follow a show.
+
+**Where it shows.** Home lists "App fallback: driving N4 since …" under Needs
+attention. Devices has an **App fallback** card with the hub's reachability, who
+is driving the lamps and the last write. Each room card, and `/api/zones`, says
+when the app, not the gateway, is driving that lamp. `GET /api/n4` returns the
+full state. With show sensors enabled, MQTT discovery adds the binary sensor
+**CCX Bridge N4 fallback active** (`binary_sensor.ccx_bridge_n4_fallback_active`)
+with the reason and start time as attributes. It refreshes every minute and
+turns unavailable three minutes after the app stops.
+
+This is separate from the gateway's own **N4 fallback** from direct Zigbee,
+described above, which the gateway decides for itself.
+
 ## Bridged occupancy sensors (0.25.0)
 
 A Home Assistant binary sensor can stand in for a Lutron Radio Powr Savr occupancy

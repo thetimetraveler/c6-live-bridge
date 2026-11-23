@@ -11,3 +11,5 @@ options.json
 *.bin
 *.pem
 *.key
+# The Ketra device root CA is a public certificate the N4 fallback verifies the hub against.
+!c6-live-bridge/ketra-ca.pem

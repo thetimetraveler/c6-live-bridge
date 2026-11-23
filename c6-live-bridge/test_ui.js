@@ -629,7 +629,7 @@ const mappingChecks=`
   {const flagsText=text(view('dev-endpoint-flags'))+text(view('dev-gateway-flags'));
     if(!flagsText.includes('Thread endpoint: 3 damaged messages on its wired link')||!flagsText.includes('Gateway is close to its limit of network connections')||!flagsText.includes('Gateway restarted after a crash (panic)'))throw Error('cards hold their flagged readings as sentences: '+flagsText);
     if(/CRC|esp_|UART|Sockets in use/.test(att+flagsText))throw Error('raw field names stay inside All readings');}
-  {const order=view('health').children;if(order[0]!==view('dev-gateway')||order[1]!==view('dev-endpoint')||order.indexOf(view('dev-ketra'))<2||order.length!==6)throw Error('flagged cards sort first, then the fixed order');
+  {const order=view('health').children;if(order[0]!==view('dev-gateway')||order[1]!==view('dev-endpoint')||order.indexOf(view('dev-ketra'))<2||order.length!==7)throw Error('flagged cards sort first, then the fixed order');
     if(order.indexOf(view('zigbee-node-card'))>order.indexOf(view('dev-ketra')))throw Error('healthy cards keep the fixed order');}
   if(att.includes('Physical hold available'))throw Error('a build without a configured hold must not be flagged for it');
   if(!view('dev-endpoint-pill').className.includes('warn')||!view('dev-endpoint-pill').textContent.includes('1 to check')||!view('dev-ketra-pill').className.includes('good'))throw Error('a board with something flagged says so on its pill: '+view('dev-endpoint-pill').textContent);
@@ -852,10 +852,40 @@ const navChecks=`(async()=>{
 vm.createContext(context);
 await vm.runInContext(code+'\n'+checks+'\n'+mappingChecks,context,{timeout:2000});
 await vm.runInContext(navChecks,context,{timeout:2000});
+// App-side N4 fallback: the attention line, the Devices card and the room card.
+await vm.runInContext(`(async()=>{
+  const text=n=>typeof n==='string'?n:(n.textContent||'')+' '+(n.children||[]).map(text).join(' ');
+  const idle={mode:'auto',configured:true,engaged:false,since:null,reason:null,blocked:null,engage_after_s:120,n4:{host:'192.168.4.60',reachable:true,error:null,hub:{Name:'Home hub'}},last_write:null,writes:0,failures:0,zones:[{zone_id:30861,name:'Office lamp',n4_group:'office',entity_id:'light.office',program_cached:false}],history:[]};
+  health(status);const before=view('attention').children.length;
+  fallbackView(idle);
+  if(view('dev-n4app-pill').textContent!=='Standing by'||!text(view('dev-n4app-vitals')).includes('Reachable')||!text(view('dev-n4app-vitals')).includes('Gateway'))throw Error('an idle fallback shows the hub reachable and the gateway in control: '+text(view('dev-n4app-vitals')));
+  if(view('attention').children.length!==before||text(view('attention')).includes('App fallback'))throw Error('an idle fallback adds nothing to Needs attention');
+  const since=Date.now()/1000-600,engaged={...idle,engaged:true,since,reason:'the gateway has been unreachable for 120 s',writes:3,last_write:{at:since+5,zone_id:30861,group:'office',ok:false,error:'N4Error: HTTP 500',state:{PowerOn:false}}};
+  fallbackView(engaged);
+  const first=view('attention').children[0];
+  if(!text(first).includes('App fallback: driving N4 since ')||!text(first).includes('unreachable for 120 s')||view('attention-card').hidden)throw Error('an engaged fallback leads Needs attention: '+text(view('attention')));
+  if(view('attention').children.length!==before+1||!view('attention-count').textContent.startsWith(String(before+1)+' item'))throw Error('the fallback counts as one attention item');
+  health(status);fallbackView(engaged);
+  if(view('attention').children.filter(c=>text(c).includes('App fallback')).length!==1)throw Error('the fallback line is not duplicated by a refresh');
+  if(view('dev-n4app-pill').textContent!=='Driving lamps'||!view('dev-n4app-pill').className.includes('warn')||!text(view('dev-n4app-vitals')).includes('This app')||!text(view('dev-n4app-vitals')).includes('Failed')||!text(view('dev-n4app-vitals')).includes('HTTP 500'))throw Error('the Devices card shows who drives the lamps and the last write result: '+text(view('dev-n4app-vitals')));
+  if(!view('dev-n4app-note').textContent.includes('Control returns to the gateway'))throw Error('the card says control returns to the gateway');
+  // With the gateway down the room card still says the app is driving, not "comparison unavailable".
+  const zone={zone_id:30861,name:'Office lamp',n4_group:'office',driver:'app',lutron:null,sent:null,lamp:null,show:{status:'unknown'},output:'n4',stale_ms:120000,program:null,
+    checks:[{key:'fallback',status:'warn',title:'App fallback is driving this lamp',detail:'N4 group office'}],verdict:{tone:'warn',title:'App fallback: the app, not the gateway, is driving this lamp'}};
+  if(lampAssessment(zone,false).title!==zone.verdict.title||lampAssessment({...zone,driver:undefined},false).title!=='Current comparison unavailable')throw Error('a lamp the app drives says so');
+  zonesView({zones:[zone],monitoring:{age_s:999,delayed:true}},Date.now());
+  if(!text(view('zones')).includes('the app, not the gateway, is driving this lamp')||!text(view('zones')).includes('App fallback is driving this lamp'))throw Error('the room card shows the fallback verdict and check: '+text(view('zones')));
+  fallbackView({...idle,configured:false,mode:'auto',zones:[]});
+  if(view('dev-n4app-pill').textContent!=='Not set up'||!view('dev-n4app-note').textContent.includes('n4_host')||text(view('attention')).includes('App fallback'))throw Error('an unconfigured fallback explains how to set it up and clears its attention line');
+  fallbackView(null);if(view('dev-n4app-pill').textContent!=='Unknown')throw Error('a failed status read shows unknown');
+  replies.n4=engaged;await refresh();
+  if(!requests.some(r=>r.key==='n4')||!text(view('attention')).includes('App fallback: driving N4'))throw Error('refresh reads /api/n4 and shows the fallback');
+  delete replies.n4;await refresh();
+})()`,context,{timeout:2000});
 // Home: the sentence, then Needs attention, Rooms and the command path; the checks grid sits in a disclosure after them.
 {const at=id=>html.indexOf(`id="${id}"`);if(!(at('hero')<at('attention-card')&&at('attention-card')<at('lights-card')&&at('lights-card')<at('flow-card')&&at('flow-card')<at('summary')))throw Error('Home order: sentence, attention, rooms, path, then system checks');
   if(!/<details[^>]*id="checks-card"/.test(html))throw Error('system checks are a disclosure');}
 // Light theme tokens.
 {const light=html.match(/@media\(prefers-color-scheme:light\)\{:root\{([^}]*)\}/);if(!light)throw Error('a light theme follows the system setting');
   for(const k of ['--c-page','--c-surface','--c-text','--c-text-2','--c-good','--c-attn','--c-fault','--c-link','--c-on-tone'])if(!light[1].includes(k+':'))throw Error('the light theme defines '+k);}
-console.log('management UI safety, mapping, event and flow tests passed');
+console.log('management UI safety, mapping, event, flow and N4 fallback tests passed');

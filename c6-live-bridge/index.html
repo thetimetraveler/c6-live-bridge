@@ -857,6 +857,10 @@ html,body{overflow-anchor:none}
       <div id="dev-ketra-vitals" class="vitals"></div><ul id="dev-ketra-flags" class="board-flags"></ul>
       <details class="more" id="dev-ketra-more"><summary>All readings</summary><div id="dev-ketra-readings" class="more-body groups"></div></details>
     </section>
+    <section class="card device" id="dev-n4app">
+      <div class="card-head"><h2>App fallback<small>The app drives the bridged lamps through the Ketra hub while the gateway is unreachable</small></h2><span id="dev-n4app-pill" class="pill wait">Waiting</span></div>
+      <div id="dev-n4app-vitals" class="vitals"></div><p id="dev-n4app-note" class="hint board-note"></p>
+    </section>
   </div>
 </div>
 
@@ -1100,6 +1104,8 @@ const isDirect=z=>z?.output==='direct_zigbee';
 function lampStaleMs(z){const v=Number(z?.stale_ms);return Number.isFinite(v)&&v>0&&v<=600000?v:isDirect(z)?420000:120000}
 function freshLampObservation(z){const l=z?.lamp,elapsed=Math.max(0,Date.now()-zonesReceivedAt);return !!l&&['observed','correction'].includes(l.source)&&typeof l.age_ms==='number'&&Number.isFinite(l.age_ms)&&l.age_ms>=0&&l.age_ms+elapsed<=lampStaleMs(z)}
 function lampAssessment(z,current=lampInputsCurrent()){
+  // The app-side fallback is driving this lamp: say so even though gateway monitoring is down.
+  if(z?.driver==='app'&&typeof z.verdict?.title==='string')return {tone:'warn',title:z.verdict.title};
   if(!current)return {tone:'wait',title:'Current comparison unavailable'};
   // A held or unrecognised output means no command reaches the lamp, whatever its last reading.
   const output=Array.isArray(z?.checks)?z.checks.find(c=>c?.key==='output'):null;
@@ -1382,7 +1388,7 @@ function issueLink(t,out){t=String(t);
   if(/output|N4|delivered/i.test(t))return out?.kind==='direct'&&zigbeeArming(latestStatus)?['devices','zigbee-node-card','Zigbee node']:['devices','dev-ketra','Lighting output'];
   return ['devices','dev-endpoint','Thread endpoint']}
 /* Devices: one summary line under the title whose board names open that card; flagged cards sort first. */
-const BOARD_ORDER=[['gateway','dev-gateway','Gateway'],['endpoint','dev-endpoint','Thread endpoint'],['zigbee','zigbee-node-card','Zigbee node'],['sidecar','sidecar-firmware-card','CCX listener'],['cca','dev-cca','CCA radio'],['ketra','dev-ketra','Ketra hub']];
+const BOARD_ORDER=[['gateway','dev-gateway','Gateway'],['endpoint','dev-endpoint','Thread endpoint'],['zigbee','zigbee-node-card','Zigbee node'],['sidecar','sidecar-firmware-card','CCX listener'],['cca','dev-cca','CCA radio'],['ketra','dev-ketra','Ketra hub'],['n4app','dev-n4app','App fallback']];
 function renderDevicesSummary(flags){const counts=new Map();for(const f of flags)counts.set(f.board,(counts.get(f.board)||0)+1);
   const box=$('diag-attention'),boards=BOARD_ORDER.filter(([k])=>counts.has(k));
   if(!flags.length)box.replaceChildren(el('p','devices-summary good-line','Every reading looks normal on every device.'));
@@ -1391,11 +1397,32 @@ function renderDevicesSummary(flags){const counts=new Map();for(const f of flags
   const health=$('health'),flagged=k=>counts.has(k)||/\b(warn|bad)\b/.test(($(k==='sidecar'?'sidecar-pill':k==='cca'?'cca-status-pill':'dev-'+k+'-pill')?.className)||''),
     want=[...BOARD_ORDER.filter(([k])=>flagged(k)),...BOARD_ORDER.filter(([k])=>!flagged(k))].map(([,id])=>$(id)),cur=[...(health.children||[])];
   if(want.some((e,i)=>cur[i]!==e))health.replaceChildren(...want)}
+/* App-side N4 fallback (/api/n4): who is driving the lamps, the hub's reachability and the last write. */
+let latestFallback=null,fallbackItem=null;
+const clockText=sec=>new Date(sec*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+function fallbackAttention(){const ul=$('attention'),s=latestFallback,rest=[...(ul.children||[])].filter(c=>c!==fallbackItem);fallbackItem=null;
+  if(s?.engaged){const li=el('li','warn'),t=el('div'),n=(s.zones||[]).length;li.append(el('span','ic','!'));t.append(el('strong','',`App fallback: driving N4 since ${clockText(s.since)}`));
+    t.append(el('span','since',`${s.reason||'the gateway is unreachable'} · ${plural(n,'lamp','lamps')}`));li.append(t);
+    const b=el('button','plain go','App fallback ›');b.type='button';b.setAttribute('aria-label','Open App fallback');b.onclick=()=>goTo('devices','dev-n4app');li.append(b);fallbackItem=li;rest.unshift(li)}
+  ul.replaceChildren(...rest);$('attention-card').hidden=!rest.length;const c=$('attention-count');c.textContent=rest.length?`${rest.length} item${rest.length===1?'':'s'}`:'';if(rest.length&&!/\bbad\b/.test(c.className))c.className='pill warn'}
+function fallbackView(f){latestFallback=f&&typeof f==='object'&&!Array.isArray(f)&&typeof f.mode==='string'?f:null;const s=latestFallback,n=s?.n4||{},w=s?.last_write,zones=Array.isArray(s?.zones)?s.zones:[];
+  const [tone,label]=!s?['wait','Unknown']:!s.configured?['wait',s.mode==='off'?'Off':'Not set up']:s.engaged?['warn','Driving lamps']:n.reachable===false?['warn','Hub unreachable']:n.reachable===true?['good','Standing by']:['wait','Checking hub'];
+  const pill=$('dev-n4app-pill');pill.className='pill '+tone;pill.textContent=label;
+  const rows=!s||!s.configured?[]:[
+    ['Ketra hub',n.reachable===true?'Reachable':n.reachable===false?'Unreachable':'Not checked yet',n.reachable===false?'warn':'',n.reachable===false?n.error:(n.hub?.InstallationName||n.hub?.Name||n.host||'')],
+    ['Lamps driven by',s.engaged?'This app':'Gateway',s.engaged?'warn':'',s.engaged?`since ${clockText(s.since)}`:s.blocked?`Not taking over: ${s.blocked}`:s.mode==='force'?'Forced on':`Takes over after ${duration((s.engage_after_s||120)*1000)} unreachable`],
+    ['Last write',!w?'None yet':w.ok?'Accepted':'Failed',w&&!w.ok?'warn':'',w?`${w.group} · ${ago(w.at*1000)}${w.ok?'':' · '+w.error}`:''],
+    ['Zones',String(zones.length),'',`${zones.filter(z=>z.entity_id).length} matched to a Lutron light · ${zones.filter(z=>z.program_cached).length} with a cached show`]];
+  const v=$('dev-n4app-vitals');v.setAttribute('data-n',String(rows.length));v.replaceChildren(...rows.map(([k,value,t,small])=>{const d=el('div','vital'+(t?' '+t:''));d.append(el('span','',k),el('strong','',value));if(small)d.append(el('small','',small));return d}));
+  $('dev-n4app-note').textContent=!s?'App fallback status is unavailable.':!s.configured?(s.mode==='off'?'The fallback is turned off (n4_fallback: off).':'Set n4_host and n4_password in the app configuration to let the app drive the lamps while the gateway is unreachable.')
+    :s.engaged?`Taken over because ${s.reason}. ${plural(s.writes||0,'write','writes')} accepted, ${num(s.failures||0)} failed. Control returns to the gateway as soon as it answers.${s.home_assistant?.error?' Home Assistant: '+s.home_assistant.error:''}`
+    :!zones.length?'No zone mapping is cached or seeded yet. Add n4_seed_zones in the app configuration, or wait for the gateway to report its mapping.':'';
+  fallbackAttention()}
 function renderAttention(issues,out){const items=[...issues].sort((a,b)=>(b[0]==='bad')-(a[0]==='bad'));
   $('attention').replaceChildren(...items.map(([tone,title,detail,link,since])=>{const li=el('li',tone),t=el('div'),go=link||issueLink(title,out);
     li.append(el('span','ic',tone==='bad'?'✕':'!'));t.append(el('strong','',title));const sub=[since,detail].filter(Boolean).join(' · ');if(sub)t.append(el('span','since',sub));li.append(t);
     const b=el('button','plain go',`${go[2]} ›`);b.type='button';b.setAttribute('aria-label',`Open ${go[2]}: ${title}`);b.onclick=()=>goTo(go[0],go[1]);li.append(b);return li}));
-  $('attention-card').hidden=!items.length;const c=$('attention-count');c.textContent=items.length?`${items.length} item${items.length===1?'':'s'}`:'';c.className='pill '+(items.some(i=>i[0]==='bad')?'bad':'warn')}
+  $('attention-card').hidden=!items.length;const c=$('attention-count');c.textContent=items.length?`${items.length} item${items.length===1?'':'s'}`:'';c.className='pill '+(items.some(i=>i[0]==='bad')?'bad':'warn');fallbackAttention()}
 /* One device card: status pill, vitals, and its readings on demand; a flagged reading is listed above the cards and opens them. */
 const boardOpen={};
 function renderBoard(key,name,{tone,label,vitals,groups}){const flags=flaggedRows(groups).map(f=>({...f,section:name,board:key,text:plainFlag(f,name)}));
@@ -1632,7 +1659,7 @@ function zonesView(data,receivedAt){if(data!==lastZones||receivedAt!==undefined)
     const delta=['warn','bad'].includes(tone)?lampDelta(z,observed):'';
     name.append(el('span','lamp-state',v.title+(delta&&!v.title.includes('Lutron shows')?' · '+delta:'')));{const last=lastCommandText(z,elapsed,timed),tr=zoneTrace(z.zone)??timed?.get(z.zone)?.g?.trace??null;if(last){if(tr){const b=el('button','plain inline lamp-last',last+' ›');b.type='button';b.setAttribute('aria-label',`${last}: show this command in Activity`);b.onclick=e=>{e.preventDefault?.();e.stopPropagation?.();openTrace(tr,z.zone)};name.append(b)}else name.append(el('span','lamp-last',last))}}sm.append(bulb(zoneLight(z),true),name,lampRowLevel(z,observed));
     const rawChecks=Array.isArray(z.checks)?z.checks.filter(c=>c&&typeof c==='object'):[];
-    const checks=!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:staleChecks(z,rawChecks);
+    const checks=z.driver==='app'?rawChecks:!current?[{status:'unknown',title:'Current comparison unavailable',detail:'Gateway monitoring is delayed or unavailable.'}]:observed&&!(z.verdict?.tone==='good'&&v.tone!=='good')?rawChecks:staleChecks(z,rawChecks);
     const body=el('div','lamp-body'),sub=[z.n4_group?`N4 group “${z.n4_group}”`:null,z.zone_id?'Lutron zone '+z.zone_id:null,isDirect(z)?'Direct Zigbee':null,fixtureText(lz)||null].filter(Boolean).join(' · ');if(sub)body.append(el('p','zone-sub',sub));
     const trio=el('div','trio flow');trio.append(lutronSide(z.lutron),el('span','flow-arrow','→'),sentSide(z.sent,elapsed),el('span','flow-arrow','→'),lampSide(z.lamp,elapsed,z.output));body.append(levelRail(z),trio,showBlock(z,current,observed),checkList(checks));
     card.append(sm,body);card.open=openLamps.has(key);card.addEventListener('toggle',()=>{if(card.open)openLamps.add(key);else openLamps.delete(key)});cards.push(card)}
@@ -2246,7 +2273,8 @@ function trackFirmwareStatus(s){
 async function refresh(){
   if(refreshing)return;refreshing=true;const startedAt=Date.now();
   try{
-    const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor+(eventBootId===null?'':'&boot_id='+encodeURIComponent(eventBootId))),req('zones')]);pollMs=Date.now()-startedAt;
+    const results=await Promise.allSettled([req('status'),req('devices'),req('events?after='+eventCursor+(eventBootId===null?'':'&boot_id='+encodeURIComponent(eventBootId))),req('zones'),req('n4')]);pollMs=Date.now()-startedAt;
+    fallbackView(results[4].status==='fulfilled'?results[4].value:null);
     if(results[0].status==='fulfilled'&&results[0].value&&typeof results[0].value==='object'&&!Array.isArray(results[0].value)){
       const s=results[0].value;health(s,startedAt);configMatch=s.config_match;if(configMatch===false)configAutoPoll=true;trackFirmwareStatus(s);renderZigbeeNode(s);
     }else{

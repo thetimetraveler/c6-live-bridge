@@ -51,6 +51,12 @@ Zigbee member link. A hybrid gateway prefers direct Zigbee and falls back to N4 
 the dashboard shows **N4 fallback** while N4 carries lighting, and the **Ketra lamps**
 card in Settings edits the gateway's lamp inventory. See the [app documentation](c6-live-bridge/README.md) for API details.
 
+While the gateway is unreachable, the app can drive the bridged Ketra lamps
+itself through the Ketra N4 hub and hand control back when the gateway returns.
+Set `n4_host` and `n4_password` in the app configuration to enable it;
+`n4_fallback` is `auto`, `off` or `force`. See
+[App fallback through N4](c6-live-bridge/README.md#app-fallback-through-n4-0260).
+
 ## Development
 
 The app uses Python's standard library and browser JavaScript. No dependency
@@ -60,6 +66,7 @@ installation is required for its tests:
 python3 -m unittest discover -s c6-live-bridge -p 'test_*.py'
 node c6-live-bridge/test_ui.js
 node c6-live-bridge/test_cca_ui.js
+node c6-live-bridge/test_cca_decoder.js
 ```
 
 Runtime credentials are entered in Home Assistant's app configuration. This
